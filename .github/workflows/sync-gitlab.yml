@@ -1,0 +1,57 @@
+name: Sync to GitLab
+
+on:
+  push:
+  delete:
+  workflow_dispatch:
+  pull_request:
+  #schedule:
+    #- cron: '0 16 * * *'
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create local branches for all remotes
+        run: |
+          git fetch origin
+          for branch in $(git branch -r | grep -v 'origin/HEAD' | sed 's|origin/||'); do
+            git branch --track "$branch" "origin/$branch" || true
+          done
+
+      - name: Unprotect current branch on GitLab before push
+        env:
+          GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+        run: |
+          PROJECT_PATH="${{ github.repository }}"
+          ENCODED_PROJECT=$(echo "$PROJECT_PATH" | sed 's/\//%2F/g')
+          current_branch=$(git rev-parse --abbrev-ref HEAD)
+          curl --request DELETE \
+            --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+            "https://gitlab.com/api/v4/projects/$ENCODED_PROJECT/protected_branches/$current_branch" \
+            || echo "Branch is not protected or failed to unprotect (safe to ignore if already unprotected)"
+
+      - name: Force push current branch to GitLab (auto detect)
+        env:
+          GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+        run: |
+          git config --global user.name "tuthanika-bot"
+          git config --global user.email "tuthanika@gmail.com"
+          git remote add gitlab https://oauth2:${GITLAB_TOKEN}@gitlab.com/${{ github.repository }}.git
+          git push --force --all gitlab
+          
+#          current_branch=$(git rev-parse --abbrev-ref HEAD)
+#          git push --force gitlab "$current_branch:$current_branch"
+          
+      - name: Delete workflow runs
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          retain_days: 1
+          keep_minimum_runs: 1
