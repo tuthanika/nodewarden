@@ -368,12 +368,20 @@ async function encryptUris(
   uris: VaultDraft['loginUris'],
   enc: Uint8Array,
   mac: Uint8Array
-): Promise<Array<{ uri: string | null; match: number | null }>> {
-  const out: Array<{ uri: string | null; match: number | null }> = [];
+): Promise<Array<Record<string, unknown>>> {
+  const out: Array<Record<string, unknown>> = [];
   for (const entry of uris || []) {
     const trimmed = String(entry?.uri || '').trim();
     if (!trimmed) continue;
+    const preservedExtra =
+      entry?.extra && typeof entry.extra === 'object'
+        ? { ...entry.extra }
+        : {};
+    if (String(entry?.originalUri || '').trim() !== trimmed) {
+      delete preservedExtra.uriChecksum;
+    }
     out.push({
+      ...preservedExtra,
       uri: await encryptTextValue(trimmed, enc, mac),
       match: typeof entry?.match === 'number' && Number.isFinite(entry.match) ? entry.match : null,
     });
@@ -491,7 +499,12 @@ async function buildCipherPayload(
       cipher?.login && Array.isArray((cipher.login as any).fido2Credentials)
         ? (cipher.login as any).fido2Credentials
         : draft.loginFido2Credentials;
+    const existingLogin =
+      cipher?.login && typeof cipher.login === 'object'
+        ? { ...(cipher.login as Record<string, unknown>) }
+        : {};
     payload.login = {
+      ...existingLogin,
       username: await encryptTextValue(draft.loginUsername, keys.enc, keys.mac),
       password: await encryptTextValue(draft.loginPassword, keys.enc, keys.mac),
       totp: await encryptTextValue(draft.loginTotp, keys.enc, keys.mac),
