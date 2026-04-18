@@ -1,6 +1,7 @@
 import { base64ToBytes, decryptBw, decryptBwFileData, decryptStr, encryptBw, encryptBwFileData } from '../crypto';
 import type {
   Cipher,
+  CipherPasswordHistoryEntry,
   Folder,
   SessionState,
   VaultDraft,
@@ -346,6 +347,61 @@ async function encryptTextValue(value: string, enc: Uint8Array, mac: Uint8Array)
   return encryptBw(new TextEncoder().encode(s), enc, mac);
 }
 
+async function encryptPasswordHistory(
+  entries: CipherPasswordHistoryEntry[] | null | undefined,
+  enc: Uint8Array,
+  mac: Uint8Array
+): Promise<CipherPasswordHistoryEntry[] | null> {
+  if (!Array.isArray(entries) || entries.length === 0) return null;
+
+  const out: CipherPasswordHistoryEntry[] = [];
+  for (const entry of entries) {
+    const rawPassword = String(entry?.password || '');
+    const plainPassword = entry?.decPassword ?? rawPassword;
+    const encryptedPassword = looksLikeCipherString(rawPassword)
+      ? rawPassword
+      : await encryptTextValue(plainPassword, enc, mac);
+    if (!encryptedPassword) continue;
+    out.push({
+      password: encryptedPassword,
+      lastUsedDate: toIsoDateOrNow(entry?.lastUsedDate),
+    });
+  }
+
+  return out.length ? out : null;
+}
+
+async function buildUpdatedPasswordHistory(
+  cipher: Cipher | null,
+  draft: VaultDraft,
+  enc: Uint8Array,
+  mac: Uint8Array
+): Promise<CipherPasswordHistoryEntry[] | null> {
+  const existingHistory = Array.isArray(cipher?.passwordHistory) ? cipher.passwordHistory : [];
+  const currentPassword = String(cipher?.login?.decPassword || '');
+  const nextPassword = String(draft.loginPassword || '');
+  const passwordChanged = currentPassword !== nextPassword;
+  const history = await encryptPasswordHistory(existingHistory, enc, mac);
+
+  if (!passwordChanged || !currentPassword.trim()) {
+    return history;
+  }
+
+  const encryptedCurrentPassword = await encryptTextValue(currentPassword, enc, mac);
+  if (!encryptedCurrentPassword) {
+    return history;
+  }
+
+  const nextEntries: CipherPasswordHistoryEntry[] = [
+    {
+      password: encryptedCurrentPassword,
+      lastUsedDate: new Date().toISOString(),
+    },
+    ...(history || []),
+  ];
+  return nextEntries.slice(0, 5);
+}
+
 async function encryptCustomFields(
   fields: VaultDraftField[],
   enc: Uint8Array,
@@ -473,6 +529,7 @@ async function buildCipherPayload(
   const userMac = base64ToBytes(session.symMacKey);
   const keys = await getCipherKeys(cipher, userEnc, userMac);
   const type = Number(draft.type || cipher?.type || 1);
+  const now = new Date().toISOString();
 
   const payload: Record<string, unknown> = {
     type,
@@ -487,6 +544,7 @@ async function buildCipherPayload(
     secureNote: null,
     sshKey: null,
     fields: await encryptCustomFields(draft.customFields || [], keys.enc, keys.mac),
+    passwordHistory: await encryptPasswordHistory(cipher?.passwordHistory, keys.enc, keys.mac),
   };
 
   if (cipher?.id) {
@@ -495,6 +553,7 @@ async function buildCipherPayload(
   }
 
   if (type === 1) {
+    const passwordChanged = String(cipher?.login?.decPassword || '') !== String(draft.loginPassword || '');
     const existingFido2 =
       cipher?.login && Array.isArray((cipher.login as any).fido2Credentials)
         ? (cipher.login as any).fido2Credentials
@@ -508,9 +567,11 @@ async function buildCipherPayload(
       username: await encryptTextValue(draft.loginUsername, keys.enc, keys.mac),
       password: await encryptTextValue(draft.loginPassword, keys.enc, keys.mac),
       totp: await encryptTextValue(draft.loginTotp, keys.enc, keys.mac),
+      passwordRevisionDate: passwordChanged ? now : existingLogin.passwordRevisionDate ?? null,
       fido2Credentials: await normalizeFido2Credentials(existingFido2, keys.enc, keys.mac),
       uris: await encryptUris(draft.loginUris || [], keys.enc, keys.mac),
     };
+    payload.passwordHistory = await buildUpdatedPasswordHistory(cipher, draft, keys.enc, keys.mac);
   } else if (type === 3) {
     payload.card = {
       cardholderName: await encryptTextValue(draft.cardholderName, keys.enc, keys.mac),

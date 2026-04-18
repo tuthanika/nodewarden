@@ -95,6 +95,7 @@ export interface AppMainRoutesProps {
   onOpenDisableTotp: () => void;
   onGetRecoveryCode: (masterPassword: string) => Promise<string>;
   onRefreshAuthorizedDevices: () => Promise<void>;
+  onRenameAuthorizedDevice: (device: AuthorizedDevice, name: string) => Promise<void>;
   onRevokeDeviceTrust: (device: AuthorizedDevice) => void;
   onRemoveDevice: (device: AuthorizedDevice) => void;
   onRevokeAllDeviceTrust: () => void;
@@ -281,6 +282,7 @@ export default function AppMainRoutes(props: AppMainRoutesProps) {
               devices={props.authorizedDevices}
               loading={props.authorizedDevicesLoading}
               onRefresh={() => void props.onRefreshAuthorizedDevices()}
+              onRenameDevice={props.onRenameAuthorizedDevice}
               onRevokeTrust={props.onRevokeDeviceTrust}
               onRemoveDevice={props.onRemoveDevice}
               onRevokeAll={props.onRevokeAllDeviceTrust}

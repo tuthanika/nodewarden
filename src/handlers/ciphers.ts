@@ -1,4 +1,15 @@
-import { Env, Cipher, CipherResponse, Attachment } from '../types';
+import {
+  Env,
+  Cipher,
+  CipherCard,
+  CipherIdentity,
+  CipherLogin,
+  CipherResponse,
+  CipherSecureNote,
+  CipherSshKey,
+  Attachment,
+  PasswordHistory,
+} from '../types';
 import { StorageService } from '../services/storage';
 import { notifyUserVaultSync } from '../durable/notifications-hub';
 import { jsonResponse, errorResponse } from '../utils/response';
@@ -11,26 +22,6 @@ function normalizeOptionalId(value: unknown): string | null {
   if (value == null) return null;
   const normalized = String(value).trim();
   return normalized ? normalized : null;
-}
-
-function mergeCipherNestedObject<T>(
-  existingValue: T | null | undefined,
-  incomingValue: unknown
-): T | null {
-  if (incomingValue === undefined) {
-    return (existingValue ?? null) as T | null;
-  }
-  if (incomingValue === null || typeof incomingValue !== 'object' || Array.isArray(incomingValue)) {
-    return incomingValue as T | null;
-  }
-  const existingObject =
-    existingValue && typeof existingValue === 'object' && !Array.isArray(existingValue)
-      ? (existingValue as Record<string, unknown>)
-      : {};
-  return {
-    ...existingObject,
-    ...(incomingValue as Record<string, unknown>),
-  } as T;
 }
 
 async function notifyVaultSyncForRequest(
@@ -52,6 +43,10 @@ function getAliasedProp(source: any, aliases: string[]): { present: boolean; val
   return { present: false, value: undefined };
 }
 
+function readCipherProp<T = unknown>(source: any, aliases: string[]): { present: boolean; value: T | undefined } {
+  return getAliasedProp(source, aliases) as { present: boolean; value: T | undefined };
+}
+
 function normalizeCipherTimestamp(value: unknown): string | null {
   if (value == null || value === '') return null;
   const parsed = new Date(String(value));
@@ -62,6 +57,19 @@ function normalizeCipherTimestamp(value: unknown): string | null {
 function readCipherArchivedAt(source: any, fallback: string | null = null): string | null {
   const archived = getAliasedProp(source, ['archivedAt', 'ArchivedAt', 'archivedDate', 'ArchivedDate']);
   return archived.present ? normalizeCipherTimestamp(archived.value) : fallback;
+}
+
+function readCipherRevisionDate(source: any): string | null {
+  const revision = getAliasedProp(source, ['lastKnownRevisionDate', 'LastKnownRevisionDate']);
+  return revision.present ? normalizeCipherTimestamp(revision.value) : null;
+}
+
+function isStaleCipherUpdate(existingUpdatedAt: string, clientRevisionDate: string | null): boolean {
+  if (!clientRevisionDate) return false;
+  const existingTs = Date.parse(existingUpdatedAt);
+  const clientTs = Date.parse(clientRevisionDate);
+  if (Number.isNaN(existingTs) || Number.isNaN(clientTs)) return false;
+  return existingTs - clientTs > 1000;
 }
 
 function syncCipherComputedAliases(cipher: Cipher): Cipher {
@@ -151,8 +159,8 @@ export function cipherToResponse(
     // Server-computed / enforced fields (always override)
     folderId: normalizeOptionalId(cipher.folderId),
     type: Number(cipher.type) || 1,
-    organizationId: null,
-    organizationUseTotp: false,
+    organizationId: normalizeOptionalId((passthrough as any).organizationId ?? null),
+    organizationUseTotp: !!((passthrough as any).organizationUseTotp ?? false),
     creationDate: createdAt,
     revisionDate: updatedAt,
     deletedDate: deletedAt,
@@ -163,12 +171,12 @@ export function cipherToResponse(
       delete: true,
       restore: true,
     },
-    object: 'cipher',
-    collectionIds: [],
+    object: 'cipherDetails',
+    collectionIds: Array.isArray((passthrough as any).collectionIds) ? (passthrough as any).collectionIds : [],
     attachments: formatAttachments(attachments),
     login: normalizedLogin,
     sshKey: normalizedSshKey,
-    encryptedFor: null,
+    encryptedFor: (passthrough as any).encryptedFor ?? null,
   };
 }
 
@@ -251,6 +259,14 @@ export async function handleCreateCipher(request: Request, env: Env, userId: str
   // Handle nested cipher object (from some clients)
   // Android client sends PascalCase "Cipher" for organization ciphers
   const cipherData = body.Cipher || body.cipher || body;
+  const createFolderId = readCipherProp<string | null>(cipherData, ['folderId', 'FolderId']);
+  const createKey = readCipherProp<string | null>(cipherData, ['key', 'Key']);
+  const createLogin = readCipherProp<CipherLogin | null>(cipherData, ['login', 'Login']);
+  const createCard = readCipherProp<CipherCard | null>(cipherData, ['card', 'Card']);
+  const createIdentity = readCipherProp<CipherIdentity | null>(cipherData, ['identity', 'Identity']);
+  const createSecureNote = readCipherProp<CipherSecureNote | null>(cipherData, ['secureNote', 'SecureNote']);
+  const createSshKey = readCipherProp<CipherSshKey | null>(cipherData, ['sshKey', 'SshKey']);
+  const createPasswordHistory = readCipherProp<PasswordHistory[] | null>(cipherData, ['passwordHistory', 'PasswordHistory']);
 
   const now = new Date().toISOString();
   // Opaque passthrough: spread ALL client fields to preserve unknown/future ones,
@@ -268,6 +284,14 @@ export async function handleCreateCipher(request: Request, env: Env, userId: str
     archivedAt: readCipherArchivedAt(cipherData, null),
     deletedAt: null,
   };
+  cipher.folderId = createFolderId.present ? normalizeOptionalId(createFolderId.value) : normalizeOptionalId(cipher.folderId);
+  cipher.key = createKey.present ? (createKey.value ?? null) : (cipher.key ?? null);
+  cipher.login = createLogin.present ? (createLogin.value ?? null) : (cipher.login ?? null);
+  cipher.card = createCard.present ? (createCard.value ?? null) : (cipher.card ?? null);
+  cipher.identity = createIdentity.present ? (createIdentity.value ?? null) : (cipher.identity ?? null);
+  cipher.secureNote = createSecureNote.present ? (createSecureNote.value ?? null) : (cipher.secureNote ?? null);
+  cipher.sshKey = createSshKey.present ? (createSshKey.value ?? null) : (cipher.sshKey ?? null);
+  cipher.passwordHistory = createPasswordHistory.present ? (createPasswordHistory.value ?? null) : (cipher.passwordHistory ?? null);
   const createFields = getAliasedProp(cipherData, ['fields', 'Fields']);
   cipher.fields = createFields.present ? (createFields.value ?? null) : (cipher.fields ?? null);
   normalizeCipherForStorage(cipher);
@@ -307,6 +331,21 @@ export async function handleUpdateCipher(request: Request, env: Env, userId: str
   // Handle nested cipher object
   // Android client sends PascalCase "Cipher" for organization ciphers
   const cipherData = body.Cipher || body.cipher || body;
+  const incomingFolderId = readCipherProp<string | null>(cipherData, ['folderId', 'FolderId']);
+  const incomingKey = readCipherProp<string | null>(cipherData, ['key', 'Key']);
+  const incomingLogin = readCipherProp<CipherLogin | null>(cipherData, ['login', 'Login']);
+  const incomingCard = readCipherProp<CipherCard | null>(cipherData, ['card', 'Card']);
+  const incomingIdentity = readCipherProp<CipherIdentity | null>(cipherData, ['identity', 'Identity']);
+  const incomingSecureNote = readCipherProp<CipherSecureNote | null>(cipherData, ['secureNote', 'SecureNote']);
+  const incomingSshKey = readCipherProp<CipherSshKey | null>(cipherData, ['sshKey', 'SshKey']);
+  const incomingPasswordHistory = readCipherProp<PasswordHistory[] | null>(cipherData, ['passwordHistory', 'PasswordHistory']);
+  const incomingRevisionDate = readCipherRevisionDate(cipherData);
+
+  if (isStaleCipherUpdate(existingCipher.updatedAt, incomingRevisionDate)) {
+    return errorResponse('The client copy of this cipher is out of date. Resync the client and try again.', 400);
+  }
+
+  const nextType = Number(cipherData.type) || existingCipher.type;
 
   // Opaque passthrough: merge existing stored data with ALL incoming client fields.
   // Unknown/future fields from the client are preserved; server-controlled fields are protected.
@@ -316,7 +355,7 @@ export async function handleUpdateCipher(request: Request, env: Env, userId: str
     // Server-controlled fields (never from client)
     id: existingCipher.id,
     userId: existingCipher.userId,
-    type: Number(cipherData.type) || existingCipher.type,
+    type: nextType,
     favorite: cipherData.favorite ?? existingCipher.favorite,
     reprompt: cipherData.reprompt ?? existingCipher.reprompt,
     createdAt: existingCipher.createdAt,
@@ -324,11 +363,20 @@ export async function handleUpdateCipher(request: Request, env: Env, userId: str
     archivedAt: readCipherArchivedAt(cipherData, existingCipher.archivedAt ?? null),
     deletedAt: existingCipher.deletedAt,
   };
-  cipher.login = mergeCipherNestedObject(existingCipher.login, cipherData.login);
-  cipher.card = mergeCipherNestedObject(existingCipher.card, cipherData.card);
-  cipher.identity = mergeCipherNestedObject(existingCipher.identity, cipherData.identity);
-  cipher.secureNote = mergeCipherNestedObject(existingCipher.secureNote, cipherData.secureNote);
-  cipher.sshKey = mergeCipherNestedObject(existingCipher.sshKey, cipherData.sshKey);
+  if (incomingFolderId.present) {
+    cipher.folderId = normalizeOptionalId(incomingFolderId.value);
+  }
+  if (incomingKey.present) {
+    cipher.key = incomingKey.value ?? null;
+  }
+  cipher.login = nextType === 1 ? (incomingLogin.present ? (incomingLogin.value ?? null) : (existingCipher.login ?? null)) : null;
+  cipher.secureNote = nextType === 2 ? (incomingSecureNote.present ? (incomingSecureNote.value ?? null) : (existingCipher.secureNote ?? null)) : null;
+  cipher.card = nextType === 3 ? (incomingCard.present ? (incomingCard.value ?? null) : (existingCipher.card ?? null)) : null;
+  cipher.identity = nextType === 4 ? (incomingIdentity.present ? (incomingIdentity.value ?? null) : (existingCipher.identity ?? null)) : null;
+  cipher.sshKey = nextType === 5 ? (incomingSshKey.present ? (incomingSshKey.value ?? null) : (existingCipher.sshKey ?? null)) : null;
+  if (incomingPasswordHistory.present) {
+    cipher.passwordHistory = incomingPasswordHistory.value ?? null;
+  }
 
   // Custom fields deletion compatibility:
   // - Accept both camelCase "fields" and PascalCase "Fields".
@@ -351,9 +399,10 @@ export async function handleUpdateCipher(request: Request, env: Env, userId: str
   await storage.saveCipher(cipher);
   const revisionDate = await storage.updateRevisionDate(userId);
   await notifyVaultSyncForRequest(request, env, userId, revisionDate);
+  const attachments = await storage.getAttachmentsByCipher(cipher.id);
 
   return jsonResponse(
-    cipherToResponse(cipher, [])
+    cipherToResponse(cipher, attachments)
   );
 }
 

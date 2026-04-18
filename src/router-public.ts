@@ -104,6 +104,7 @@ function buildConfigResponse(origin: string) {
     _icon_service_url: buildIconServiceTemplate(origin),
     _icon_service_csp: buildIconServiceCsp(origin),
     featureStates: {
+      'cipher-key-encryption': true,
       'duo-redirect': true,
       'email-verification': true,
       'pm-19051-send-email-verification': false,

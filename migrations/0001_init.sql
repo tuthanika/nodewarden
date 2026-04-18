@@ -153,12 +153,15 @@ CREATE TABLE IF NOT EXISTS devices (
   encrypted_user_key TEXT,
   encrypted_public_key TEXT,
   encrypted_private_key TEXT,
+  device_note TEXT,
+  last_seen_at TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   PRIMARY KEY (user_id, device_identifier),
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_devices_user_updated ON devices(user_id, updated_at);
+CREATE INDEX IF NOT EXISTS idx_devices_user_last_seen ON devices(user_id, last_seen_at);
 
 CREATE TABLE IF NOT EXISTS trusted_two_factor_device_tokens (
   token TEXT PRIMARY KEY,

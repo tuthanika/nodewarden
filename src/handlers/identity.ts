@@ -450,6 +450,9 @@ export async function handleToken(request: Request, env: Env): Promise<Response>
     );
 
     const { accessToken, user, device } = result;
+    if (device?.identifier) {
+      await storage.touchDeviceLastSeen(user.id, device.identifier);
+    }
     const newRefreshToken = await auth.generateRefreshToken(user.id, device);
     const accountKeys = buildAccountKeys(user);
     const userDecryptionOptions = buildUserDecryptionOptions(user);

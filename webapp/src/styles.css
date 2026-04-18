@@ -1561,6 +1561,22 @@ input[type='file'].input::file-selector-button:hover {
   margin-top: 8px;
 }
 
+.password-history-link {
+  margin-top: 10px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--primary);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.password-history-link:hover {
+  color: var(--primary-hover);
+  text-decoration: underline;
+}
+
 .kv-line {
   display: flex;
   justify-content: space-between;
@@ -1589,6 +1605,81 @@ input[type='file'].input::file-selector-button:hover {
 
 .kv-row:last-child {
   border-bottom: none;
+}
+
+.password-history-dialog {
+  width: min(560px, calc(100vw - 32px));
+}
+
+.password-history-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.password-history-head .dialog-title {
+  margin: 0;
+}
+
+.password-history-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted-strong);
+  cursor: pointer;
+}
+
+.password-history-close:hover {
+  background: var(--panel-soft);
+  color: var(--text);
+}
+
+.password-history-list {
+  display: grid;
+  gap: 12px;
+  margin: 10px 0 18px;
+}
+
+.password-history-item {
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel-soft);
+  padding: 16px 54px 14px 16px;
+  box-shadow: var(--shadow-sm);
+}
+
+.password-history-value {
+  color: var(--primary);
+  font-size: 22px;
+  line-height: 1.15;
+  letter-spacing: 0.01em;
+  word-break: break-all;
+}
+
+.password-history-time {
+  margin-top: 8px;
+  color: var(--muted);
+}
+
+.password-history-copy {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+}
+
+.password-history-copy-btn {
+  min-width: 36px;
+  padding: 0;
+  width: 36px;
+  height: 36px;
 }
 
 .kv-label {

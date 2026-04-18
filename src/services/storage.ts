@@ -92,7 +92,9 @@ import {
   isKnownDevice as getKnownStoredDevice,
   isKnownDeviceByEmail as getKnownStoredDeviceByEmail,
   saveTrustedTwoFactorDeviceToken as saveStoredTrustedDeviceToken,
+  touchDeviceLastSeen as touchStoredDeviceLastSeen,
   upsertDevice as saveStoredDevice,
+  updateDeviceName as updateStoredDeviceName,
   updateDeviceKeys as updateStoredDeviceKeys,
 } from './storage-device-repo';
 import {
@@ -106,7 +108,7 @@ import {
 
 const TWO_FACTOR_REMEMBER_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const STORAGE_SCHEMA_VERSION_KEY = 'schema.version';
-const STORAGE_SCHEMA_VERSION = '2026-03-30.1';
+const STORAGE_SCHEMA_VERSION = '2026-04-18.1';
 
 // D1-backed storage.
 // Contract:
@@ -548,6 +550,14 @@ export class StorageService {
     }
   ): Promise<boolean> {
     return updateStoredDeviceKeys(this.db, userId, deviceIdentifier, keys);
+  }
+
+  async updateDeviceName(userId: string, deviceIdentifier: string, name: string): Promise<boolean> {
+    return updateStoredDeviceName(this.db, userId, deviceIdentifier, name);
+  }
+
+  async touchDeviceLastSeen(userId: string, deviceIdentifier: string): Promise<boolean> {
+    return touchStoredDeviceLastSeen(this.db, userId, deviceIdentifier);
   }
 
   async clearDeviceKeys(userId: string, deviceIdentifiers: string[]): Promise<number> {
