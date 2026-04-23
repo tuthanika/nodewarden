@@ -52,16 +52,25 @@ function isSameOriginWriteRequest(request: Request): boolean {
   return false;
 }
 
-function getNwIconSvg(): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96" role="img" aria-label="NW icon"><rect x="4" y="4" width="88" height="88" rx="20" fill="#111418"/><text x="48" y="60" text-anchor="middle" font-size="36" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-weight="800" letter-spacing="0.5" fill="#FFFFFF">NW</text></svg>`;
+function getDefaultWebsiteIconSvg(): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96" role="img" aria-label="Globe icon"><circle cx="48" cy="48" r="34" fill="none" stroke="#8ea9c7" stroke-width="6"/><path d="M14 48h68M48 14c10 10 16 21.5 16 34s-6 24-16 34c-10-10-16-21.5-16-34s6-24 16-34zm-24 10c8 5 17 8 24 8s16-3 24-8m-48 48c8-5 17-8 24-8s16 3 24 8" fill="none" stroke="#8ea9c7" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 }
 
 function handleNwFavicon(): Response {
-  return new Response(getNwIconSvg(), {
+  return new Response(getDefaultWebsiteIconSvg(), {
     status: 200,
     headers: {
       'Content-Type': 'image/svg+xml; charset=utf-8',
       'Cache-Control': `public, max-age=${LIMITS.cache.iconTtlSeconds}`,
+    },
+  });
+}
+
+function handleMissingWebsiteIcon(): Response {
+  return new Response(null, {
+    status: 404,
+    headers: {
+      'Cache-Control': 'public, max-age=300',
     },
   });
 }
@@ -127,9 +136,9 @@ function normalizeIconHost(rawHost: string): string | null {
   }
 }
 
-async function handleWebsiteIcon(host: string): Promise<Response> {
+async function handleWebsiteIcon(host: string, fallbackMode: 'default' | 'not-found' = 'default'): Promise<Response> {
   const normalizedHost = normalizeIconHost(host);
-  if (!normalizedHost) return handleNwFavicon();
+  if (!normalizedHost) return fallbackMode === 'not-found' ? handleMissingWebsiteIcon() : handleNwFavicon();
 
   const encodedHost = encodeURIComponent(normalizedHost);
   const requestHeaders = { 'User-Agent': 'NodeWarden/1.0' };
@@ -172,9 +181,9 @@ async function handleWebsiteIcon(host: string): Promise<Response> {
       });
     }
 
-    return handleNwFavicon();
+    return fallbackMode === 'not-found' ? handleMissingWebsiteIcon() : handleNwFavicon();
   } catch {
-    return handleNwFavicon();
+    return fallbackMode === 'not-found' ? handleMissingWebsiteIcon() : handleNwFavicon();
   }
 }
 
@@ -221,7 +230,8 @@ export async function handlePublicRoute(
 
   const iconMatch = path.match(/^\/icons\/([^/]+)\/icon\.png$/i);
   if (iconMatch && method === 'GET') {
-    return handleWebsiteIcon(iconMatch[1]);
+    const fallbackMode = new URL(request.url).searchParams.get('fallback') === '404' ? 'not-found' : 'default';
+    return handleWebsiteIcon(iconMatch[1], fallbackMode);
   }
 
   const publicAttachmentMatch = path.match(/^\/api\/attachments\/([a-f0-9-]+)\/([a-f0-9-]+)$/i);

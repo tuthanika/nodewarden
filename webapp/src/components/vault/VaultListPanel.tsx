@@ -185,11 +185,10 @@ export default function VaultListPanel(props: VaultListPanelProps) {
       <div className="list-panel" ref={props.listPanelRef} onScroll={(event) => props.onScroll((event.currentTarget as HTMLDivElement).scrollTop)}>
         {!!props.filteredCiphers.length && (
           <div style={{ paddingTop: `${props.virtualRange.padTop}px`, paddingBottom: `${props.virtualRange.padBottom}px` }}>
-            {props.visibleCiphers.map((cipher, index) => (
+            {props.visibleCiphers.map((cipher) => (
               <div
                 key={cipher.id}
-                className={`list-item stagger-item ${props.selectedCipherId === cipher.id ? 'active' : ''}`}
-                style={{ animationDelay: `${Math.min(index, 10) * 26}ms` }}
+                className={`list-item ${props.selectedCipherId === cipher.id ? 'active' : ''}`}
                 onClick={(event) => {
                   const target = event.target as HTMLElement;
                   if (target.closest('.row-check')) return;

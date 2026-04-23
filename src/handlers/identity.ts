@@ -48,6 +48,18 @@ function parseCookieValue(request: Request, name: string): string | null {
   return null;
 }
 
+function constantTimeEquals(a: string, b: string): boolean {
+  const encA = new TextEncoder().encode(a);
+  const encB = new TextEncoder().encode(b);
+  if (encA.length !== encB.length) return false;
+
+  let diff = 0;
+  for (let i = 0; i < encA.length; i++) {
+    diff |= encA[i] ^ encB[i];
+  }
+  return diff === 0;
+}
+
 function buildRefreshCookie(request: Request, refreshToken: string, maxAgeSeconds: number): string {
   const isHttps = new URL(request.url).protocol === 'https:';
   const parts = [
@@ -361,6 +373,98 @@ export async function handleToken(request: Request, env: Env): Promise<Response>
       ? withWebRefreshCookie(request, baseResponse, refreshToken)
       : baseResponse;
 
+  } else if (grantType === 'client_credentials') {
+    // Login with client credentials
+    const clientId = body.client_id;
+    const clientSecret = body.client_secret;
+    const scope = body.scope;
+    const deviceInfo = readAuthRequestDeviceInfo(body, request);
+
+    const loginIdentifier = `${clientIdentifier}:${clientId}`;
+    const parmValid = checkClientCredentialsParam(clientId, clientSecret, scope);
+    if (!parmValid) {
+      return identityErrorResponse('Parameter error', 'invalid_request', 400);
+    }
+
+    // Check login lockout before user lookup to reduce user-enumeration signal
+    const loginCheck = await rateLimit.checkLoginAttempt(loginIdentifier);
+    if (!loginCheck.allowed) {
+      return identityErrorResponse(
+        `Too many failed login attempts. Try again in ${Math.ceil(loginCheck.retryAfterSeconds! / 60)} minutes.`,
+        'TooManyRequests',
+        429
+      );
+    }
+
+    const uid = clientId.slice(5);
+    const user = await storage.getUserById(uid);
+    if (!user) {
+      await rateLimit.recordFailedLogin(loginIdentifier);
+      return identityErrorResponse('ClientId or clientSecret is incorrect. Try again', 'invalid_grant', 400);
+    }
+    if (user.status !== 'active') {
+      await rateLimit.recordFailedLogin(loginIdentifier);
+      return identityErrorResponse('Account is disabled', 'invalid_grant', 400);
+    }
+
+    if (!user.apiKey || !constantTimeEquals(clientSecret, user.apiKey)) {
+      await rateLimit.recordFailedLogin(loginIdentifier);
+      return identityErrorResponse('ClientId or clientSecret is incorrect. Try again', 'invalid_grant', 400);
+    }
+
+    // Persist device only after successful client credential verification.
+    const deviceSession =
+      deviceInfo.deviceIdentifier
+        ? { identifier: deviceInfo.deviceIdentifier, sessionStamp: generateUUID() }
+        : null;
+    if (deviceSession) {
+      await storage.upsertDevice(
+        user.id,
+        deviceSession.identifier,
+        deviceInfo.deviceName,
+        deviceInfo.deviceType,
+        deviceSession.sessionStamp
+      );
+    }
+
+    // Successful login - clear failed attempts
+    await rateLimit.clearLoginAttempts(loginIdentifier);
+
+    const accessToken = await auth.generateAccessToken(user, deviceSession);
+    const refreshToken = await auth.generateRefreshToken(user.id, deviceSession);
+    const accountKeys = buildAccountKeys(user);
+    const userDecryptionOptions = buildUserDecryptionOptions(user);
+
+    const response: TokenResponse = {
+      access_token: accessToken,
+      expires_in: LIMITS.auth.accessTokenTtlSeconds,
+      token_type: 'Bearer',
+      ...(shouldUseWebSession(request) ? { web_session: true } : { refresh_token: refreshToken }),
+      Key: user.key,
+      PrivateKey: user.privateKey,
+      AccountKeys: accountKeys,
+      accountKeys: accountKeys,
+      Kdf: user.kdfType,
+      KdfIterations: user.kdfIterations,
+      KdfMemory: user.kdfMemory,
+      KdfParallelism: user.kdfParallelism,
+      ForcePasswordReset: false,
+      ResetMasterPassword: false,
+      MasterPasswordPolicy: {
+        Object: 'masterPasswordPolicy',
+      },
+      ApiUseKeyConnector: false,
+      scope: 'api offline_access',
+      unofficialServer: true,
+      UserDecryptionOptions: userDecryptionOptions,
+      userDecryptionOptions: userDecryptionOptions,
+    };
+
+    const baseResponse = jsonResponse(response);
+    return shouldUseWebSession(request)
+      ? withWebRefreshCookie(request, baseResponse, refreshToken)
+      : baseResponse;
+
   } else if (grantType === 'send_access') {
     const sendAccessLimit = await rateLimit.consumeBudget(`${clientIdentifier}:public`, LIMITS.rateLimit.publicRequestsPerMinute);
     if (!sendAccessLimit.allowed) {
@@ -552,4 +656,17 @@ export async function handleRevocation(request: Request, env: Env): Promise<Resp
   return shouldUseWebSession(request)
     ? withWebRefreshCookie(request, baseResponse, null)
     : baseResponse;
+}
+
+export function checkClientCredentialsParam(clientId: string, clientSecret: string, scope: string): boolean {
+  if (scope !== 'api') {
+    return false;
+  }
+  if (!clientId.startsWith('user.')) {
+    return false;
+  }
+  if (!clientSecret) {
+    return false;
+  }
+  return true;
 }

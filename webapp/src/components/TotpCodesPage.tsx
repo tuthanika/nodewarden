@@ -65,6 +65,10 @@ function TotpListIcon({ cipher }: { cipher: Cipher }) {
   const uri = firstCipherUri(cipher);
   const host = hostFromUri(uri);
   const [errored, setErrored] = useState(() => (host ? failedIconHosts.has(host) : false));
+  useEffect(() => {
+    setErrored(host ? failedIconHosts.has(host) : false);
+  }, [host]);
+
   if (host && !errored) {
     return (
       <img

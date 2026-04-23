@@ -14,7 +14,13 @@ export async function loadVaultSyncSnapshot(authedFetch: AuthedFetch): Promise<V
   if (existing) return existing;
 
   const request = (async () => {
-    const resp = await authedFetch('/api/sync');
+    const resp = await authedFetch('/api/sync', {
+      cache: 'no-store',
+      headers: {
+        'Cache-Control': 'no-cache',
+        Pragma: 'no-cache',
+      },
+    });
     if (!resp.ok) throw new Error('Failed to load vault');
     const body = await parseJson<VaultSyncResponse>(resp);
     return body || {};
