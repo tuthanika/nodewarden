@@ -173,13 +173,18 @@
     @apply grid justify-items-center gap-1 rounded-xl px-1 py-1.5 text-[11px] font-bold no-underline;
     color: #64748b;
     transition:
-      transform 220ms var(--ease-out-soft),
+      transform 180ms var(--ease-spring),
       background-color var(--dur-fast) var(--ease-smooth),
       color var(--dur-fast) var(--ease-smooth);
   }
 
   .mobile-tab:hover {
-    transform: translateY(-1px);
+    transform: translateY(-2px);
+  }
+
+  .mobile-tab:active {
+    transform: translateY(0) scale(0.95);
+    transition-duration: 80ms;
   }
 
   .mobile-tab.active {
@@ -206,11 +211,11 @@
     box-shadow: 0 18px 40px rgba(15, 23, 42, 0.16);
     visibility: hidden;
     pointer-events: none;
-    transform: translate3d(0, 10px, 0) scale(0.98);
+    transform: translate3d(0, 12px, 0) scale(0.97);
     transition:
-      opacity 220ms var(--ease-smooth),
-      transform 240ms var(--ease-out-soft),
-      visibility 220ms var(--ease-smooth);
+      opacity 200ms var(--ease-out-expo),
+      transform 260ms var(--ease-spring),
+      visibility 200ms var(--ease-out-expo);
   }
 
   .mobile-sidebar-sheet.open {
@@ -328,6 +333,15 @@
   .mobile-fab-trigger {
     @apply h-14 w-9 gap-0 rounded-full p-0 text-[0];
     box-shadow: 0 14px 30px rgba(37, 99, 235, 0.28);
+    transition: transform 180ms var(--ease-spring), box-shadow var(--dur-fast) var(--ease-out-soft);
+  }
+
+  .mobile-fab-trigger:hover {
+    transform: scale(1.06);
+  }
+
+  .mobile-fab-trigger:active {
+    transform: scale(0.94);
   }
 
   .mobile-fab-trigger .btn-icon {
@@ -369,11 +383,11 @@
     padding: 0 0 18px;
     visibility: hidden;
     pointer-events: none;
-    transform: translate3d(0, 18px, 0);
+    transform: translate3d(0, 20px, 0);
     transition:
-      opacity 220ms var(--ease-smooth),
-      transform 260ms var(--ease-out-soft),
-      visibility 220ms var(--ease-smooth);
+      opacity 200ms var(--ease-out-expo),
+      transform 280ms var(--ease-spring),
+      visibility 200ms var(--ease-out-expo);
   }
 
   .mobile-detail-sheet.open {

@@ -12,7 +12,9 @@
 .topbar {
   @apply flex h-[58px] items-center justify-between border-b px-[18px] text-slate-900 transition;
   border-color: var(--line-soft);
-  background: rgba(244, 248, 255, 0.82);
+  background: rgba(244, 248, 255, 0.78);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 .brand {
@@ -182,6 +184,7 @@
 
 .route-stage {
   @apply h-full min-h-0 overflow-auto;
+  animation: route-stage-in 220ms var(--ease-out-expo) both;
 }
 
 .mobile-sidebar-mask {

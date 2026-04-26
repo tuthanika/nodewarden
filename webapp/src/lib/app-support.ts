@@ -31,6 +31,25 @@ export function asText(value: unknown): string {
   return String(value);
 }
 
+function isImportTotpFieldName(value: unknown): boolean {
+  const name = asText(value).trim().toLowerCase().replace(/[\s_-]+/g, '');
+  return [
+    'totp',
+    'totpuri',
+    'otp',
+    'otpuri',
+    'otpurl',
+    'otpauth',
+    'onetimepassword',
+    'onetimepasscode',
+    '2fa',
+    'twofactor',
+    'twofactorauthentication',
+    'authenticator',
+    'verificationcode',
+  ].includes(name);
+}
+
 export function readInviteCodeFromUrl(): string {
   if (typeof window === 'undefined') return '';
 
@@ -162,6 +181,7 @@ export function importCipherToDraft(cipher: Record<string, unknown>, folderId: s
     draft.loginPassword = asText(login.password);
     draft.loginTotp = asText(login.totp);
     const urisRaw = Array.isArray(login.uris) ? login.uris : [];
+    const seenUris = new Set<string>();
     const uris = urisRaw
       .map((u) => {
         const row = (u || {}) as Record<string, unknown>;
@@ -176,8 +196,21 @@ export function importCipherToDraft(cipher: Record<string, unknown>, folderId: s
           ),
         };
       })
-      .filter((u) => !!u.uri);
+      .filter((u) => {
+        if (!u.uri) return false;
+        const key = u.uri.toLowerCase();
+        if (seenUris.has(key)) return false;
+        seenUris.add(key);
+        return true;
+      });
     draft.loginUris = uris.length ? uris : [{ uri: '', match: null, originalUri: '', extra: {} }];
+    if (!draft.loginTotp) {
+      const totpFieldIndex = draft.customFields.findIndex((field) => isImportTotpFieldName(field.label));
+      if (totpFieldIndex >= 0) {
+        draft.loginTotp = asText(draft.customFields[totpFieldIndex].value);
+        draft.customFields = draft.customFields.filter((_, index) => index !== totpFieldIndex);
+      }
+    }
     draft.loginFido2Credentials = Array.isArray(login.fido2Credentials)
       ? login.fido2Credentials.filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
       : [];

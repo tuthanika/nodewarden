@@ -93,6 +93,7 @@ export async function handleSync(request: Request, env: Env, userId: string): Pr
       id: folder.id,
       name: folder.name,
       revisionDate: folder.updatedAt,
+      creationDate: folder.createdAt,
       object: 'folder',
     });
   }

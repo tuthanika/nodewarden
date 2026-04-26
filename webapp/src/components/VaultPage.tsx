@@ -8,6 +8,7 @@ import {
   MOBILE_LAYOUT_QUERY,
   VAULT_LIST_OVERSCAN,
   VAULT_LIST_ROW_HEIGHT,
+  FOLDER_SORT_STORAGE_KEY,
   VAULT_SORT_STORAGE_KEY,
   cipherTypeKey,
   cipherTypeLabel,
@@ -72,6 +73,8 @@ export default function VaultPage(props: VaultPageProps) {
   const [searchComposing, setSearchComposing] = useState(false);
   const [sortMode, setSortMode] = useState<VaultSortMode>('edited');
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
+  const [folderSortMode, setFolderSortMode] = useState<VaultSortMode>('name');
+  const [folderSortMenuOpen, setFolderSortMenuOpen] = useState(false);
   const [sidebarFilter, setSidebarFilter] = useState<SidebarFilter>({ kind: 'all' });
   const [selectedCipherId, setSelectedCipherId] = useState('');
   const [selectedMap, setSelectedMap] = useState<Record<string, boolean>>({});
@@ -111,6 +114,7 @@ export default function VaultPage(props: VaultPageProps) {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const createMenuRef = useRef<HTMLDivElement | null>(null);
   const sortMenuRef = useRef<HTMLDivElement | null>(null);
+  const folderSortMenuRef = useRef<HTMLDivElement | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const listPanelRef = useRef<HTMLDivElement | null>(null);
   const sshSeedTicketRef = useRef(0);
@@ -164,6 +168,25 @@ export default function VaultPage(props: VaultPageProps) {
   }, [sortMode]);
 
   useEffect(() => {
+    try {
+      const saved = String(localStorage.getItem(FOLDER_SORT_STORAGE_KEY) || '').trim() as VaultSortMode;
+      if (saved === 'edited' || saved === 'created' || saved === 'name') {
+        setFolderSortMode(saved);
+      }
+    } catch {
+      // ignore storage read failures
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(FOLDER_SORT_STORAGE_KEY, folderSortMode);
+    } catch {
+      // ignore storage write failures
+    }
+  }, [folderSortMode]);
+
+  useEffect(() => {
     const node = listPanelRef.current;
     if (!node) return;
     const updateSize = () => setListViewportHeight(node.clientHeight || 0);
@@ -210,6 +233,25 @@ export default function VaultPage(props: VaultPageProps) {
       document.removeEventListener('keydown', onKeyDown);
     };
   }, [sortMenuOpen]);
+
+  useEffect(() => {
+    const onPointerDown = (event: Event) => {
+      if (!folderSortMenuOpen) return;
+      const target = event.target as Node | null;
+      if (folderSortMenuRef.current && target && !folderSortMenuRef.current.contains(target)) {
+        setFolderSortMenuOpen(false);
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setFolderSortMenuOpen(false);
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [folderSortMenuOpen]);
 
   useEffect(() => {
     setRepromptApprovedCipherId(null);
@@ -833,6 +875,9 @@ function folderName(id: string | null | undefined): string {
           busy={busy}
           isMobileLayout={isMobileLayout}
           mobileSidebarOpen={mobileSidebarOpen}
+          folderSortMode={folderSortMode}
+          folderSortMenuOpen={folderSortMenuOpen}
+          folderSortMenuRef={folderSortMenuRef}
           onCloseMobileSidebar={() => setMobileSidebarOpen(false)}
           onChangeFilter={setSidebarFilter}
           onOpenDeleteAllFolders={() => setDeleteAllFoldersOpen(true)}
@@ -842,6 +887,11 @@ function folderName(id: string | null | undefined): string {
             setRenameFolderName(folder.decName || folder.name || '');
           }}
           onOpenDeleteFolder={setPendingDeleteFolder}
+          onToggleFolderSortMenu={() => setFolderSortMenuOpen((open) => !open)}
+          onSelectFolderSortMode={(value) => {
+            setFolderSortMode(value);
+            setFolderSortMenuOpen(false);
+          }}
         />
 
         <VaultListPanel

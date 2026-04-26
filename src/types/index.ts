@@ -450,6 +450,7 @@ export interface FolderResponse {
   id: string;
   name: string;
   revisionDate: string;
+  creationDate: string;
   object: string;
 }
 

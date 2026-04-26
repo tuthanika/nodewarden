@@ -123,10 +123,12 @@ input[type='file'].input::file-selector-button:hover {
 
 .btn:hover:not(:disabled) {
   transform: translateY(-1px);
+  transition-duration: var(--dur-quick);
 }
 
 .btn:active:not(:disabled) {
-  transform: translateY(0) scale(0.985);
+  transform: translateY(0) scale(0.97);
+  transition-duration: var(--dur-instant);
 }
 
 .btn-icon {

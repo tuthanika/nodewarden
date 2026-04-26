@@ -57,6 +57,7 @@
 :root[data-theme='dark'] .backup-recommendation-linked-item,
 :root[data-theme='dark'] .backup-inline-suffix,
 :root[data-theme='dark'] .folder-delete-btn,
+:root[data-theme='dark'] .folder-sort-btn,
 :root[data-theme='dark'] .tree-label {
   color: var(--muted);
 }
@@ -142,4 +143,44 @@
 :root[data-theme='dark'] .totp-qr img {
   background: #ffffff;
   border-color: rgba(15, 23, 42, 0.12);
+}
+
+/* ── dark mode scrollbar ── */
+:root[data-theme='dark'] ::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--muted) 24%, transparent);
+}
+
+:root[data-theme='dark'] ::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--muted) 44%, transparent);
+}
+
+/* ── dark mode backdrop-filter ── */
+:root[data-theme='dark'] .dialog-mask {
+  backdrop-filter: blur(8px) brightness(0.7);
+  -webkit-backdrop-filter: blur(8px) brightness(0.7);
+}
+
+:root[data-theme='dark'] .topbar {
+  background: rgba(17, 24, 39, 0.78);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* ── dark mode depth ── */
+:root[data-theme='dark'] .card,
+:root[data-theme='dark'] .list-panel,
+:root[data-theme='dark'] .sidebar-block {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.20), 0 8px 24px rgba(0, 0, 0, 0.16);
+}
+
+:root[data-theme='dark'] .app-shell {
+  box-shadow: 0 4px 40px rgba(0, 0, 0, 0.30);
+}
+
+:root[data-theme='dark'] .list-item:hover {
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.24), 0 0 0 1px rgba(139, 184, 255, 0.12);
+}
+
+:root[data-theme='dark'] .list-item.active {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), inset 4px 0 0 rgba(139, 184, 255, 0.70);
 }

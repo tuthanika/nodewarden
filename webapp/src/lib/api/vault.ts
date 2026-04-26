@@ -563,9 +563,13 @@ async function encryptUris(
   mac: Uint8Array
 ): Promise<Array<Record<string, unknown>>> {
   const out: Array<Record<string, unknown>> = [];
+  const seen = new Set<string>();
   for (const entry of uris || []) {
     const trimmed = String(entry?.uri || '').trim();
     if (!trimmed) continue;
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
     const preservedExtra =
       entry?.extra && typeof entry.extra === 'object'
         ? { ...entry.extra }

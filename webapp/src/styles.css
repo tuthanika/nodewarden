@@ -10,7 +10,9 @@
 @import './styles/responsive.css';
 @import './styles/dark.css';
 
-/* Unified product polish: clean, flat, quiet surfaces across desktop, mobile, and dark mode. */
+/* Unified product polish: refined, smooth, comfortable surfaces across desktop, mobile, and dark mode. */
+
+/* ── surface consistency ── */
 .app-shell,
 .auth-card,
 .dialog-card,
@@ -48,69 +50,7 @@
   border-color: var(--line-soft);
 }
 
-.brand-logo,
-.brand-wordmark,
-.standalone-brand-logo,
-.standalone-brand-wordmark {
-  filter: none;
-}
-
-.btn,
-.input,
-.search-input,
-.side-link,
-.mobile-tab,
-.tree-btn,
-.list-item,
-.dialog-card,
-.mobile-sidebar-sheet,
-.mobile-detail-sheet,
-.create-menu,
-.sort-menu,
-.toast-item {
-  transition-duration: 150ms;
-}
-
-.btn:hover:not(:disabled),
-.side-link:hover,
-.mobile-tab:hover,
-.tree-btn:hover,
-.list-item:hover,
-.create-menu-item:hover,
-.sort-menu-item:hover,
-.folder-delete-btn:hover,
-.eye-btn:hover,
-.password-toggle:hover {
-  transform: none;
-}
-
-.btn-primary {
-  background: var(--primary);
-  border-color: transparent;
-  color: #ffffff;
-  box-shadow: none;
-}
-
-.btn-primary:hover {
-  background: var(--primary-hover);
-  box-shadow: none;
-}
-
-.btn-secondary,
-.btn-danger {
-  box-shadow: none;
-}
-
-.btn-secondary:hover,
-.side-link:hover,
-.mobile-tab:hover,
-.tree-btn:hover,
-.list-item:hover,
-.backup-destination-item:hover,
-.mobile-settings-link:hover {
-  background: var(--panel-subtle);
-}
-
+/* ── active states ── */
 .side-link.active,
 .mobile-tab.active,
 .tree-btn.active,
@@ -122,32 +62,9 @@
   background: color-mix(in srgb, var(--primary) 12%, var(--panel));
   border-color: color-mix(in srgb, var(--primary) 32%, var(--line));
   color: var(--primary-strong);
-  box-shadow: none;
 }
 
-.list-item::before,
-.topbar-actions .btn::before,
-.user-chip::before,
-.side-link::before,
-.mobile-tab::before {
-  display: none;
-}
-
-.stagger-item {
-  opacity: 1;
-  animation: none;
-}
-
-.dialog-mask {
-  background: rgba(15, 23, 42, 0.42);
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-}
-
-.dialog-mask.warning {
-  background: rgba(15, 23, 42, 0.56);
-}
-
+/* ── danger / warning panels (cosmetic resets only) ── */
 .dialog-card.warning,
 :root[data-theme='dark'] .dialog-card.warning {
   background: var(--panel);
@@ -159,7 +76,6 @@
   border-radius: var(--radius-lg);
   background: color-mix(in srgb, var(--danger) 12%, var(--panel));
   color: var(--danger);
-  box-shadow: none;
 }
 
 .dialog-warning-kicker {
@@ -171,25 +87,10 @@
 :root[data-theme='dark'] .dialog-message.warning {
   background: color-mix(in srgb, var(--danger) 8%, var(--panel));
   border-color: color-mix(in srgb, var(--danger) 20%, var(--line));
-  box-shadow: none;
   color: var(--text);
 }
 
-.mobile-sidebar-sheet,
-.mobile-detail-sheet {
-  transform: none;
-  box-shadow: var(--shadow-md);
-}
-
-.mobile-sidebar-sheet.open,
-.mobile-detail-sheet.open {
-  transform: none;
-}
-
-.mobile-fab-trigger {
-  box-shadow: var(--shadow-md);
-}
-
+/* ── theme switch ── */
 .theme-switch-slider,
 .theme-switch-input:checked + .theme-switch-slider,
 :root[data-theme='dark'] .theme-switch-slider {
@@ -203,6 +104,7 @@
   box-shadow: var(--shadow-sm);
 }
 
+/* ── dark mode surface resets ── */
 :root[data-theme='dark'] .app-shell,
 :root[data-theme='dark'] .auth-card,
 :root[data-theme='dark'] .dialog-card,
@@ -244,21 +146,18 @@
   background: var(--panel);
   border-color: var(--line);
   color: var(--primary);
-  box-shadow: none;
 }
 
 :root[data-theme='dark'] .btn-primary {
   background: var(--primary);
   border-color: transparent;
   color: #08111f;
-  box-shadow: none;
 }
 
 :root[data-theme='dark'] .btn-danger {
   background: var(--panel);
   border-color: color-mix(in srgb, var(--danger) 36%, var(--line));
   color: var(--danger);
-  box-shadow: none;
 }
 
 :root[data-theme='dark'] .list-item:hover,

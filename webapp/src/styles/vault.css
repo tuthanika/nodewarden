@@ -135,6 +135,27 @@
   background: #dbeafe;
 }
 
+.folder-sort-btn {
+  @apply inline-flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-md border-0 bg-transparent p-0;
+  border: none;
+  color: #64748b;
+  transition:
+    color var(--dur-fast) var(--ease-smooth),
+    background-color var(--dur-fast) var(--ease-smooth),
+    transform var(--dur-fast) var(--ease-out-soft);
+}
+
+.folder-sort-btn:hover {
+  color: #1d4ed8;
+  background: #dbeafe;
+  transform: scale(1.06);
+}
+
+.folder-sort-btn.active {
+  color: #175ddc;
+  background: #e9f1ff;
+}
+
 .list-col {
   @apply flex min-h-0 min-w-0 max-w-[540px] flex-col;
 }
@@ -313,8 +334,8 @@
 
 .list-item:hover {
   background: #fcfdff;
-  border-color: rgba(148, 163, 184, 0.26);
-  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.05);
+  border-color: rgba(37, 99, 235, 0.18);
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.06), 0 0 0 1px rgba(37, 99, 235, 0.04);
 }
 
 .list-item:hover::before {
@@ -470,23 +491,21 @@
 }
 
 .detail-col > .card {
-  @apply opacity-100;
-  animation: none;
+  animation: surface-enter 280ms var(--ease-out-soft) both;
 }
 
 .detail-col > .card:nth-of-type(1) { animation-delay: 0ms; }
-.detail-col > .card:nth-of-type(2) { animation-delay: 0ms; }
-.detail-col > .card:nth-of-type(3) { animation-delay: 0ms; }
-.detail-col > .card:nth-of-type(4) { animation-delay: 0ms; }
-.detail-col > .card:nth-of-type(5) { animation-delay: 0ms; }
+.detail-col > .card:nth-of-type(2) { animation-delay: 40ms; }
+.detail-col > .card:nth-of-type(3) { animation-delay: 80ms; }
+.detail-col > .card:nth-of-type(4) { animation-delay: 120ms; }
+.detail-col > .card:nth-of-type(5) { animation-delay: 160ms; }
 
 .detail-switch-stage {
-  animation: none;
+  animation: fade-in 160ms var(--ease-out-soft) both;
 }
 
 .detail-switch-stage > .card {
-  @apply opacity-100;
-  animation: none;
+  animation: surface-enter 280ms var(--ease-out-soft) both;
 }
 
 .card h4 {

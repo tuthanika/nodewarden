@@ -25,6 +25,8 @@ export interface Folder {
   id: string;
   name: string;
   decName?: string;
+  revisionDate?: string;
+  creationDate?: string;
 }
 
 export interface CipherLoginUri {
