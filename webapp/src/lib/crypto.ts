@@ -22,6 +22,49 @@ export function toBufferSource(bytes: Uint8Array): ArrayBuffer {
   return new Uint8Array(bytes).buffer;
 }
 
+const hmacSha256KeyCache = new WeakMap<Uint8Array, Promise<CryptoKey>>();
+const aesCbcEncryptKeyCache = new WeakMap<Uint8Array, Promise<CryptoKey>>();
+const aesCbcDecryptKeyCache = new WeakMap<Uint8Array, Promise<CryptoKey>>();
+
+function getCachedCryptoKey(
+  cache: WeakMap<Uint8Array, Promise<CryptoKey>>,
+  keyBytes: Uint8Array,
+  create: () => Promise<CryptoKey>
+): Promise<CryptoKey> {
+  const cached = cache.get(keyBytes);
+  if (cached) return cached;
+  const pending = create().catch((error) => {
+    cache.delete(keyBytes);
+    throw error;
+  });
+  cache.set(keyBytes, pending);
+  return pending;
+}
+
+function getHmacSha256Key(keyBytes: Uint8Array): Promise<CryptoKey> {
+  return getCachedCryptoKey(
+    hmacSha256KeyCache,
+    keyBytes,
+    () => crypto.subtle.importKey('raw', toBufferSource(keyBytes), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
+  );
+}
+
+function getAesCbcEncryptKey(keyBytes: Uint8Array): Promise<CryptoKey> {
+  return getCachedCryptoKey(
+    aesCbcEncryptKeyCache,
+    keyBytes,
+    () => crypto.subtle.importKey('raw', toBufferSource(keyBytes), { name: 'AES-CBC' }, false, ['encrypt'])
+  );
+}
+
+function getAesCbcDecryptKey(keyBytes: Uint8Array): Promise<CryptoKey> {
+  return getCachedCryptoKey(
+    aesCbcDecryptKeyCache,
+    keyBytes,
+    () => crypto.subtle.importKey('raw', toBufferSource(keyBytes), { name: 'AES-CBC' }, false, ['decrypt'])
+  );
+}
+
 function constantTimeEqual(a: Uint8Array, b: Uint8Array): boolean {
   if (a.length !== b.length) return false;
   let diff = 0;
@@ -91,17 +134,17 @@ export async function hkdf(
 }
 
 async function hmacSha256(keyBytes: Uint8Array, dataBytes: Uint8Array): Promise<Uint8Array> {
-  const key = await crypto.subtle.importKey('raw', toBufferSource(keyBytes), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const key = await getHmacSha256Key(keyBytes);
   return new Uint8Array(await crypto.subtle.sign('HMAC', key, toBufferSource(dataBytes)));
 }
 
 async function encryptAesCbc(data: Uint8Array, key: Uint8Array, iv: Uint8Array): Promise<Uint8Array> {
-  const cryptoKey = await crypto.subtle.importKey('raw', toBufferSource(key), { name: 'AES-CBC' }, false, ['encrypt']);
+  const cryptoKey = await getAesCbcEncryptKey(key);
   return new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-CBC', iv: toBufferSource(iv) }, cryptoKey, toBufferSource(data)));
 }
 
 async function decryptAesCbc(data: Uint8Array, key: Uint8Array, iv: Uint8Array): Promise<Uint8Array> {
-  const cryptoKey = await crypto.subtle.importKey('raw', toBufferSource(key), { name: 'AES-CBC' }, false, ['decrypt']);
+  const cryptoKey = await getAesCbcDecryptKey(key);
   return new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-CBC', iv: toBufferSource(iv) }, cryptoKey, toBufferSource(data)));
 }
 

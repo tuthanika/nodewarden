@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import {
   CreditCard,
   FileKey2,
@@ -12,7 +12,7 @@ import { t } from '@/lib/i18n';
 import type { Cipher, CipherAttachment, CustomFieldType, VaultDraft, VaultDraftField, VaultDraftLoginUri } from '@/lib/types';
 
 export type TypeFilter = 'login' | 'card' | 'identity' | 'note' | 'ssh';
-export type VaultSortMode = 'manual' | 'edited' | 'created' | 'name';
+export type VaultSortMode = 'edited' | 'created' | 'name';
 export type SidebarFilter =
   | { kind: 'all' }
   | { kind: 'favorite' }
@@ -36,18 +36,16 @@ export const CREATE_TYPE_OPTIONS: TypeOption[] = [
 ];
 
 export const VAULT_SORT_STORAGE_KEY = 'nodewarden.vault.sort.v1';
-export const VAULT_ORDER_STORAGE_KEY = 'nodewarden.vault-order.v1';
 export const FOLDER_SORT_STORAGE_KEY = 'nodewarden.folder-sort.v1';
 export const MOBILE_LAYOUT_QUERY = '(max-width: 1180px)';
 export const VAULT_LIST_ROW_HEIGHT = 74;
 export const VAULT_LIST_OVERSCAN = 10;
 export const VAULT_SORT_OPTIONS: Array<{ value: VaultSortMode; label: string }> = [
-  { value: 'manual', label: t('txt_sort_manual') },
   { value: 'edited', label: t('txt_sort_last_edited') },
   { value: 'created', label: t('txt_sort_created') },
   { value: 'name', label: t('txt_sort_name') },
 ];
-export const FOLDER_SORT_OPTIONS: Array<{ value: Exclude<VaultSortMode, 'manual'>; label: string }> = [
+export const FOLDER_SORT_OPTIONS: Array<{ value: VaultSortMode; label: string }> = [
   { value: 'edited', label: t('txt_sort_last_edited') },
   { value: 'created', label: t('txt_sort_created') },
   { value: 'name', label: t('txt_sort_name') },
@@ -436,44 +434,101 @@ export function firstPasskeyCreationTime(cipher: Cipher | null): string | null {
 }
 
 const failedIconHosts = new Set<string>();
+const loadedIconHosts = new Set<string>();
+const ICON_LOAD_ROOT_MARGIN = '180px 0px';
 
 export function VaultListIcon({ cipher }: { cipher: Cipher }) {
   const host = useMemo(() => hostFromUri(firstCipherUri(cipher)), [cipher]);
+  const iconStackRef = useRef<HTMLSpanElement | null>(null);
   const [errored, setErrored] = useState(() => (host ? failedIconHosts.has(host) : false));
-  const [loaded, setLoaded] = useState(false);
+  const [shouldLoad, setShouldLoad] = useState(() => {
+    if (!host) return true;
+    if (loadedIconHosts.has(host)) return true;
+    return false;
+  });
   const markIconError = () => {
-    if (host) failedIconHosts.add(host);
+    if (host) {
+      failedIconHosts.add(host);
+      loadedIconHosts.delete(host);
+    }
     setErrored(true);
   };
-  const syncCachedIconState = (img: HTMLImageElement | null) => {
+  const hideFallback = () => {
+    if (host) loadedIconHosts.add(host);
+    const stack = iconStackRef.current;
+    if (stack) {
+      const fallback = stack.querySelector('.list-icon-fallback') as HTMLElement | null;
+      if (fallback) fallback.style.display = 'none';
+    }
+  };
+  const handleImgRef = (img: HTMLImageElement | null) => {
     if (!img || !img.complete) return;
-    if (img.naturalWidth > 0) {
-      setLoaded(true);
+    if (img.naturalWidth > 0) hideFallback();
+  };
+
+  useEffect(() => {
+    if (!host) {
+      setErrored(false);
+      setShouldLoad(true);
+    } else if (failedIconHosts.has(host)) {
+      setErrored(true);
+      setShouldLoad(false);
+    } else {
+      setErrored(false);
+      setShouldLoad(loadedIconHosts.has(host));
+    }
+    const fallback = iconStackRef.current?.querySelector('.list-icon-fallback') as HTMLElement | null;
+    if (fallback) fallback.style.display = '';
+  }, [host]);
+
+  useEffect(() => {
+    if (!host || errored || shouldLoad) return;
+    const node = iconStackRef.current;
+    if (!node) return;
+    if (typeof IntersectionObserver !== 'function') {
+      setShouldLoad(true);
       return;
     }
-    markIconError();
-  };
-  useEffect(() => {
-    setErrored(host ? failedIconHosts.has(host) : false);
-    setLoaded(false);
-  }, [host]);
+
+    let cancelled = false;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting && entry.intersectionRatio <= 0) continue;
+          if (!cancelled) setShouldLoad(true);
+          observer.disconnect();
+          break;
+        }
+      },
+      { rootMargin: ICON_LOAD_ROOT_MARGIN }
+    );
+
+    observer.observe(node);
+    return () => {
+      cancelled = true;
+      observer.disconnect();
+    };
+  }, [host, errored, shouldLoad]);
 
   if (host && !errored) {
     return (
-      <span className="list-icon-stack">
-        <span className={`list-icon-fallback ${loaded ? 'hidden' : ''}`}>
+      <span className="list-icon-stack" ref={iconStackRef}>
+        <span className="list-icon-fallback">
           <Globe size={18} />
         </span>
-        <img
-          className={`list-icon ${loaded ? 'loaded' : ''}`}
-          src={websiteIconUrl(host)}
-          alt=""
-          loading="lazy"
-          referrerPolicy="no-referrer"
-          ref={syncCachedIconState}
-          onLoad={() => setLoaded(true)}
-          onError={markIconError}
-        />
+        {shouldLoad && (
+          <img
+            className="list-icon loaded"
+            src={websiteIconUrl(host)}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            referrerPolicy="no-referrer"
+            ref={handleImgRef}
+            onLoad={hideFallback}
+            onError={markIconError}
+          />
+        )}
       </span>
     );
   }

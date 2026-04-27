@@ -1,26 +1,7 @@
-import type { JSX, RefObject } from 'preact';
+import type { RefObject } from 'preact';
+import { memo } from 'preact/compat';
 import { createPortal } from 'preact/compat';
-import { useMemo, useState } from 'preact/hooks';
-import { Archive, ArrowUpDown, Check, CheckCheck, FolderInput, GripVertical, Plus, RefreshCw, RotateCcw, Trash2, X } from 'lucide-preact';
-import {
-  closestCenter,
-  DndContext,
-  DragOverlay,
-  type DragEndEvent,
-  type DragStartEvent,
-  PointerSensor,
-  TouchSensor,
-  useSensor,
-  useSensors,
-} from '@dnd-kit/core';
-import {
-  defaultAnimateLayoutChanges,
-  type AnimateLayoutChanges,
-  SortableContext,
-  useSortable,
-  verticalListSortingStrategy,
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
+import { Archive, ArrowUpDown, Check, CheckCheck, FolderInput, Plus, RefreshCw, RotateCcw, Trash2, X } from 'lucide-preact';
 import type { Cipher } from '@/lib/types';
 import { t } from '@/lib/i18n';
 import {
@@ -55,7 +36,6 @@ interface VaultListPanelProps {
   sidebarFilter: SidebarFilter;
   isMobileLayout: boolean;
   mobileFabVisible: boolean;
-  canReorder: boolean;
   createMenuOpen: boolean;
   createMenuRef: RefObject<HTMLDivElement>;
   sortMenuRef: RefObject<HTMLDivElement>;
@@ -77,47 +57,39 @@ interface VaultListPanelProps {
   onBulkUnarchive: () => void;
   onOpenMove: () => void;
   onClearSelection: () => void;
-  onReorderCipher: (activeId: string, overId: string) => void;
   onScroll: (top: number) => void;
   onToggleSelected: (cipherId: string, checked: boolean) => void;
   onSelectCipher: (cipherId: string) => void;
   listSubtitle: (cipher: Cipher) => string;
 }
 
-interface SortableCipherListItemProps {
+interface CipherListItemProps {
   cipher: Cipher;
   selected: boolean;
   checked: boolean;
-  canReorder: boolean;
   subtitle: string;
   onToggleSelected: (cipherId: string, checked: boolean) => void;
   onSelectCipher: (cipherId: string) => void;
 }
 
-interface CipherListItemBodyProps {
-  cipher: Cipher;
-  checked: boolean;
-  canReorder: boolean;
-  subtitle: string;
-  dragButtonRef?: (element: HTMLButtonElement | null) => void;
-  dragButtonAttributes?: JSX.HTMLAttributes<HTMLButtonElement>;
-  dragButtonListeners?: Record<string, unknown>;
-  onToggleSelected?: (cipherId: string, checked: boolean) => void;
-  onSelectCipher?: (cipherId: string) => void;
-}
-
-function CipherListItemBody(props: CipherListItemBodyProps) {
+const CipherListItem = memo(function CipherListItem(props: CipherListItemProps) {
   return (
-    <>
+    <div
+      className={`list-item ${props.selected ? 'active' : ''}`}
+      onClick={(event) => {
+        const target = event.target as HTMLElement;
+        if (target.closest('.row-check')) return;
+        props.onSelectCipher(props.cipher.id);
+      }}
+    >
       <input
         type="checkbox"
         className="row-check"
         checked={props.checked}
-        disabled={!props.onToggleSelected}
         onClick={(event) => event.stopPropagation()}
-        onInput={(e) => props.onToggleSelected?.(props.cipher.id, (e.currentTarget as HTMLInputElement).checked)}
+        onInput={(e) => props.onToggleSelected(props.cipher.id, (e.currentTarget as HTMLInputElement).checked)}
       />
-      <button type="button" className="row-main" disabled={!props.onSelectCipher} onClick={() => props.onSelectCipher?.(props.cipher.id)}>
+      <button type="button" className="row-main" onClick={() => props.onSelectCipher(props.cipher.id)}>
         <div className="list-icon-wrap">
           <VaultListIcon cipher={props.cipher} />
         </div>
@@ -128,126 +100,11 @@ function CipherListItemBody(props: CipherListItemBodyProps) {
           <span className="list-sub" title={props.subtitle}>{props.subtitle}</span>
         </div>
       </button>
-      <button
-        type="button"
-        ref={props.dragButtonRef}
-        className="btn btn-secondary small cipher-drag-btn"
-        title={t('txt_drag_to_reorder')}
-        aria-label={t('txt_drag_to_reorder')}
-        disabled={!props.canReorder}
-        onClick={(event) => event.stopPropagation()}
-        {...props.dragButtonAttributes}
-        {...props.dragButtonListeners}
-      >
-        <GripVertical size={14} className="btn-icon" />
-      </button>
-    </>
-  );
-}
-
-const animateLayoutChanges: AnimateLayoutChanges = (args) =>
-  args.isSorting || args.wasDragging ? defaultAnimateLayoutChanges(args) : false;
-
-function SortableCipherListItem(props: SortableCipherListItemProps) {
-  const { attributes, listeners, setActivatorNodeRef, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: props.cipher.id,
-    disabled: !props.canReorder,
-    animateLayoutChanges,
-  });
-  const dragButtonAttributes = attributes as JSX.HTMLAttributes<HTMLButtonElement>;
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  };
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={`list-item ${props.selected ? 'active' : ''}${isDragging ? ' is-dragging is-sorting-source' : ''}`}
-      onClick={(event) => {
-        const target = event.target as HTMLElement;
-        if (target.closest('.row-check') || target.closest('.cipher-drag-btn')) return;
-        props.onSelectCipher(props.cipher.id);
-      }}
-    >
-      <CipherListItemBody
-        cipher={props.cipher}
-        checked={props.checked}
-        canReorder={props.canReorder}
-        subtitle={props.subtitle}
-        dragButtonRef={setActivatorNodeRef}
-        dragButtonAttributes={dragButtonAttributes}
-        dragButtonListeners={listeners}
-        onToggleSelected={props.onToggleSelected}
-        onSelectCipher={props.onSelectCipher}
-      />
     </div>
   );
-}
-
-function PlainCipherListItem(props: SortableCipherListItemProps) {
-  return (
-    <div
-      className={`list-item ${props.selected ? 'active' : ''}`}
-      onClick={(event) => {
-        const target = event.target as HTMLElement;
-        if (target.closest('.row-check') || target.closest('.cipher-drag-btn')) return;
-        props.onSelectCipher(props.cipher.id);
-      }}
-    >
-      <CipherListItemBody
-        cipher={props.cipher}
-        checked={props.checked}
-        canReorder={false}
-        subtitle={props.subtitle}
-        onToggleSelected={props.onToggleSelected}
-        onSelectCipher={props.onSelectCipher}
-      />
-    </div>
-  );
-}
+});
 
 export default function VaultListPanel(props: VaultListPanelProps) {
-  const [activeDragId, setActiveDragId] = useState('');
-  const [activeDragWidth, setActiveDragWidth] = useState<number | null>(null);
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 6,
-      },
-    }),
-    useSensor(TouchSensor, {
-      activationConstraint: {
-        delay: 120,
-        tolerance: 8,
-      },
-    })
-  );
-
-  const sortableItems = useMemo(() => props.visibleCiphers.map((cipher) => cipher.id), [props.visibleCiphers]);
-  const renderedCiphers = props.visibleCiphers;
-  const activeDragCipher = activeDragId ? props.filteredCiphers.find((cipher) => cipher.id === activeDragId) || null : null;
-
-  const handleDragStart = (event: DragStartEvent) => {
-    setActiveDragId(String(event.active.id));
-    setActiveDragWidth(event.active.rect.current.initial?.width || null);
-  };
-
-  const handleDragEnd = (event: DragEndEvent) => {
-    const activeId = String(event.active.id);
-    const overId = event.over ? String(event.over.id) : '';
-    setActiveDragId('');
-    setActiveDragWidth(null);
-    if (!overId || activeId === overId) return;
-    props.onReorderCipher(activeId, overId);
-  };
-
-  const handleDragCancel = () => {
-    setActiveDragId('');
-    setActiveDragWidth(null);
-  };
-
   const createMenu = (
     <div className="create-menu-wrap mobile-fab-wrap" ref={props.createMenuRef}>
       <button
@@ -271,22 +128,6 @@ export default function VaultListPanel(props: VaultListPanelProps) {
       )}
     </div>
   );
-
-  const listItems = renderedCiphers.map((cipher) => {
-    const ItemComponent = props.canReorder ? SortableCipherListItem : PlainCipherListItem;
-    return (
-      <ItemComponent
-        key={cipher.id}
-        cipher={cipher}
-        selected={props.selectedCipherId === cipher.id}
-        checked={!!props.selectedMap[cipher.id]}
-        canReorder={props.canReorder}
-        subtitle={props.listSubtitle(cipher)}
-        onToggleSelected={props.onToggleSelected}
-        onSelectCipher={props.onSelectCipher}
-      />
-    );
-  });
 
   return (
     <section className="list-col">
@@ -395,25 +236,17 @@ export default function VaultListPanel(props: VaultListPanelProps) {
       <div className="list-panel" ref={props.listPanelRef} onScroll={(event) => props.onScroll((event.currentTarget as HTMLDivElement).scrollTop)}>
         {!!props.filteredCiphers.length && (
           <div style={{ paddingTop: `${props.virtualRange.padTop}px`, paddingBottom: `${props.virtualRange.padBottom}px` }}>
-            {props.canReorder ? (
-              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd} onDragCancel={handleDragCancel}>
-                <SortableContext items={sortableItems} strategy={verticalListSortingStrategy}>
-                  {listItems}
-                </SortableContext>
-                <DragOverlay adjustScale={false}>
-                  {activeDragCipher ? (
-                    <div className="list-item cipher-drag-overlay" style={activeDragWidth ? { width: `${activeDragWidth}px` } : undefined}>
-                      <CipherListItemBody
-                        cipher={activeDragCipher}
-                        checked={!!props.selectedMap[activeDragCipher.id]}
-                        canReorder={true}
-                        subtitle={props.listSubtitle(activeDragCipher)}
-                      />
-                    </div>
-                  ) : null}
-                </DragOverlay>
-              </DndContext>
-            ) : listItems}
+            {props.visibleCiphers.map((cipher) => (
+              <CipherListItem
+                key={cipher.id}
+                cipher={cipher}
+                selected={props.selectedCipherId === cipher.id}
+                checked={!!props.selectedMap[cipher.id]}
+                subtitle={props.listSubtitle(cipher)}
+                onToggleSelected={props.onToggleSelected}
+                onSelectCipher={props.onSelectCipher}
+              />
+            ))}
           </div>
         )}
         {!props.filteredCiphers.length && <div className="empty">{t('txt_no_items')}</div>}

@@ -33,7 +33,10 @@ const TOTP_PERIOD_SECONDS = 30;
 const TOTP_RING_RADIUS = 14;
 const TOTP_RING_CIRCUMFERENCE = 2 * Math.PI * TOTP_RING_RADIUS;
 const TOTP_ORDER_STORAGE_KEY = 'nodewarden.totp-order';
+const TOTP_REFRESH_BATCH_SIZE = 16;
+const ICON_LOAD_ROOT_MARGIN = '180px 0px';
 const failedIconHosts = new Set<string>();
+const loadedIconHosts = new Set<string>();
 
 function getTotpTimeState(): { windowId: number; remain: number } {
   const epoch = Math.floor(Date.now() / 1000);
@@ -71,41 +74,96 @@ function hostFromUri(uri: string): string {
 
 function TotpListIcon({ cipher }: { cipher: Cipher }) {
   const host = useMemo(() => hostFromUri(firstCipherUri(cipher)), [cipher]);
+  const iconStackRef = useRef<HTMLSpanElement | null>(null);
   const [errored, setErrored] = useState(() => (host ? failedIconHosts.has(host) : false));
-  const [loaded, setLoaded] = useState(false);
+  const [shouldLoad, setShouldLoad] = useState(() => {
+    if (!host) return true;
+    if (loadedIconHosts.has(host)) return true;
+    return false;
+  });
   const markIconError = () => {
-    if (host) failedIconHosts.add(host);
+    if (host) {
+      failedIconHosts.add(host);
+      loadedIconHosts.delete(host);
+    }
     setErrored(true);
   };
-  const syncCachedIconState = (img: HTMLImageElement | null) => {
+  const hideFallback = () => {
+    if (host) loadedIconHosts.add(host);
+    const stack = iconStackRef.current;
+    if (stack) {
+      const fallback = stack.querySelector('.list-icon-fallback') as HTMLElement | null;
+      if (fallback) fallback.style.display = 'none';
+    }
+  };
+  const handleImgRef = (img: HTMLImageElement | null) => {
     if (!img || !img.complete) return;
-    if (img.naturalWidth > 0) {
-      setLoaded(true);
+    if (img.naturalWidth > 0) hideFallback();
+  };
+
+  useEffect(() => {
+    if (!host) {
+      setErrored(false);
+      setShouldLoad(true);
+    } else if (failedIconHosts.has(host)) {
+      setErrored(true);
+      setShouldLoad(false);
+    } else {
+      setErrored(false);
+      setShouldLoad(loadedIconHosts.has(host));
+    }
+    const fallback = iconStackRef.current?.querySelector('.list-icon-fallback') as HTMLElement | null;
+    if (fallback) fallback.style.display = '';
+  }, [host]);
+
+  useEffect(() => {
+    if (!host || errored || shouldLoad) return;
+    const node = iconStackRef.current;
+    if (!node) return;
+    if (typeof IntersectionObserver !== 'function') {
+      setShouldLoad(true);
       return;
     }
-    markIconError();
-  };
-  useEffect(() => {
-    setErrored(host ? failedIconHosts.has(host) : false);
-    setLoaded(false);
-  }, [host]);
+
+    let cancelled = false;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting && entry.intersectionRatio <= 0) continue;
+          if (!cancelled) setShouldLoad(true);
+          observer.disconnect();
+          break;
+        }
+      },
+      { rootMargin: ICON_LOAD_ROOT_MARGIN }
+    );
+
+    observer.observe(node);
+    return () => {
+      cancelled = true;
+      observer.disconnect();
+    };
+  }, [host, errored, shouldLoad]);
 
   if (host && !errored) {
     return (
-      <span className="list-icon-stack">
-        <span className={`list-icon-fallback ${loaded ? 'hidden' : ''}`}>
+      <span className="list-icon-stack" ref={iconStackRef}>
+        <span className="list-icon-fallback">
           <Globe size={18} />
         </span>
-        <img
-          className={`list-icon ${loaded ? 'loaded' : ''}`}
-          src={websiteIconUrl(host)}
-          alt=""
-          loading="lazy"
-          referrerPolicy="no-referrer"
-          ref={syncCachedIconState}
-          onLoad={() => setLoaded(true)}
-          onError={markIconError}
-        />
+        {shouldLoad && (
+          <img
+            className="list-icon loaded"
+            src={websiteIconUrl(host)}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            referrerPolicy="no-referrer"
+            ref={handleImgRef}
+            onLoad={hideFallback}
+            onError={markIconError}
+          />
+        )}
       </span>
     );
   }
@@ -294,17 +352,41 @@ export default function TotpCodesPage(props: TotpCodesPageProps) {
 
     const refreshCodes = async () => {
       const runId = ++activeRun;
-      const entries = await Promise.all(
-        totpItems.map(async (cipher) => {
-          try {
-            const next = await calcTotpNow(cipher.login?.decTotp || '');
-            return [cipher.id, next?.code || null] as const;
-          } catch {
-            return [cipher.id, null] as const;
-          }
-        })
-      );
-      if (!stopped && runId === activeRun) setTotpCodes(Object.fromEntries(entries));
+      const nextCodes: Record<string, string | null> = {};
+      for (let start = 0; start < totpItems.length; start += TOTP_REFRESH_BATCH_SIZE) {
+        if (stopped || runId !== activeRun) return;
+        const batch = totpItems.slice(start, start + TOTP_REFRESH_BATCH_SIZE);
+        const entries = await Promise.all(
+          batch.map(async (cipher) => {
+            try {
+              const next = await calcTotpNow(cipher.login?.decTotp || '');
+              return [cipher.id, next?.code || null] as const;
+            } catch {
+              return [cipher.id, null] as const;
+            }
+          })
+        );
+        for (const [id, code] of entries) nextCodes[id] = code;
+        if (start + TOTP_REFRESH_BATCH_SIZE < totpItems.length) {
+          await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+        }
+      }
+      if (stopped || runId !== activeRun) return;
+      setTotpCodes((prev) => {
+        let changed = false;
+        const next: Record<string, string | null> = { ...prev };
+        for (const id of Object.keys(next)) {
+          if (id in nextCodes) continue;
+          delete next[id];
+          changed = true;
+        }
+        for (const [id, code] of Object.entries(nextCodes)) {
+          if (next[id] === code) continue;
+          next[id] = code;
+          changed = true;
+        }
+        return changed ? next : prev;
+      });
     };
 
     const tick = () => {

@@ -43,6 +43,10 @@ interface VaultSidebarProps {
 }
 
 export default function VaultSidebar(props: VaultSidebarProps) {
+  const nameCollator = useMemo(
+    () => new Intl.Collator(undefined, { sensitivity: 'base', numeric: true }),
+    []
+  );
   const sortedFolders = useMemo(() => {
     const sorted = [...props.folders];
     sorted.sort((a, b) => {
@@ -67,14 +71,14 @@ export default function VaultSidebar(props: VaultSidebarProps) {
         }
         if (aValid !== bValid) return aValid ? -1 : 1;
       }
-      const nameDiff = String(a.decName || a.name || '').localeCompare(
-        String(b.decName || b.name || ''), undefined, { sensitivity: 'base', numeric: true }
+      const nameDiff = nameCollator.compare(
+        String(a.decName || a.name || ''), String(b.decName || b.name || '')
       );
       if (nameDiff !== 0) return nameDiff;
       return String(a.id || '').localeCompare(String(b.id || ''));
     });
     return sorted;
-  }, [props.folders, props.folderSortMode]);
+  }, [props.folders, props.folderSortMode, nameCollator]);
 
   return (
     <aside className={`sidebar ${props.isMobileLayout ? 'mobile-sidebar-sheet' : ''} ${props.isMobileLayout && props.mobileSidebarOpen ? 'open' : ''}`}>

@@ -653,7 +653,7 @@ const messages: Record<Locale, Record<string, string>> = {
     txt_clear_search: "Clear search",
     txt_clear_search_esc: "Clear search (Esc)",
     txt_sort: "Sort",
-    txt_sort_manual: "Custom",
+
     txt_sort_last_edited: "Modified",
     txt_sort_created: "Created",
     txt_sort_name: "A-Z",
@@ -1413,7 +1413,7 @@ const zhCNOverrides: Record<string, string> = {
   txt_security_code: '安全码',
   txt_security_code_cvv: '安全码 (CVV)',
   txt_sort: '排序',
-  txt_sort_manual: '自定义',
+
   txt_sort_last_edited: '最近修改',
   txt_sort_created: '最近创建',
   txt_sort_name: 'A-Z',

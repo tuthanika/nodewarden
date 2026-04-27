@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import VaultDialogs from '@/components/vault/VaultDialogs';
 import VaultDetailView from '@/components/vault/VaultDetailView';
 import VaultEditor from '@/components/vault/VaultEditor';
@@ -8,7 +8,6 @@ import {
   MOBILE_LAYOUT_QUERY,
   VAULT_LIST_OVERSCAN,
   VAULT_LIST_ROW_HEIGHT,
-  VAULT_ORDER_STORAGE_KEY,
   FOLDER_SORT_STORAGE_KEY,
   VAULT_SORT_STORAGE_KEY,
   cipherTypeKey,
@@ -73,15 +72,6 @@ export default function VaultPage(props: VaultPageProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchComposing, setSearchComposing] = useState(false);
   const [sortMode, setSortMode] = useState<VaultSortMode>('edited');
-  const [vaultOrderedIds, setVaultOrderedIds] = useState<string[]>(() => {
-    if (typeof localStorage === 'undefined') return [];
-    try {
-      const parsed = JSON.parse(String(localStorage.getItem(VAULT_ORDER_STORAGE_KEY) || '[]'));
-      return Array.isArray(parsed) ? parsed.map((id) => String(id || '').trim()).filter(Boolean) : [];
-    } catch {
-      return [];
-    }
-  });
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
   const [folderSortMode, setFolderSortMode] = useState<VaultSortMode>('name');
   const [folderSortMenuOpen, setFolderSortMenuOpen] = useState(false);
@@ -128,7 +118,7 @@ export default function VaultPage(props: VaultPageProps) {
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const listPanelRef = useRef<HTMLDivElement | null>(null);
   const mobileSidebarToggleKeyRef = useRef(props.mobileSidebarToggleKey);
-  const suppressNextSortScrollRef = useRef(false);
+
   const sshSeedTicketRef = useRef(0);
   const sshFingerprintTicketRef = useRef(0);
   const listScrollBucketRef = useRef(0);
@@ -165,7 +155,7 @@ export default function VaultPage(props: VaultPageProps) {
   useEffect(() => {
     try {
       const saved = String(localStorage.getItem(VAULT_SORT_STORAGE_KEY) || '').trim() as VaultSortMode;
-      if (saved === 'manual' || saved === 'edited' || saved === 'created' || saved === 'name') {
+      if (saved === 'edited' || saved === 'created' || saved === 'name') {
         setSortMode(saved);
       }
     } catch {
@@ -180,36 +170,6 @@ export default function VaultPage(props: VaultPageProps) {
       // ignore storage write failures
     }
   }, [sortMode]);
-
-  useEffect(() => {
-    if (props.loading) return;
-    const cipherById = new Map(props.ciphers.map((cipher) => [cipher.id, cipher]));
-    const validIds = new Set(cipherById.keys());
-    setVaultOrderedIds((prev) => {
-      const filtered = prev.filter((id) => validIds.has(id));
-      const existing = new Set(filtered);
-      const missing = props.ciphers
-        .filter((cipher) => !existing.has(cipher.id))
-        .sort((a, b) => {
-          const diff = creationTimeValue(b) - creationTimeValue(a);
-          if (diff !== 0) return diff;
-          return String(b.id || '').localeCompare(String(a.id || ''));
-        })
-        .map((cipher) => cipher.id);
-      const next = [...missing, ...filtered];
-      if (next.length === prev.length && next.every((id, index) => id === prev[index])) return prev;
-      return next;
-    });
-  }, [props.ciphers, props.loading]);
-
-  useEffect(() => {
-    if (props.loading) return;
-    try {
-      localStorage.setItem(VAULT_ORDER_STORAGE_KEY, JSON.stringify(vaultOrderedIds));
-    } catch {
-      // ignore storage write failures
-    }
-  }, [vaultOrderedIds, props.loading]);
 
   useEffect(() => {
     try {
@@ -408,20 +368,10 @@ export default function VaultPage(props: VaultPageProps) {
       return !!meta?.searchText.includes(searchQuery);
     });
 
-    const orderMap = sortMode === 'manual' ? new Map(vaultOrderedIds.map((id, index) => [id, index])) : null;
     next.sort((a, b) => {
       const metaA = cipherMetaById.get(a.id);
       const metaB = cipherMetaById.get(b.id);
-      if (sortMode === 'manual' && orderMap) {
-        const orderA = orderMap.get(a.id);
-        const orderB = orderMap.get(b.id);
-        if (orderA != null && orderB != null) {
-          const diff = orderA - orderB;
-          if (diff !== 0) return diff;
-        }
-        if (orderA != null) return -1;
-        if (orderB != null) return 1;
-      } else if (sortMode === 'edited') {
+      if (sortMode === 'edited') {
         const diff = (metaB?.sortTime || 0) - (metaA?.sortTime || 0);
         if (diff !== 0) return diff;
       } else if (sortMode === 'created') {
@@ -436,7 +386,7 @@ export default function VaultPage(props: VaultPageProps) {
     });
 
     return next;
-  }, [props.ciphers, cipherMetaById, sidebarFilter, searchQuery, sortMode, duplicateSignatureInfo, vaultOrderedIds, nameCollator]);
+  }, [props.ciphers, cipherMetaById, sidebarFilter, searchQuery, sortMode, duplicateSignatureInfo, nameCollator]);
 
   const filteredCipherIds = useMemo(() => {
     const ids = new Set<string>();
@@ -451,10 +401,6 @@ export default function VaultPage(props: VaultPageProps) {
   }, [sidebarFilter]);
 
   useEffect(() => {
-    if (suppressNextSortScrollRef.current) {
-      suppressNextSortScrollRef.current = false;
-      return;
-    }
     setListScrollTop(0);
     listScrollBucketRef.current = 0;
     listPanelRef.current?.scrollTo({ top: 0 });
@@ -465,40 +411,6 @@ export default function VaultPage(props: VaultPageProps) {
       setSortMode('name');
     }
   }, [sidebarFilter.kind, sortMode]);
-
-  const canReorderVaultList =
-    !searchQuery &&
-    sidebarFilter.kind !== 'duplicates' &&
-    sidebarFilter.kind !== 'trash' &&
-    sidebarFilter.kind !== 'archive' &&
-    !props.loading &&
-    !busy;
-
-  function handleReorderVaultCipher(activeId: string, overId: string): void {
-    if (!canReorderVaultList || activeId === overId) return;
-    const currentIds = filteredCiphers.map((cipher) => cipher.id);
-    const fromIndex = currentIds.indexOf(activeId);
-    const toIndex = currentIds.indexOf(overId);
-    if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) return;
-    const nextVisibleIds = [...currentIds];
-    const [moved] = nextVisibleIds.splice(fromIndex, 1);
-    nextVisibleIds.splice(toIndex, 0, moved);
-
-    setVaultOrderedIds((prev) => {
-      const validIds = new Set(props.ciphers.map((cipher) => cipher.id));
-      const nextVisibleSet = new Set(nextVisibleIds);
-      const existingHiddenIds = prev.filter((id) => validIds.has(id) && !nextVisibleSet.has(id));
-      const fallbackHiddenIds = props.ciphers
-        .map((cipher) => cipher.id)
-        .filter((id) => validIds.has(id) && !nextVisibleSet.has(id) && !existingHiddenIds.includes(id));
-      const next = [...nextVisibleIds, ...existingHiddenIds, ...fallbackHiddenIds];
-      return next;
-    });
-    if (sortMode !== 'manual') {
-      suppressNextSortScrollRef.current = true;
-      setSortMode('manual');
-    }
-  }
 
   useEffect(() => {
     if (isCreating) return;
@@ -575,27 +487,27 @@ export default function VaultPage(props: VaultPageProps) {
   );
   const totalCipherCount = filteredCiphers.length;
 
-function folderName(id: string | null | undefined): string {
+const folderName = useCallback((id: string | null | undefined): string => {
   if (!id) return t('txt_no_folder');
   const folder = folderById.get(id);
   return folder?.decName || folder?.name || id;
-}
+}, [folderById]);
 
-  function listSubtitle(cipher: Cipher): string {
+  const listSubtitle = useCallback((cipher: Cipher): string => {
     if (Number(cipher.type || 1) === 1) {
       return cipher.login?.decUsername || cipherMetaById.get(cipher.id)?.firstUri || '';
     }
     return cipherTypeLabel(Number(cipher.type || 1));
-  }
+  }, [cipherMetaById]);
 
-  function handleListScroll(top: number): void {
+  const handleListScroll = useCallback((top: number): void => {
     const bucket = Math.floor(Math.max(0, top) / VAULT_LIST_ROW_HEIGHT);
     if (bucket === listScrollBucketRef.current) return;
     listScrollBucketRef.current = bucket;
     setListScrollTop(top);
-  }
+  }, []);
 
-  function startCreate(type: number): void {
+  const startCreate = useCallback((type: number): void => {
     setDraft(createEmptyDraft(type));
     setIsCreating(true);
     setIsEditing(true);
@@ -608,9 +520,9 @@ function folderName(id: string | null | undefined): string {
     if (isMobileLayout) setMobilePanel('edit');
     setMobileSidebarOpen(false);
     if (type === 5) void seedSshDefaults();
-  }
+  }, [isMobileLayout]);
 
-  function startEdit(): void {
+  const startEdit = useCallback((): void => {
     if (!selectedCipher) return;
     setDraft(draftFromCipher(selectedCipher));
     setIsCreating(false);
@@ -621,9 +533,9 @@ function folderName(id: string | null | undefined): string {
     setRemovedAttachmentIds({});
     if (isMobileLayout) setMobilePanel('edit');
     setMobileSidebarOpen(false);
-  }
+  }, [selectedCipher, isMobileLayout]);
 
-  function cancelEdit(): void {
+  const cancelEdit = useCallback((): void => {
     const returnToDetail = isMobileLayout && !isCreating && !!selectedCipher;
     setDraft(null);
     setIsEditing(false);
@@ -633,11 +545,11 @@ function folderName(id: string | null | undefined): string {
     setRemovedAttachmentIds({});
     setPendingDeletePasskeyIndex(null);
     if (isMobileLayout) setMobilePanel(returnToDetail ? 'detail' : 'list');
-  }
+  }, [isMobileLayout, isCreating, selectedCipher]);
 
-  function updateDraft(patch: Partial<VaultDraft>): void {
+  const updateDraft = useCallback((patch: Partial<VaultDraft>): void => {
     setDraft((prev) => (prev ? { ...prev, ...patch } : prev));
-  }
+  }, []);
 
   function confirmDeleteLoginPasskey(): void {
     if (pendingDeletePasskeyIndex == null) return;
@@ -1002,16 +914,88 @@ function folderName(id: string | null | undefined): string {
     }
   }
 
+  const handleClearSearch = useCallback(() => setSearchInput(''), []);
+  const handleSearchCompositionStart = useCallback(() => setSearchComposing(true), []);
+  const handleSearchCompositionEnd = useCallback((value: string) => {
+    setSearchComposing(false);
+    setSearchInput(value);
+  }, []);
+  const handleToggleSortMenu = useCallback(() => setSortMenuOpen((open) => !open), []);
+  const handleSelectSortMode = useCallback((value: VaultSortMode) => {
+    setSortMode(value);
+    setSortMenuOpen(false);
+  }, []);
+  const handleSyncVault = useCallback(() => { void syncVault(); }, [props.onRefresh]);
+  const handleOpenBulkDelete = useCallback(() => setBulkDeleteOpen(true), []);
+  const handleSelectDuplicates = useCallback(() => {
+    const map: Record<string, boolean> = {};
+    const seen = new Set<string>();
+    for (const cipher of filteredCiphers) {
+      const signature = duplicateSignatureInfo?.byId.get(cipher.id) || buildCipherDuplicateSignature(cipher);
+      if (seen.has(signature)) {
+        map[cipher.id] = true;
+        continue;
+      }
+      seen.add(signature);
+    }
+    setSelectedMap(map);
+  }, [filteredCiphers, duplicateSignatureInfo]);
+  const handleSelectAll = useCallback(() => {
+    const map: Record<string, boolean> = {};
+    for (const cipher of filteredCiphers) map[cipher.id] = true;
+    setSelectedMap(map);
+  }, [filteredCiphers]);
+  const handleToggleCreateMenu = useCallback(() => setCreateMenuOpen((open) => !open), []);
+  const handleBulkRestore = useCallback(() => { void confirmBulkRestore(); }, [selectedMap, props.onBulkRestore]);
+  const handleBulkArchive = useCallback(() => setBulkArchiveOpen(true), []);
+  const handleBulkUnarchive = useCallback(() => { void confirmBulkUnarchive(); }, [selectedMap, props.onBulkUnarchive]);
+  const handleOpenMove = useCallback(() => {
+    setMoveFolderId('__none__');
+    setMoveOpen(true);
+  }, []);
+  const handleClearSelection = useCallback(() => setSelectedMap({}), []);
+  const handleToggleSelected = useCallback((cipherId: string, checked: boolean) =>
+    setSelectedMap((prev) => {
+      if (checked) return { ...prev, [cipherId]: true };
+      if (!prev[cipherId]) return prev;
+      const next = { ...prev };
+      delete next[cipherId];
+      return next;
+    })
+  , []);
+  const handleSelectCipher = useCallback((cipherId: string) => {
+    if (isEditing || isCreating) {
+      cancelEdit();
+    }
+    setSelectedCipherId(cipherId);
+    setRepromptApprovedCipherId(null);
+    if (isMobileLayout) setMobilePanel('detail');
+    setMobileSidebarOpen(false);
+  }, [isEditing, isCreating, cancelEdit, isMobileLayout]);
+  const handleCloseMobileSidebar = useCallback(() => setMobileSidebarOpen(false), []);
+  const handleOpenDeleteAllFolders = useCallback(() => setDeleteAllFoldersOpen(true), []);
+  const handleOpenCreateFolder = useCallback(() => setCreateFolderOpen(true), []);
+  const handleOpenRenameFolder = useCallback((folder: Folder) => {
+    setPendingRenameFolder(folder);
+    setRenameFolderName(folder.decName || folder.name || '');
+  }, []);
+  const handleToggleFolderSortMenu = useCallback(() => setFolderSortMenuOpen((open) => !open), []);
+  const handleSelectFolderSortMode = useCallback((value: VaultSortMode) => {
+    setFolderSortMode(value);
+    setFolderSortMenuOpen(false);
+  }, []);
+  const handleMobileSidebarMaskClick = useCallback(() => {
+    if (!mobileSidebarOpen) return;
+    setMobileSidebarOpen(false);
+  }, [mobileSidebarOpen]);
+
   return (
     <>
       <div className={`vault-grid ${isMobileLayout ? `mobile-panel-${mobilePanel}` : ''}`}>
         {isMobileLayout && (
           <div
             className={`mobile-sidebar-mask ${mobileSidebarOpen ? 'open' : ''}`}
-            onClick={() => {
-              if (!mobileSidebarOpen) return;
-              setMobileSidebarOpen(false);
-            }}
+            onClick={handleMobileSidebarMaskClick}
           />
         )}
         <VaultSidebar
@@ -1023,20 +1007,14 @@ function folderName(id: string | null | undefined): string {
           folderSortMode={folderSortMode}
           folderSortMenuOpen={folderSortMenuOpen}
           folderSortMenuRef={folderSortMenuRef}
-          onCloseMobileSidebar={() => setMobileSidebarOpen(false)}
+          onCloseMobileSidebar={handleCloseMobileSidebar}
           onChangeFilter={setSidebarFilter}
-          onOpenDeleteAllFolders={() => setDeleteAllFoldersOpen(true)}
-          onOpenCreateFolder={() => setCreateFolderOpen(true)}
-          onOpenRenameFolder={(folder) => {
-            setPendingRenameFolder(folder);
-            setRenameFolderName(folder.decName || folder.name || '');
-          }}
+          onOpenDeleteAllFolders={handleOpenDeleteAllFolders}
+          onOpenCreateFolder={handleOpenCreateFolder}
+          onOpenRenameFolder={handleOpenRenameFolder}
           onOpenDeleteFolder={setPendingDeleteFolder}
-          onToggleFolderSortMenu={() => setFolderSortMenuOpen((open) => !open)}
-          onSelectFolderSortMode={(value) => {
-            setFolderSortMode(value);
-            setFolderSortMenuOpen(false);
-          }}
+          onToggleFolderSortMenu={handleToggleFolderSortMenu}
+          onSelectFolderSortMode={handleSelectFolderSortMode}
         />
 
         <VaultListPanel
@@ -1055,73 +1033,30 @@ function folderName(id: string | null | undefined): string {
           sidebarFilter={sidebarFilter}
           isMobileLayout={isMobileLayout}
           mobileFabVisible={!isMobileLayout || mobilePanel === 'list'}
-          canReorder={canReorderVaultList}
           createMenuOpen={createMenuOpen}
           createMenuRef={createMenuRef}
           sortMenuRef={sortMenuRef}
           listPanelRef={listPanelRef}
           onSearchInput={setSearchInput}
-          onClearSearch={() => setSearchInput('')}
-          onSearchCompositionStart={() => setSearchComposing(true)}
-          onSearchCompositionEnd={(value) => {
-            setSearchComposing(false);
-            setSearchInput(value);
-          }}
-          onToggleSortMenu={() => setSortMenuOpen((open) => !open)}
-          onSelectSortMode={(value) => {
-            setSortMode(value);
-            setSortMenuOpen(false);
-          }}
-          onSyncVault={() => void syncVault()}
-          onOpenBulkDelete={() => setBulkDeleteOpen(true)}
-          onSelectDuplicates={() => {
-            const map: Record<string, boolean> = {};
-            const seen = new Set<string>();
-            for (const cipher of filteredCiphers) {
-              const signature = duplicateSignatureInfo?.byId.get(cipher.id) || buildCipherDuplicateSignature(cipher);
-              if (seen.has(signature)) {
-                map[cipher.id] = true;
-                continue;
-              }
-              seen.add(signature);
-            }
-            setSelectedMap(map);
-          }}
-          onSelectAll={() => {
-            const map: Record<string, boolean> = {};
-            for (const cipher of filteredCiphers) map[cipher.id] = true;
-            setSelectedMap(map);
-          }}
-          onToggleCreateMenu={() => setCreateMenuOpen((open) => !open)}
+          onClearSearch={handleClearSearch}
+          onSearchCompositionStart={handleSearchCompositionStart}
+          onSearchCompositionEnd={handleSearchCompositionEnd}
+          onToggleSortMenu={handleToggleSortMenu}
+          onSelectSortMode={handleSelectSortMode}
+          onSyncVault={handleSyncVault}
+          onOpenBulkDelete={handleOpenBulkDelete}
+          onSelectDuplicates={handleSelectDuplicates}
+          onSelectAll={handleSelectAll}
+          onToggleCreateMenu={handleToggleCreateMenu}
           onStartCreate={startCreate}
-          onBulkRestore={() => void confirmBulkRestore()}
-          onBulkArchive={() => setBulkArchiveOpen(true)}
-          onBulkUnarchive={() => void confirmBulkUnarchive()}
-          onOpenMove={() => {
-            setMoveFolderId('__none__');
-            setMoveOpen(true);
-          }}
-          onClearSelection={() => setSelectedMap({})}
-          onReorderCipher={handleReorderVaultCipher}
+          onBulkRestore={handleBulkRestore}
+          onBulkArchive={handleBulkArchive}
+          onBulkUnarchive={handleBulkUnarchive}
+          onOpenMove={handleOpenMove}
+          onClearSelection={handleClearSelection}
           onScroll={handleListScroll}
-          onToggleSelected={(cipherId, checked) =>
-            setSelectedMap((prev) => {
-              if (checked) return { ...prev, [cipherId]: true };
-              if (!prev[cipherId]) return prev;
-              const next = { ...prev };
-              delete next[cipherId];
-              return next;
-            })
-          }
-          onSelectCipher={(cipherId) => {
-            if (isEditing || isCreating) {
-              cancelEdit();
-            }
-            setSelectedCipherId(cipherId);
-            setRepromptApprovedCipherId(null);
-            if (isMobileLayout) setMobilePanel('detail');
-            setMobileSidebarOpen(false);
-          }}
+          onToggleSelected={handleToggleSelected}
+          onSelectCipher={handleSelectCipher}
           listSubtitle={listSubtitle}
         />
 

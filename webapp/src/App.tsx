@@ -90,6 +90,39 @@ type SessionTimeoutAction = 'lock' | 'logout';
 const LOCK_TIMEOUT_STORAGE_KEY = 'nodewarden.lock.timeout-minutes.v1';
 const SESSION_TIMEOUT_ACTION_STORAGE_KEY = 'nodewarden.session.timeout-action.v1';
 const LOCK_TIMEOUT_VALUES = new Set<LockTimeoutMinutes>([0, 1, 5, 15, 30]);
+const DECRYPT_BATCH_SIZE = 16;
+
+function yieldToMainThread(): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof window !== 'undefined' && typeof window.setTimeout === 'function') {
+      window.setTimeout(resolve, 0);
+      return;
+    }
+    setTimeout(resolve, 0);
+  });
+}
+
+async function mapAsyncInBatches<T, R>(
+  items: readonly T[],
+  mapper: (item: T, index: number) => Promise<R>,
+  options?: { batchSize?: number; shouldContinue?: () => boolean }
+): Promise<R[]> {
+  const batchSize = Math.max(1, options?.batchSize || DECRYPT_BATCH_SIZE);
+  const result: R[] = new Array(items.length);
+  for (let start = 0; start < items.length; start += batchSize) {
+    if (options?.shouldContinue && !options.shouldContinue()) break;
+    const end = Math.min(items.length, start + batchSize);
+    const chunk = items.slice(start, end);
+    const mapped = await Promise.all(chunk.map((item, offset) => mapper(item, start + offset)));
+    for (let i = 0; i < mapped.length; i += 1) {
+      result[start + i] = mapped[i];
+    }
+    if (end < items.length) {
+      await yieldToMainThread();
+    }
+  }
+  return result;
+}
 
 function readThemePreference(): ThemePreference {
   if (typeof window === 'undefined') return 'system';
@@ -817,7 +850,8 @@ export default function App() {
         const decryptFieldWithSource = async (
           value: string | null | undefined,
           itemEnc: Uint8Array,
-          itemMac: Uint8Array
+          itemMac: Uint8Array,
+          canFallbackToUserKey: boolean
         ): Promise<{ text: string; source: 'item' | 'user' | 'plain' }> => {
           const raw = String(value || '').trim();
           if (!raw) return { text: '', source: 'plain' };
@@ -826,7 +860,7 @@ export default function App() {
           } catch {
             // 继续尝试旧 user key 数据。
           }
-          if (!sameBytes(itemEnc, encKey) || !sameBytes(itemMac, macKey)) {
+          if (canFallbackToUserKey) {
             try {
               return { text: await decryptStr(raw, encKey, macKey), source: 'user' };
             } catch {
@@ -836,15 +870,18 @@ export default function App() {
           return { text: raw, source: 'plain' };
         };
 
-        const folders = await Promise.all(
-          foldersQuery.data.map(async (folder) => ({
+        const folders = await mapAsyncInBatches(
+          foldersQuery.data,
+          async (folder) => ({
             ...folder,
             decName: await decryptField(folder.name, encKey, macKey),
-          }))
+          }),
+          { shouldContinue: () => active }
         );
 
-        const ciphers = await Promise.all(
-          ciphersQuery.data.map(async (cipher) => {
+        const ciphers = await mapAsyncInBatches(
+          ciphersQuery.data,
+          async (cipher) => {
             let itemEnc = encKey;
             let itemMac = macKey;
             if (cipher.key) {
@@ -856,6 +893,7 @@ export default function App() {
                 // keep user key when item key decrypt fails
               }
             }
+            const itemUsesUserKey = sameBytes(itemEnc, encKey) && sameBytes(itemMac, macKey);
 
             const nextCipher: Cipher = {
               ...cipher,
@@ -942,7 +980,7 @@ export default function App() {
               nextCipher.attachments = await Promise.all(
                 cipher.attachments.map(async (attachment) => {
                   const attachmentId = String(attachment?.id || '').trim();
-                  const fileNameResult = await decryptFieldWithSource(attachment.fileName || '', itemEnc, itemMac);
+                  const fileNameResult = await decryptFieldWithSource(attachment.fileName || '', itemEnc, itemMac, !itemUsesUserKey);
                   const metadata: { fileName?: string; key?: string | null } = {};
 
                   if (attachmentId && fileNameResult.source === 'user') {
@@ -954,7 +992,7 @@ export default function App() {
                     attachmentId &&
                     attachmentKey &&
                     looksLikeCipherString(attachmentKey) &&
-                    (!sameBytes(itemEnc, encKey) || !sameBytes(itemMac, macKey))
+                    !itemUsesUserKey
                   ) {
                     try {
                       await decryptBw(attachmentKey, itemEnc, itemMac);
@@ -982,7 +1020,8 @@ export default function App() {
               );
             }
             return nextCipher;
-          })
+          },
+          { shouldContinue: () => active }
         );
 
         if (!active) return;
@@ -1024,35 +1063,39 @@ export default function App() {
             return value;
           }
         };
-        const sends = await Promise.all(sendsQuery.data.map(async (send) => {
-          const nextSend: Send = { ...send };
-          try {
-            if (send.key) {
-              const sendKeyRaw = await decryptBw(send.key, encKey, macKey);
-              const derived = await deriveSendKeyParts(sendKeyRaw);
-              nextSend.decName = await decryptField(send.name || '', derived.enc, derived.mac);
-              nextSend.decNotes = await decryptField(send.notes || '', derived.enc, derived.mac);
-              nextSend.decText = await decryptField(send.text?.text || '', derived.enc, derived.mac);
-              if (send.file?.fileName) {
-                const decFileName = await decryptField(send.file.fileName, derived.enc, derived.mac);
-                nextSend.file = {
-                  ...(send.file || {}),
-                  fileName: decFileName || send.file.fileName,
-                };
+        const sends = await mapAsyncInBatches(
+          sendsQuery.data,
+          async (send) => {
+            const nextSend: Send = { ...send };
+            try {
+              if (send.key) {
+                const sendKeyRaw = await decryptBw(send.key, encKey, macKey);
+                const derived = await deriveSendKeyParts(sendKeyRaw);
+                nextSend.decName = await decryptField(send.name || '', derived.enc, derived.mac);
+                nextSend.decNotes = await decryptField(send.notes || '', derived.enc, derived.mac);
+                nextSend.decText = await decryptField(send.text?.text || '', derived.enc, derived.mac);
+                if (send.file?.fileName) {
+                  const decFileName = await decryptField(send.file.fileName, derived.enc, derived.mac);
+                  nextSend.file = {
+                    ...(send.file || {}),
+                    fileName: decFileName || send.file.fileName,
+                  };
+                }
+                const shareKey = await buildSendShareKey(send.key, session.symEncKey!, session.symMacKey!);
+                nextSend.decShareKey = shareKey;
+                nextSend.shareUrl = buildPublicSendUrl(window.location.origin, send.accessId, shareKey);
+              } else {
+                nextSend.decName = '';
+                nextSend.decNotes = '';
+                nextSend.decText = '';
               }
-              const shareKey = await buildSendShareKey(send.key, session.symEncKey!, session.symMacKey!);
-              nextSend.decShareKey = shareKey;
-              nextSend.shareUrl = buildPublicSendUrl(window.location.origin, send.accessId, shareKey);
-            } else {
-              nextSend.decName = '';
-              nextSend.decNotes = '';
-              nextSend.decText = '';
+            } catch {
+              nextSend.decName = t('txt_decrypt_failed');
             }
-          } catch {
-            nextSend.decName = t('txt_decrypt_failed');
-          }
-          return nextSend;
-        }));
+            return nextSend;
+          },
+          { shouldContinue: () => active }
+        );
 
         if (!active) return;
         setDecryptedSends(sends);
