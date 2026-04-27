@@ -46,14 +46,17 @@
 }
 
 .standalone-brand-logo {
-  @apply h-14 w-14 flex-shrink-0 object-contain;
+  @apply h-14 w-[70px] flex-shrink-0 object-contain;
   filter: drop-shadow(0 8px 18px rgba(43, 102, 217, 0.22));
 }
 
 .standalone-brand-wordmark {
-  @apply block h-auto max-w-full;
-  width: clamp(200px, 30vw, 360px);
-  filter: drop-shadow(0 10px 22px rgba(43, 102, 217, 0.18));
+  @apply block max-w-full;
+  width: clamp(200px, 30vw, 340px);
+  aspect-ratio: 862 / 102;
+  background: #116ff9;
+  mask: url('/nodewarden-wordmark.svg') center / contain no-repeat;
+  -webkit-mask: url('/nodewarden-wordmark.svg') center / contain no-repeat;
 }
 
 .standalone-title {

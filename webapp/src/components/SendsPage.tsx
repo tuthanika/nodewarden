@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { CheckCheck, ChevronLeft, Copy, Eye, EyeOff, File, FileText, LayoutGrid, Pencil, Plus, RefreshCw, Save, Send as SendIcon, Trash2, X } from 'lucide-preact';
 import { copyTextToClipboard } from '@/lib/clipboard';
 import type { Send, SendDraft } from '@/lib/types';
@@ -79,6 +79,7 @@ export default function SendsPage(props: SendsPageProps) {
   const [isMobileLayout, setIsMobileLayout] = useState(getInitialIsMobileLayout);
   const [mobilePanel, setMobilePanel] = useState<'list' | 'detail' | 'edit'>('list');
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const mobileSidebarToggleKeyRef = useRef(props.mobileSidebarToggleKey);
   const [autoCopyLink, setAutoCopyLink] = useState<boolean>(() => {
     try {
       return localStorage.getItem(AUTO_COPY_KEY) === '1';
@@ -108,7 +109,8 @@ export default function SendsPage(props: SendsPageProps) {
   }, []);
 
   useEffect(() => {
-    if (!props.mobileSidebarToggleKey) return;
+    if (props.mobileSidebarToggleKey === mobileSidebarToggleKeyRef.current) return;
+    mobileSidebarToggleKeyRef.current = props.mobileSidebarToggleKey;
     setMobileSidebarOpen((open) => !open);
   }, [props.mobileSidebarToggleKey]);
 

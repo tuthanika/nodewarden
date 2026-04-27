@@ -1,17 +1,29 @@
 <p align="center">
-  <img src="./NodeWarden.png" alt="NodeWarden Logo" />
+  <img src="./NodeWarden.svg" alt="NodeWarden Logo" />
 </p>
 
 <p align="center">
-  A third-party Bitwarden-compatible server running on Cloudflare Workers.
+  Bitwarden-compatible server running on Cloudflare Workers
+
 </p>
-[![Powered by Cloudflare](https://img.shields.io/badge/Powered%20by-Cloudflare-F38020?logo=cloudflare&logoColor=white)](https://workers.cloudflare.com/)
-[![License: LGPL-3.0](https://img.shields.io/badge/License-LGPL--3.0-2ea44f)](./LICENSE)
-[![Latest Release](https://img.shields.io/github/v/release/shuaiplus/NodeWarden?display_name=tag)](https://github.com/shuaiplus/NodeWarden/releases/latest)
-[![Sync Upstream](https://github.com/shuaiplus/NodeWarden/actions/workflows/sync-upstream.yml/badge.svg)](https://github.com/shuaiplus/NodeWarden/actions/workflows/sync-upstream.yml)
-[Release Notes](./RELEASE_NOTES.md) | [Report an Issue](https://github.com/shuaiplus/NodeWarden/issues/new/choose) | [Latest Release](https://github.com/shuaiplus/NodeWarden/releases/latest)
-[Telegram Channel](https://t.me/NodeWarden_News) | [Telegram Group](https://t.me/NodeWarden_Official)
-中文说明：[`README.md`](./README.md)
+
+<p align="center">
+  <a href="https://workers.cloudflare.com/"><img src="https://img.shields.io/badge/Powered%20by-Cloudflare-F38020?logo=cloudflare&logoColor=white" alt="Powered by Cloudflare" /></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/License-LGPL--3.0-2ea44f" alt="License: LGPL-3.0" /></a>
+  <a href="https://github.com/shuaiplus/NodeWarden/releases/latest"><img src="https://img.shields.io/github/v/release/shuaiplus/NodeWarden?display_name=tag" alt="Latest Release" /></a>
+  <a href="https://github.com/shuaiplus/NodeWarden/actions/workflows/sync-upstream.yml"><img src="https://github.com/shuaiplus/NodeWarden/actions/workflows/sync-upstream.yml/badge.svg" alt="Sync Upstream" /></a>
+</p>
+
+<p align="center">
+  <a href="./RELEASE_NOTES.md">Release Notes</a> |
+  <a href="https://github.com/shuaiplus/NodeWarden/issues/new/choose">Report an Issue</a> |
+  <a href="https://github.com/shuaiplus/NodeWarden/releases/latest">Latest Release</a><br />
+  <a href="https://t.me/NodeWarden_News">Telegram Channel</a> |
+  <a href="https://t.me/NodeWarden_Official">Telegram Group</a><br />
+
+</p>
+
+中文说明：<a href="./README.md"><code>README.md</code></a>
 
 > **Disclaimer**
 >

@@ -10,10 +10,10 @@ import {
   buildUserDecryptionOptions,
 } from '../utils/user-decryption';
 
-function buildSyncCacheRequest(request: Request, userId: string, revisionDate: string, excludeDomains: boolean): Request {
+function buildSyncCacheRequest(request: Request, userId: string, revisionDate: string, excludeDomains: boolean, excludeSends: boolean): Request {
   const url = new URL(request.url);
   const cacheUrl = new URL(
-    `/__nodewarden/cache/sync/${encodeURIComponent(userId)}/${encodeURIComponent(revisionDate)}/${excludeDomains ? '1' : '0'}`,
+    `/__nodewarden/cache/sync/${encodeURIComponent(userId)}/${encodeURIComponent(revisionDate)}/${excludeDomains ? '1' : '0'}/${excludeSends ? '1' : '0'}`,
     url.origin
   );
   return new Request(cacheUrl.toString(), { method: 'GET' });
@@ -35,6 +35,8 @@ export async function handleSync(request: Request, env: Env, userId: string): Pr
   const url = new URL(request.url);
   const excludeDomainsParam = url.searchParams.get('excludeDomains');
   const excludeDomains = excludeDomainsParam !== null && /^(1|true|yes)$/i.test(excludeDomainsParam);
+  const excludeSendsParam = url.searchParams.get('excludeSends');
+  const excludeSends = excludeSendsParam !== null && /^(1|true|yes)$/i.test(excludeSendsParam);
 
   const user = await storage.getUserById(userId);
   if (!user) {
@@ -42,7 +44,7 @@ export async function handleSync(request: Request, env: Env, userId: string): Pr
   }
 
   const revisionDate = await storage.getRevisionDate(userId);
-  const cacheRequest = buildSyncCacheRequest(request, userId, revisionDate, excludeDomains);
+  const cacheRequest = buildSyncCacheRequest(request, userId, revisionDate, excludeDomains, excludeSends);
   const cachedResponse = await readSyncCache(cacheRequest);
   if (cachedResponse) {
     return cachedResponse;
@@ -51,7 +53,7 @@ export async function handleSync(request: Request, env: Env, userId: string): Pr
   const [ciphers, folders, sends, attachmentsByCipher] = await Promise.all([
     storage.getAllCiphers(userId),
     storage.getAllFolders(userId),
-    storage.getAllSends(userId),
+    excludeSends ? Promise.resolve([]) : storage.getAllSends(userId),
     storage.getAttachmentsByUserId(userId),
   ]);
   const accountKeys = buildAccountKeys(user);

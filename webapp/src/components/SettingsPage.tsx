@@ -269,7 +269,33 @@ export default function SettingsPage(props: SettingsPageProps) {
             <div>
               <label className="field">
                 <span>{t('txt_authenticator_key')}</span>
-                <input className="input" value={secret} disabled={totpLocked} onInput={(e) => setSecret((e.currentTarget as HTMLInputElement).value.toUpperCase())} />
+                <div className="totp-secret-input-wrap">
+                  <input className="input totp-secret-input" value={secret} disabled={totpLocked} onInput={(e) => setSecret((e.currentTarget as HTMLInputElement).value.toUpperCase())} />
+                  <div className="totp-secret-actions">
+                    <button
+                      type="button"
+                      className="btn btn-secondary small totp-secret-icon-btn"
+                      disabled={totpLocked}
+                      title={t('txt_regenerate')}
+                      aria-label={t('txt_regenerate')}
+                      onClick={() => setSecret(randomBase32Secret(32))}
+                    >
+                      <RefreshCw size={14} className="btn-icon" />
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-secondary small totp-secret-icon-btn"
+                      disabled={totpLocked}
+                      title={t('txt_copy_secret')}
+                      aria-label={t('txt_copy_secret')}
+                      onClick={() => {
+                        void copyTextToClipboard(secret, { successMessage: t('txt_secret_copied') });
+                      }}
+                    >
+                      <Clipboard size={14} className="btn-icon" />
+                    </button>
+                  </div>
+                </div>
               </label>
               <label className="field">
                 <span>{t('txt_verification_code')}</span>
@@ -280,29 +306,14 @@ export default function SettingsPage(props: SettingsPageProps) {
                   <ShieldCheck size={14} className="btn-icon" />
                   {totpLocked ? t('txt_enabled') : t('txt_enable_totp')}
                 </button>
-                <button type="button" className="btn btn-secondary" disabled={totpLocked} onClick={() => setSecret(randomBase32Secret(32))}>
-                  <RefreshCw size={14} className="btn-icon" />
-                  {t('txt_regenerate')}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  disabled={totpLocked}
-                  onClick={() => {
-                    void copyTextToClipboard(secret, { successMessage: t('txt_secret_copied') });
-                  }}
-                >
-                  <Clipboard size={14} className="btn-icon" />
-                  {t('txt_copy_secret')}
+                <button type="button" className="btn btn-danger" disabled={!totpLocked} onClick={props.onOpenDisableTotp}>
+                  <ShieldOff size={14} className="btn-icon" />
+                  {t('txt_disable_totp')}
                 </button>
               </div>
             </div>
           </div>
         </div>
-        <button type="button" className="btn btn-danger" disabled={!totpLocked} onClick={props.onOpenDisableTotp}>
-          <ShieldOff size={14} className="btn-icon" />
-          {t('txt_disable_totp')}
-        </button>
       </section>
 
       <section className="card settings-module">

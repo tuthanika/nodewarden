@@ -70,8 +70,7 @@ function hostFromUri(uri: string): string {
 }
 
 function TotpListIcon({ cipher }: { cipher: Cipher }) {
-  const uri = firstCipherUri(cipher);
-  const host = hostFromUri(uri);
+  const host = useMemo(() => hostFromUri(firstCipherUri(cipher)), [cipher]);
   const [errored, setErrored] = useState(() => (host ? failedIconHosts.has(host) : false));
   const [loaded, setLoaded] = useState(false);
   const markIconError = () => {
@@ -226,16 +225,21 @@ export default function TotpCodesPage(props: TotpCodesPageProps) {
     await copyTextWithFeedback(value, { successMessage: t('txt_code_copied') });
   }
 
+  const nameCollator = useMemo(
+    () => new Intl.Collator(undefined, { sensitivity: 'base', numeric: true }),
+    []
+  );
+
   const baseTotpItems = useMemo(
     () =>
       props.ciphers
         .filter((cipher) => isCipherVisibleInNormalVault(cipher) && !!cipher.login?.decTotp)
         .sort((a, b) => {
-          const nameA = (a.decName || a.name || '').trim().toLowerCase();
-          const nameB = (b.decName || b.name || '').trim().toLowerCase();
-          return nameA.localeCompare(nameB);
+          const nameA = (a.decName || a.name || '').trim();
+          const nameB = (b.decName || b.name || '').trim();
+          return nameCollator.compare(nameA, nameB);
         }),
-    [props.ciphers]
+    [props.ciphers, nameCollator]
   );
 
   const totpItems = useMemo(() => {
@@ -247,11 +251,13 @@ export default function TotpCodesPage(props: TotpCodesPageProps) {
       if (orderA != null && orderB != null) return orderA - orderB;
       if (orderA != null) return -1;
       if (orderB != null) return 1;
-      const nameA = (a.decName || a.name || '').trim().toLowerCase();
-      const nameB = (b.decName || b.name || '').trim().toLowerCase();
-      return nameA.localeCompare(nameB);
+      const nameA = (a.decName || a.name || '').trim();
+      const nameB = (b.decName || b.name || '').trim();
+      return nameCollator.compare(nameA, nameB);
     });
-  }, [baseTotpItems, orderedIds]);
+  }, [baseTotpItems, orderedIds, nameCollator]);
+
+  const sortableTotpItems = useMemo(() => totpItems.map((cipher) => cipher.id), [totpItems]);
 
   useEffect(() => {
     if (!baseTotpItems.length) return;
@@ -361,7 +367,7 @@ export default function TotpCodesPage(props: TotpCodesPageProps) {
         >
           {!totpItems.length && !props.loading && <div className="empty">{t('txt_no_verification_codes')}</div>}
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-            <SortableContext items={totpItems.map((cipher) => cipher.id)} strategy={rectSortingStrategy}>
+            <SortableContext items={sortableTotpItems} strategy={rectSortingStrategy}>
               {totpItems.map((cipher) => (
                 <SortableTotpRow
                   key={cipher.id}

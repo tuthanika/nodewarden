@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useMemo, useState } from 'preact/hooks';
 import {
   CreditCard,
   FileKey2,
@@ -12,7 +12,7 @@ import { t } from '@/lib/i18n';
 import type { Cipher, CipherAttachment, CustomFieldType, VaultDraft, VaultDraftField, VaultDraftLoginUri } from '@/lib/types';
 
 export type TypeFilter = 'login' | 'card' | 'identity' | 'note' | 'ssh';
-export type VaultSortMode = 'edited' | 'created' | 'name';
+export type VaultSortMode = 'manual' | 'edited' | 'created' | 'name';
 export type SidebarFilter =
   | { kind: 'all' }
   | { kind: 'favorite' }
@@ -36,11 +36,18 @@ export const CREATE_TYPE_OPTIONS: TypeOption[] = [
 ];
 
 export const VAULT_SORT_STORAGE_KEY = 'nodewarden.vault.sort.v1';
+export const VAULT_ORDER_STORAGE_KEY = 'nodewarden.vault-order.v1';
 export const FOLDER_SORT_STORAGE_KEY = 'nodewarden.folder-sort.v1';
 export const MOBILE_LAYOUT_QUERY = '(max-width: 1180px)';
 export const VAULT_LIST_ROW_HEIGHT = 74;
 export const VAULT_LIST_OVERSCAN = 10;
 export const VAULT_SORT_OPTIONS: Array<{ value: VaultSortMode; label: string }> = [
+  { value: 'manual', label: t('txt_sort_manual') },
+  { value: 'edited', label: t('txt_sort_last_edited') },
+  { value: 'created', label: t('txt_sort_created') },
+  { value: 'name', label: t('txt_sort_name') },
+];
+export const FOLDER_SORT_OPTIONS: Array<{ value: Exclude<VaultSortMode, 'manual'>; label: string }> = [
   { value: 'edited', label: t('txt_sort_last_edited') },
   { value: 'created', label: t('txt_sort_created') },
   { value: 'name', label: t('txt_sort_name') },
@@ -431,8 +438,7 @@ export function firstPasskeyCreationTime(cipher: Cipher | null): string | null {
 const failedIconHosts = new Set<string>();
 
 export function VaultListIcon({ cipher }: { cipher: Cipher }) {
-  const uri = firstCipherUri(cipher);
-  const host = hostFromUri(uri);
+  const host = useMemo(() => hostFromUri(firstCipherUri(cipher)), [cipher]);
   const [errored, setErrored] = useState(() => (host ? failedIconHosts.has(host) : false));
   const [loaded, setLoaded] = useState(false);
   const markIconError = () => {

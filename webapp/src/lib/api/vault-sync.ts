@@ -7,14 +7,14 @@ interface VaultSyncResponse {
   sends?: Send[];
 }
 
-const pendingSyncRequests = new WeakMap<AuthedFetch, Promise<VaultSyncResponse>>();
+const pendingVaultCoreRequests = new WeakMap<AuthedFetch, Promise<VaultSyncResponse>>();
 
-export async function loadVaultSyncSnapshot(authedFetch: AuthedFetch): Promise<VaultSyncResponse> {
-  const existing = pendingSyncRequests.get(authedFetch);
+export async function loadVaultCoreSyncSnapshot(authedFetch: AuthedFetch): Promise<VaultSyncResponse> {
+  const existing = pendingVaultCoreRequests.get(authedFetch);
   if (existing) return existing;
 
   const request = (async () => {
-    const resp = await authedFetch('/api/sync', {
+    const resp = await authedFetch('/api/sync?excludeSends=true&excludeDomains=true', {
       cache: 'no-store',
       headers: {
         'Cache-Control': 'no-cache',
@@ -26,12 +26,12 @@ export async function loadVaultSyncSnapshot(authedFetch: AuthedFetch): Promise<V
     return body || {};
   })();
 
-  pendingSyncRequests.set(authedFetch, request);
+  pendingVaultCoreRequests.set(authedFetch, request);
   try {
     return await request;
   } finally {
-    if (pendingSyncRequests.get(authedFetch) === request) {
-      pendingSyncRequests.delete(authedFetch);
+    if (pendingVaultCoreRequests.get(authedFetch) === request) {
+      pendingVaultCoreRequests.delete(authedFetch);
     }
   }
 }

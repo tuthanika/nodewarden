@@ -1,7 +1,6 @@
 import { base64ToBytes, bytesToBase64, decryptBw, decryptBwFileData, decryptStr, encryptBw, encryptBwFileData, hkdf, pbkdf2 } from '../crypto';
 import type { Send, SendDraft, SessionState } from '../types';
 import { chunkArray, createApiError, parseErrorMessage, parseJson, uploadDirectEncryptedPayload, type AuthedFetch } from './shared';
-import { loadVaultSyncSnapshot } from './vault-sync';
 
 function toIsoDateFromDays(value: string, required: boolean): string | null {
   const raw = String(value || '').trim();
@@ -62,8 +61,10 @@ function parseMaxAccessCountRaw(value: string): number | null {
 }
 
 export async function getSends(authedFetch: AuthedFetch): Promise<Send[]> {
-  const body = await loadVaultSyncSnapshot(authedFetch);
-  return body.sends || [];
+  const resp = await authedFetch('/api/sends');
+  if (!resp.ok) throw new Error('Failed to load sends');
+  const body = await parseJson<{ data?: Send[] }>(resp);
+  return body?.data || [];
 }
 
 export async function createSend(

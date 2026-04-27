@@ -21,7 +21,7 @@ import {
 } from 'lucide-preact';
 import type { Folder } from '@/lib/types';
 import { t } from '@/lib/i18n';
-import { VAULT_SORT_OPTIONS, type SidebarFilter, type VaultSortMode } from '@/components/vault/vault-page-helpers';
+import { FOLDER_SORT_OPTIONS, type SidebarFilter, type VaultSortMode } from '@/components/vault/vault-page-helpers';
 
 interface VaultSidebarProps {
   folders: Folder[];
@@ -139,7 +139,7 @@ export default function VaultSidebar(props: VaultSidebarProps) {
               </button>
               {props.folderSortMenuOpen && (
                 <div className="sort-menu">
-                  {VAULT_SORT_OPTIONS.map((option) => (
+                  {FOLDER_SORT_OPTIONS.map((option) => (
                     <button
                       key={option.value}
                       type="button"

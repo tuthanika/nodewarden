@@ -73,7 +73,7 @@
   }
 
   .standalone-brand-logo {
-    @apply h-11 w-11;
+    @apply h-11 w-[55px];
   }
 
   .auth-card {
@@ -111,7 +111,7 @@
   }
 
   .brand-logo {
-    @apply h-[34px] w-[34px];
+    @apply h-[34px] w-[43px];
   }
 
   .brand-wordmark {
@@ -327,11 +327,11 @@
 
   .mobile-fab-wrap {
     @apply fixed right-3.5 z-[45];
-    bottom: calc(14px + var(--mobile-tabbar-height) + env(safe-area-inset-bottom));
+    bottom: calc(14px + var(--mobile-tabbar-height, 70px) + env(safe-area-inset-bottom));
   }
 
   .mobile-fab-trigger {
-    @apply h-14 w-9 gap-0 rounded-full p-0 text-[0];
+    @apply h-9 w-9 gap-0 rounded-full p-0 text-[0];
     box-shadow: 0 14px 30px rgba(37, 99, 235, 0.28);
     transition: transform 180ms var(--ease-spring), box-shadow var(--dur-fast) var(--ease-out-soft);
   }

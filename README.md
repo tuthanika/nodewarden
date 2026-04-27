@@ -1,23 +1,29 @@
 <p align="center">
-  <img src="./NodeWarden.png" alt="NodeWarden Logo" />
+  <img src="./NodeWarden.svg" alt="NodeWarden Logo" />
 </p>
 
 <p align="center">
-  运行在 Cloudflare Workers 上的第三方 Bitwarden 兼容服务端。
+  运行在 Cloudflare Workers 上的 Bitwarden 兼容服务端
 </p>
 
-[![Powered by Cloudflare](https://img.shields.io/badge/Powered%20by-Cloudflare-F38020?logo=cloudflare&logoColor=white)](https://workers.cloudflare.com/)
-[![License: LGPL-3.0](https://img.shields.io/badge/License-LGPL--3.0-2ea44f)](./LICENSE)
-[![Latest Release](https://img.shields.io/github/v/release/shuaiplus/NodeWarden?display_name=tag)](https://github.com/shuaiplus/NodeWarden/releases/latest)
-[![Sync Upstream](https://github.com/shuaiplus/NodeWarden/actions/workflows/sync-upstream.yml/badge.svg)](https://github.com/shuaiplus/NodeWarden/actions/workflows/sync-upstream.yml)
+<p align="center">
+  <a href="https://workers.cloudflare.com/"><img src="https://img.shields.io/badge/Powered%20by-Cloudflare-F38020?logo=cloudflare&logoColor=white" alt="Powered by Cloudflare" /></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/License-LGPL--3.0-2ea44f" alt="License: LGPL-3.0" /></a>
+  <a href="https://github.com/shuaiplus/NodeWarden/releases/latest"><img src="https://img.shields.io/github/v/release/shuaiplus/NodeWarden?display_name=tag" alt="Latest Release" /></a>
+  <a href="https://github.com/shuaiplus/NodeWarden/actions/workflows/sync-upstream.yml"><img src="https://github.com/shuaiplus/NodeWarden/actions/workflows/sync-upstream.yml/badge.svg" alt="Sync Upstream" /></a>
+</p>
 
-[更新日志](./RELEASE_NOTES.md) | [提交问题](https://github.com/shuaiplus/NodeWarden/issues/new/choose) | [最新发布](https://github.com/shuaiplus/NodeWarden/releases/latest)
+<p align="center">
+  <a href="./RELEASE_NOTES.md">更新日志</a> |
+  <a href="https://github.com/shuaiplus/NodeWarden/issues/new/choose">提交问题</a> |
+  <a href="https://github.com/shuaiplus/NodeWarden/releases/latest">最新发布</a><br />
+  <a href="./nodewarden.wiki/Home.md">文档首页</a> |
+  <a href="./nodewarden.wiki/快速开始.md">快速开始</a><br />
+  <a href="https://t.me/NodeWarden_News">Telegram 频道</a> |
+  <a href="https://t.me/NodeWarden_Official">Telegram 群组</a><br />
+</p>
 
-[文档首页](./nodewarden.wiki/Home.md) | [快速开始](./nodewarden.wiki/快速开始.md)
-
-[Telegram 频道](https://t.me/NodeWarden_News) | [Telegram 群组](https://t.me/NodeWarden_Official)
-
-English: [`README_EN.md`](./README_EN.md)
+English: <a href="./README_EN.md"><code>README_EN.md</code></a>
 
 > **免责声明**  
 > 本项目仅供学习与交流使用，请定期备份你的密码库。  

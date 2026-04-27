@@ -392,6 +392,27 @@
   @apply h-[180px] w-[180px] rounded-lg bg-white;
 }
 
+.totp-secret-input-wrap {
+  @apply relative;
+}
+
+.totp-secret-input {
+  padding-right: 84px;
+}
+
+.totp-secret-actions {
+  @apply absolute right-2 top-1/2 inline-flex items-center gap-1;
+  transform: translateY(-50%);
+}
+
+.totp-secret-icon-btn {
+  @apply h-8 w-8 min-w-8 gap-0 rounded-lg p-0;
+}
+
+.totp-secret-icon-btn .btn-icon {
+  @apply m-0;
+}
+
 .section-head {
   @apply mb-2.5 flex items-center justify-between;
 }

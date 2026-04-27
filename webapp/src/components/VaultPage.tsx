@@ -8,6 +8,7 @@ import {
   MOBILE_LAYOUT_QUERY,
   VAULT_LIST_OVERSCAN,
   VAULT_LIST_ROW_HEIGHT,
+  VAULT_ORDER_STORAGE_KEY,
   FOLDER_SORT_STORAGE_KEY,
   VAULT_SORT_STORAGE_KEY,
   cipherTypeKey,
@@ -72,6 +73,15 @@ export default function VaultPage(props: VaultPageProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchComposing, setSearchComposing] = useState(false);
   const [sortMode, setSortMode] = useState<VaultSortMode>('edited');
+  const [vaultOrderedIds, setVaultOrderedIds] = useState<string[]>(() => {
+    if (typeof localStorage === 'undefined') return [];
+    try {
+      const parsed = JSON.parse(String(localStorage.getItem(VAULT_ORDER_STORAGE_KEY) || '[]'));
+      return Array.isArray(parsed) ? parsed.map((id) => String(id || '').trim()).filter(Boolean) : [];
+    } catch {
+      return [];
+    }
+  });
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
   const [folderSortMode, setFolderSortMode] = useState<VaultSortMode>('name');
   const [folderSortMenuOpen, setFolderSortMenuOpen] = useState(false);
@@ -117,8 +127,11 @@ export default function VaultPage(props: VaultPageProps) {
   const folderSortMenuRef = useRef<HTMLDivElement | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const listPanelRef = useRef<HTMLDivElement | null>(null);
+  const mobileSidebarToggleKeyRef = useRef(props.mobileSidebarToggleKey);
+  const suppressNextSortScrollRef = useRef(false);
   const sshSeedTicketRef = useRef(0);
   const sshFingerprintTicketRef = useRef(0);
+  const listScrollBucketRef = useRef(0);
   const [listScrollTop, setListScrollTop] = useState(0);
   const [listViewportHeight, setListViewportHeight] = useState(0);
 
@@ -136,7 +149,8 @@ export default function VaultPage(props: VaultPageProps) {
   }, []);
 
   useEffect(() => {
-    if (!props.mobileSidebarToggleKey) return;
+    if (props.mobileSidebarToggleKey === mobileSidebarToggleKeyRef.current) return;
+    mobileSidebarToggleKeyRef.current = props.mobileSidebarToggleKey;
     setMobileSidebarOpen((open) => !open);
   }, [props.mobileSidebarToggleKey]);
 
@@ -151,7 +165,7 @@ export default function VaultPage(props: VaultPageProps) {
   useEffect(() => {
     try {
       const saved = String(localStorage.getItem(VAULT_SORT_STORAGE_KEY) || '').trim() as VaultSortMode;
-      if (saved === 'edited' || saved === 'created' || saved === 'name') {
+      if (saved === 'manual' || saved === 'edited' || saved === 'created' || saved === 'name') {
         setSortMode(saved);
       }
     } catch {
@@ -166,6 +180,36 @@ export default function VaultPage(props: VaultPageProps) {
       // ignore storage write failures
     }
   }, [sortMode]);
+
+  useEffect(() => {
+    if (props.loading) return;
+    const cipherById = new Map(props.ciphers.map((cipher) => [cipher.id, cipher]));
+    const validIds = new Set(cipherById.keys());
+    setVaultOrderedIds((prev) => {
+      const filtered = prev.filter((id) => validIds.has(id));
+      const existing = new Set(filtered);
+      const missing = props.ciphers
+        .filter((cipher) => !existing.has(cipher.id))
+        .sort((a, b) => {
+          const diff = creationTimeValue(b) - creationTimeValue(a);
+          if (diff !== 0) return diff;
+          return String(b.id || '').localeCompare(String(a.id || ''));
+        })
+        .map((cipher) => cipher.id);
+      const next = [...missing, ...filtered];
+      if (next.length === prev.length && next.every((id, index) => id === prev[index])) return prev;
+      return next;
+    });
+  }, [props.ciphers, props.loading]);
+
+  useEffect(() => {
+    if (props.loading) return;
+    try {
+      localStorage.setItem(VAULT_ORDER_STORAGE_KEY, JSON.stringify(vaultOrderedIds));
+    } catch {
+      // ignore storage write failures
+    }
+  }, [vaultOrderedIds, props.loading]);
 
   useEffect(() => {
     try {
@@ -283,29 +327,75 @@ export default function VaultPage(props: VaultPageProps) {
     void recalculateSshFingerprint(draft.sshPublicKey);
   }, [isEditing, draft?.id, draft?.type]);
 
-  const duplicateSignatureCounts = useMemo(() => {
+  const cipherMetaById = useMemo(() => {
+    const meta = new Map<string, {
+      name: string;
+      searchText: string;
+      firstUri: string;
+      typeKey: string;
+      sortTime: number;
+      creationTime: number;
+    }>();
+    for (const cipher of props.ciphers) {
+      const name = String(cipher.decName || cipher.name || '');
+      const username = String(cipher.login?.decUsername || '');
+      const uri = firstCipherUri(cipher);
+      meta.set(cipher.id, {
+        name,
+        searchText: `${name}\n${username}\n${uri}`.toLowerCase(),
+        firstUri: uri,
+        typeKey: cipherTypeKey(Number(cipher.type || 1)),
+        sortTime: sortTimeValue(cipher),
+        creationTime: creationTimeValue(cipher),
+      });
+    }
+    return meta;
+  }, [props.ciphers]);
+
+  const cipherById = useMemo(() => {
+    const map = new Map<string, Cipher>();
+    for (const cipher of props.ciphers) map.set(cipher.id, cipher);
+    return map;
+  }, [props.ciphers]);
+
+  const folderById = useMemo(() => {
+    const map = new Map<string, Folder>();
+    for (const folder of props.folders) map.set(folder.id, folder);
+    return map;
+  }, [props.folders]);
+
+  const nameCollator = useMemo(
+    () => new Intl.Collator(undefined, { sensitivity: 'base', numeric: true }),
+    []
+  );
+
+  const duplicateSignatureInfo = useMemo(() => {
+    if (sidebarFilter.kind !== 'duplicates') return null;
+    const byId = new Map<string, string>();
     const counts = new Map<string, number>();
     for (const cipher of props.ciphers) {
       if (!isCipherVisibleInNormalVault(cipher)) continue;
       const signature = buildCipherDuplicateSignature(cipher);
+      byId.set(cipher.id, signature);
       counts.set(signature, (counts.get(signature) || 0) + 1);
     }
-    return counts;
-  }, [props.ciphers]);
+    return { byId, counts };
+  }, [props.ciphers, sidebarFilter.kind]);
 
   const filteredCiphers = useMemo(() => {
     const next = props.ciphers.filter((cipher) => {
+      const meta = cipherMetaById.get(cipher.id);
       if (sidebarFilter.kind === 'trash') {
         if (!isCipherVisibleInTrash(cipher)) return false;
       } else if (sidebarFilter.kind === 'archive') {
         if (!isCipherVisibleInArchive(cipher)) return false;
       } else {
         if (!isCipherVisibleInNormalVault(cipher)) return false;
-        if (sidebarFilter.kind === 'duplicates' && (duplicateSignatureCounts.get(buildCipherDuplicateSignature(cipher)) || 0) < 2) {
+        if (sidebarFilter.kind === 'duplicates' && ((duplicateSignatureInfo?.counts.get(duplicateSignatureInfo.byId.get(cipher.id) || '') || 0) < 2)) {
           return false;
         }
         if (sidebarFilter.kind === 'favorite' && !cipher.favorite) return false;
-        if (sidebarFilter.kind === 'type' && cipherTypeKey(Number(cipher.type || 1)) !== sidebarFilter.value) return false;
+        if (sidebarFilter.kind === 'type' && meta?.typeKey !== sidebarFilter.value) return false;
         if (sidebarFilter.kind === 'folder') {
           if (sidebarFilter.folderId === null) {
             if (cipher.folderId) return false;
@@ -315,24 +405,30 @@ export default function VaultPage(props: VaultPageProps) {
         }
       }
       if (!searchQuery) return true;
-      const name = (cipher.decName || '').toLowerCase();
-      const username = (cipher.login?.decUsername || '').toLowerCase();
-      const uri = firstCipherUri(cipher).toLowerCase();
-      return name.includes(searchQuery) || username.includes(searchQuery) || uri.includes(searchQuery);
+      return !!meta?.searchText.includes(searchQuery);
     });
 
+    const orderMap = sortMode === 'manual' ? new Map(vaultOrderedIds.map((id, index) => [id, index])) : null;
     next.sort((a, b) => {
-      if (sortMode === 'edited') {
-        const diff = sortTimeValue(b) - sortTimeValue(a);
+      const metaA = cipherMetaById.get(a.id);
+      const metaB = cipherMetaById.get(b.id);
+      if (sortMode === 'manual' && orderMap) {
+        const orderA = orderMap.get(a.id);
+        const orderB = orderMap.get(b.id);
+        if (orderA != null && orderB != null) {
+          const diff = orderA - orderB;
+          if (diff !== 0) return diff;
+        }
+        if (orderA != null) return -1;
+        if (orderB != null) return 1;
+      } else if (sortMode === 'edited') {
+        const diff = (metaB?.sortTime || 0) - (metaA?.sortTime || 0);
         if (diff !== 0) return diff;
       } else if (sortMode === 'created') {
-        const diff = creationTimeValue(b) - creationTimeValue(a);
+        const diff = (metaB?.creationTime || 0) - (metaA?.creationTime || 0);
         if (diff !== 0) return diff;
       } else {
-        const nameDiff = String(a.decName || a.name || '').localeCompare(String(b.decName || b.name || ''), undefined, {
-          sensitivity: 'base',
-          numeric: true,
-        });
+        const nameDiff = nameCollator.compare(metaA?.name || '', metaB?.name || '');
         if (nameDiff !== 0) return nameDiff;
       }
 
@@ -340,7 +436,13 @@ export default function VaultPage(props: VaultPageProps) {
     });
 
     return next;
-  }, [props.ciphers, sidebarFilter, searchQuery, sortMode, duplicateSignatureCounts]);
+  }, [props.ciphers, cipherMetaById, sidebarFilter, searchQuery, sortMode, duplicateSignatureInfo, vaultOrderedIds, nameCollator]);
+
+  const filteredCipherIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const cipher of filteredCiphers) ids.add(cipher.id);
+    return ids;
+  }, [filteredCiphers]);
 
   const sidebarFilterKey = useMemo(() => {
     if (sidebarFilter.kind === 'folder') return `folder:${sidebarFilter.folderId ?? 'none'}`;
@@ -349,7 +451,12 @@ export default function VaultPage(props: VaultPageProps) {
   }, [sidebarFilter]);
 
   useEffect(() => {
+    if (suppressNextSortScrollRef.current) {
+      suppressNextSortScrollRef.current = false;
+      return;
+    }
     setListScrollTop(0);
+    listScrollBucketRef.current = 0;
     listPanelRef.current?.scrollTo({ top: 0 });
   }, [searchQuery, sortMode, sidebarFilterKey]);
 
@@ -359,21 +466,52 @@ export default function VaultPage(props: VaultPageProps) {
     }
   }, [sidebarFilter.kind, sortMode]);
 
+  const canReorderVaultList =
+    !searchQuery &&
+    sidebarFilter.kind !== 'duplicates' &&
+    sidebarFilter.kind !== 'trash' &&
+    sidebarFilter.kind !== 'archive' &&
+    !props.loading &&
+    !busy;
+
+  function handleReorderVaultCipher(activeId: string, overId: string): void {
+    if (!canReorderVaultList || activeId === overId) return;
+    const currentIds = filteredCiphers.map((cipher) => cipher.id);
+    const fromIndex = currentIds.indexOf(activeId);
+    const toIndex = currentIds.indexOf(overId);
+    if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) return;
+    const nextVisibleIds = [...currentIds];
+    const [moved] = nextVisibleIds.splice(fromIndex, 1);
+    nextVisibleIds.splice(toIndex, 0, moved);
+
+    setVaultOrderedIds((prev) => {
+      const validIds = new Set(props.ciphers.map((cipher) => cipher.id));
+      const nextVisibleSet = new Set(nextVisibleIds);
+      const existingHiddenIds = prev.filter((id) => validIds.has(id) && !nextVisibleSet.has(id));
+      const fallbackHiddenIds = props.ciphers
+        .map((cipher) => cipher.id)
+        .filter((id) => validIds.has(id) && !nextVisibleSet.has(id) && !existingHiddenIds.includes(id));
+      const next = [...nextVisibleIds, ...existingHiddenIds, ...fallbackHiddenIds];
+      return next;
+    });
+    if (sortMode !== 'manual') {
+      suppressNextSortScrollRef.current = true;
+      setSortMode('manual');
+    }
+  }
+
   useEffect(() => {
     if (isCreating) return;
     if (!filteredCiphers.length) {
       if (selectedCipherId) setSelectedCipherId('');
       return;
     }
-    if (!selectedCipherId || !filteredCiphers.some((x) => x.id === selectedCipherId)) {
+    if (!selectedCipherId || !filteredCipherIds.has(selectedCipherId)) {
       setSelectedCipherId(filteredCiphers[0].id);
     }
-  }, [filteredCiphers, selectedCipherId, isCreating]);
+  }, [filteredCiphers, filteredCipherIds, selectedCipherId, isCreating]);
 
-  const selectedCipher = useMemo(
-    () => props.ciphers.find((x) => x.id === selectedCipherId) || null,
-    [props.ciphers, selectedCipherId]
-  );
+  const selectedCipher = useMemo(() => cipherById.get(selectedCipherId) || null, [cipherById, selectedCipherId]);
   const virtualRange = useMemo(() => {
     if (!filteredCiphers.length) {
       return { start: 0, end: 0, padTop: 0, padBottom: 0 };
@@ -439,15 +577,22 @@ export default function VaultPage(props: VaultPageProps) {
 
 function folderName(id: string | null | undefined): string {
   if (!id) return t('txt_no_folder');
-  const folder = props.folders.find((x) => x.id === id);
+  const folder = folderById.get(id);
   return folder?.decName || folder?.name || id;
 }
 
   function listSubtitle(cipher: Cipher): string {
     if (Number(cipher.type || 1) === 1) {
-      return cipher.login?.decUsername || firstCipherUri(cipher) || '';
+      return cipher.login?.decUsername || cipherMetaById.get(cipher.id)?.firstUri || '';
     }
     return cipherTypeLabel(Number(cipher.type || 1));
+  }
+
+  function handleListScroll(top: number): void {
+    const bucket = Math.floor(Math.max(0, top) / VAULT_LIST_ROW_HEIGHT);
+    if (bucket === listScrollBucketRef.current) return;
+    listScrollBucketRef.current = bucket;
+    setListScrollTop(top);
   }
 
   function startCreate(type: number): void {
@@ -908,6 +1053,9 @@ function folderName(id: string | null | undefined): string {
           selectedCipherId={selectedCipherId}
           selectedMap={selectedMap}
           sidebarFilter={sidebarFilter}
+          isMobileLayout={isMobileLayout}
+          mobileFabVisible={!isMobileLayout || mobilePanel === 'list'}
+          canReorder={canReorderVaultList}
           createMenuOpen={createMenuOpen}
           createMenuRef={createMenuRef}
           sortMenuRef={sortMenuRef}
@@ -930,7 +1078,7 @@ function folderName(id: string | null | undefined): string {
             const map: Record<string, boolean> = {};
             const seen = new Set<string>();
             for (const cipher of filteredCiphers) {
-              const signature = buildCipherDuplicateSignature(cipher);
+              const signature = duplicateSignatureInfo?.byId.get(cipher.id) || buildCipherDuplicateSignature(cipher);
               if (seen.has(signature)) {
                 map[cipher.id] = true;
                 continue;
@@ -954,12 +1102,16 @@ function folderName(id: string | null | undefined): string {
             setMoveOpen(true);
           }}
           onClearSelection={() => setSelectedMap({})}
-          onScroll={setListScrollTop}
+          onReorderCipher={handleReorderVaultCipher}
+          onScroll={handleListScroll}
           onToggleSelected={(cipherId, checked) =>
-            setSelectedMap((prev) => ({
-              ...prev,
-              [cipherId]: checked,
-            }))
+            setSelectedMap((prev) => {
+              if (checked) return { ...prev, [cipherId]: true };
+              if (!prev[cipherId]) return prev;
+              const next = { ...prev };
+              delete next[cipherId];
+              return next;
+            })
           }
           onSelectCipher={(cipherId) => {
             if (isEditing || isCreating) {
