@@ -766,7 +766,7 @@ export async function createCipher(
   authedFetch: AuthedFetch,
   session: SessionState,
   draft: VaultDraft
-): Promise<{ id: string }> {
+): Promise<Cipher> {
   const payload = await buildCipherPayload(session, draft, null);
 
   const resp = await authedFetch('/api/ciphers', {
@@ -775,9 +775,9 @@ export async function createCipher(
     body: JSON.stringify(payload),
   });
   if (!resp.ok) throw new Error('Create item failed');
-  const body = await parseJson<{ id?: string }>(resp);
+  const body = await parseJson<Cipher>(resp);
   if (!body?.id) throw new Error('Create item failed');
-  return { id: body.id };
+  return body;
 }
 
 export async function updateCipher(
@@ -785,7 +785,7 @@ export async function updateCipher(
   session: SessionState,
   cipher: Cipher,
   draft: VaultDraft
-): Promise<void> {
+): Promise<Cipher> {
   const payload = await buildCipherPayload(session, draft, cipher);
 
   const resp = await authedFetch(`/api/ciphers/${encodeURIComponent(cipher.id)}`, {
@@ -794,25 +794,29 @@ export async function updateCipher(
     body: JSON.stringify(payload),
   });
   if (!resp.ok) throw new Error('Update item failed');
+  return (await parseJson<Cipher>(resp))!;
 }
 
-export async function deleteCipher(authedFetch: AuthedFetch, cipherId: string): Promise<void> {
+export async function deleteCipher(authedFetch: AuthedFetch, cipherId: string): Promise<Cipher> {
   const resp = await authedFetch(`/api/ciphers/${encodeURIComponent(cipherId)}`, { method: 'DELETE' });
   if (!resp.ok) throw new Error('Delete item failed');
+  return (await parseJson<Cipher>(resp))!;
 }
 
-export async function archiveCipher(authedFetch: AuthedFetch, cipherId: string): Promise<void> {
+export async function archiveCipher(authedFetch: AuthedFetch, cipherId: string): Promise<Cipher> {
   const id = String(cipherId || '').trim();
   if (!id) throw new Error('Cipher id is required');
   const resp = await authedFetch(`/api/ciphers/${encodeURIComponent(id)}/archive`, { method: 'PUT' });
   if (!resp.ok) throw new Error('Archive item failed');
+  return (await parseJson<Cipher>(resp))!;
 }
 
-export async function unarchiveCipher(authedFetch: AuthedFetch, cipherId: string): Promise<void> {
+export async function unarchiveCipher(authedFetch: AuthedFetch, cipherId: string): Promise<Cipher> {
   const id = String(cipherId || '').trim();
   if (!id) throw new Error('Cipher id is required');
   const resp = await authedFetch(`/api/ciphers/${encodeURIComponent(id)}/unarchive`, { method: 'PUT' });
   if (!resp.ok) throw new Error('Unarchive item failed');
+  return (await parseJson<Cipher>(resp))!;
 }
 
 export async function bulkDeleteCiphers(authedFetch: AuthedFetch, ids: string[]): Promise<void> {

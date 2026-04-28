@@ -1282,6 +1282,7 @@ export default function App() {
     refetchFolders: foldersQuery.refetch,
     refetchSends: sendsQuery.refetch,
     onNotify: pushToast,
+    patchDecryptedCiphers: setDecryptedCiphers,
   });
   const accountSecurityActions = useAccountSecurityActions({
     authedFetch,
