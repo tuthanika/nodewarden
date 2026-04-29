@@ -249,6 +249,9 @@
 
 .list-panel {
   @apply min-h-0 overflow-auto p-2;
+  /* Virtualized rows update top/bottom spacers while scrolling. Chrome's scroll anchoring
+     can fight those updates and produce subtle up/down jitter, so disable it here. */
+  overflow-anchor: none;
 }
 
 .list-item {
@@ -256,6 +259,7 @@
   background: rgba(249, 251, 255, 0.9);
   border-color: var(--line);
   contain: paint;
+  overflow-anchor: none;
 }
 
 .list-item::before {

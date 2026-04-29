@@ -13,6 +13,7 @@ import {
   clearProfileSnapshot,
   getCurrentDeviceIdentifier,
   getPasswordHint,
+  getProfile,
   loadProfileSnapshot,
   saveProfileSnapshot,
   revokeCurrentSession,
@@ -21,19 +22,10 @@ import {
   stripProfileSecrets,
 } from '@/lib/api/auth';
 import { listAdminInvites, listAdminUsers } from '@/lib/api/admin';
-import { buildSendShareKey, getSends } from '@/lib/api/send';
-import {
-  getCiphers,
-  getFolders,
-  repairCipherAttachmentMetadata,
-  updateFolder,
-} from '@/lib/api/vault';
+import { getSends } from '@/lib/api/send';
+import { getCachedVaultCoreSnapshot, loadVaultCoreSyncSnapshot } from '@/lib/api/vault-sync';
 import { silentlyRepairBackupSettingsIfNeeded } from '@/lib/backup-settings-repair';
-import { base64ToBytes, decryptBw, decryptStr, encryptBw } from '@/lib/crypto';
 import {
-  buildPublicSendUrl,
-  deriveSendKeyParts,
-  looksLikeCipherString,
   parseSignalRTextFrames,
   readInviteCodeFromUrl,
 } from '@/lib/app-support';
@@ -58,7 +50,10 @@ import { useToastManager } from '@/hooks/useToastManager';
 import { t } from '@/lib/i18n';
 import { APP_NOTIFY_EVENT, type AppNotifyDetail } from '@/lib/app-notify';
 import { dispatchBackupProgress, type BackupProgressDetail } from '@/lib/backup-restore-progress';
+import { decryptSends, decryptVaultCore } from '@/lib/vault-decrypt';
+import { decryptSendsInWorker, decryptVaultCoreInWorker } from '@/lib/vault-worker';
 import type { AppPhase, Cipher, Folder as VaultFolder, Profile, Send, SessionState } from '@/lib/types';
+import type { VaultCoreSnapshot } from '@/lib/vault-cache';
 
 function isBackupProgressDetail(value: unknown): value is BackupProgressDetail {
   if (!value || typeof value !== 'object') return false;
@@ -76,6 +71,10 @@ const IMPORT_ROUTE_PATHS = [IMPORT_ROUTE, '/tools/import', '/tools/import-export
 const IMPORT_ROUTE_ALIASES: ReadonlySet<string> = new Set(IMPORT_ROUTE_PATHS.filter((path) => path !== IMPORT_ROUTE));
 const SETTINGS_HOME_ROUTE = '/settings';
 const SETTINGS_ACCOUNT_ROUTE = '/settings/account';
+
+function isAdminProfile(profile: Profile | null): profile is Profile {
+  return String(profile?.role || '').toLowerCase() === 'admin';
+}
 const THEME_STORAGE_KEY = 'nodewarden.theme.preference.v1';
 const SIGNALR_RECORD_SEPARATOR = String.fromCharCode(0x1e);
 const SIGNALR_UPDATE_TYPE_SYNC_VAULT = 5;
@@ -90,40 +89,6 @@ type SessionTimeoutAction = 'lock' | 'logout';
 const LOCK_TIMEOUT_STORAGE_KEY = 'nodewarden.lock.timeout-minutes.v1';
 const SESSION_TIMEOUT_ACTION_STORAGE_KEY = 'nodewarden.session.timeout-action.v1';
 const LOCK_TIMEOUT_VALUES = new Set<LockTimeoutMinutes>([0, 1, 5, 15, 30]);
-const DECRYPT_BATCH_SIZE = 16;
-
-function yieldToMainThread(): Promise<void> {
-  return new Promise((resolve) => {
-    if (typeof window !== 'undefined' && typeof window.setTimeout === 'function') {
-      window.setTimeout(resolve, 0);
-      return;
-    }
-    setTimeout(resolve, 0);
-  });
-}
-
-async function mapAsyncInBatches<T, R>(
-  items: readonly T[],
-  mapper: (item: T, index: number) => Promise<R>,
-  options?: { batchSize?: number; shouldContinue?: () => boolean }
-): Promise<R[]> {
-  const batchSize = Math.max(1, options?.batchSize || DECRYPT_BATCH_SIZE);
-  const result: R[] = new Array(items.length);
-  for (let start = 0; start < items.length; start += batchSize) {
-    if (options?.shouldContinue && !options.shouldContinue()) break;
-    const end = Math.min(items.length, start + batchSize);
-    const chunk = items.slice(start, end);
-    const mapped = await Promise.all(chunk.map((item, offset) => mapper(item, start + offset)));
-    for (let i = 0; i < mapped.length; i += 1) {
-      result[start + i] = mapped[i];
-    }
-    if (end < items.length) {
-      await yieldToMainThread();
-    }
-  }
-  return result;
-}
-
 function readThemePreference(): ThemePreference {
   if (typeof window === 'undefined') return 'system';
   const stored = String(window.localStorage.getItem(THEME_STORAGE_KEY) || '').trim();
@@ -202,12 +167,15 @@ export default function App() {
   const [decryptedFolders, setDecryptedFolders] = useState<VaultFolder[]>([]);
   const [decryptedCiphers, setDecryptedCiphers] = useState<Cipher[]>([]);
   const [decryptedSends, setDecryptedSends] = useState<Send[]>([]);
+  const [cachedVaultCore, setCachedVaultCore] = useState<VaultCoreSnapshot | null>(null);
   const [vaultInitialDecryptDone, setVaultInitialDecryptDone] = useState(false);
   const sessionRef = useRef<SessionState | null>(initialBootstrap.session);
-  const migratedPlainFolderIdsRef = useRef<Set<string>>(new Set());
   const silentRefreshVaultRef = useRef<() => Promise<void>>(async () => {});
   const refreshAuthorizedDevicesRef = useRef<() => Promise<void>>(async () => {});
   const repairAttemptRef = useRef<string>('');
+  const pendingVaultCoreQueryRefreshRef = useRef<Promise<{ data?: VaultCoreSnapshot } | unknown> | null>(null);
+  const pendingVaultCoreRefreshRef = useRef<Promise<unknown> | null>(null);
+  const notificationRefreshTimerRef = useRef<number | null>(null);
   const { toasts, pushToast, removeToast } = useToastManager();
 
   useEffect(() => {
@@ -363,6 +331,7 @@ export default function App() {
     },
     [authedFetch]
   );
+  const vaultCacheKey = String(profile?.id || session?.email || '').trim();
   const backupActions = useBackupActions({
     authedFetch,
     onImported: () => {
@@ -761,46 +730,92 @@ export default function App() {
     );
   }
 
-  const ciphersQuery = useQuery({
-    queryKey: ['ciphers', session?.accessToken],
-    queryFn: () => getCiphers(authedFetch),
-    enabled: phase === 'app' && !!session?.symEncKey && !!session?.symMacKey,
+  useEffect(() => {
+    let cancelled = false;
+    if (phase !== 'app' || !session?.symEncKey || !session?.symMacKey || !vaultCacheKey) {
+      setCachedVaultCore(null);
+      return;
+    }
+    void (async () => {
+      const snapshot = await getCachedVaultCoreSnapshot(vaultCacheKey);
+      if (!cancelled) {
+        setCachedVaultCore(snapshot);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [phase, session?.symEncKey, session?.symMacKey, vaultCacheKey]);
+
+  async function refetchVaultCoreData() {
+    if (pendingVaultCoreQueryRefreshRef.current) {
+      return pendingVaultCoreQueryRefreshRef.current;
+    }
+    const request = vaultCoreQuery.refetch().finally(() => {
+      if (pendingVaultCoreQueryRefreshRef.current === request) {
+        pendingVaultCoreQueryRefreshRef.current = null;
+      }
+    });
+    pendingVaultCoreQueryRefreshRef.current = request;
+    return request;
+  }
+
+  const vaultCoreQuery = useQuery({
+    queryKey: ['vault-core', vaultCacheKey],
+    queryFn: () => loadVaultCoreSyncSnapshot(authedFetch, vaultCacheKey),
+    enabled: phase === 'app' && !!session?.symEncKey && !!session?.symMacKey && !!vaultCacheKey,
+    staleTime: 30_000,
   });
-  const foldersQuery = useQuery({
-    queryKey: ['folders', session?.accessToken],
-    queryFn: () => getFolders(authedFetch),
-    enabled: phase === 'app' && !!session?.symEncKey && !!session?.symMacKey,
-  });
+  const encryptedVaultCore = vaultCoreQuery.data || cachedVaultCore;
+  const encryptedFolders = encryptedVaultCore?.folders;
+  const encryptedCiphers = encryptedVaultCore?.ciphers;
   const sendsQuery = useQuery({
-    queryKey: ['sends', session?.accessToken],
+    queryKey: ['sends', vaultCacheKey || session?.email],
     queryFn: () => getSends(authedFetch),
     enabled: phase === 'app' && !!session?.symEncKey && !!session?.symMacKey && (vaultInitialDecryptDone || location === '/sends'),
+    staleTime: 30_000,
   });
+  const profileQuery = useQuery({
+    queryKey: ['profile', vaultCacheKey || session?.email],
+    queryFn: () => getProfile(authedFetch),
+    enabled: phase === 'app' && !!session?.accessToken,
+    staleTime: 30_000,
+  });
+  useEffect(() => {
+    if (!profileQuery.data) return;
+    setProfile(profileQuery.data);
+  }, [profileQuery.data]);
+
+  const isAdmin = isAdminProfile(profile);
   const usersQuery = useQuery({
-    queryKey: ['admin-users', session?.accessToken],
+    queryKey: ['admin-users', vaultCacheKey],
     queryFn: () => listAdminUsers(authedFetch),
-    enabled: phase === 'app' && profile?.role === 'admin' && vaultInitialDecryptDone,
+    enabled: phase === 'app' && isAdmin && vaultInitialDecryptDone,
+    staleTime: 30_000,
   });
   const invitesQuery = useQuery({
-    queryKey: ['admin-invites', session?.accessToken],
+    queryKey: ['admin-invites', vaultCacheKey],
     queryFn: () => listAdminInvites(authedFetch),
-    enabled: phase === 'app' && profile?.role === 'admin' && vaultInitialDecryptDone,
+    enabled: phase === 'app' && isAdmin && vaultInitialDecryptDone,
+    staleTime: 30_000,
   });
   const totpStatusQuery = useQuery({
-    queryKey: ['totp-status', session?.accessToken],
+    queryKey: ['totp-status', vaultCacheKey || session?.email],
     queryFn: () => getTotpStatus(authedFetch),
     enabled: phase === 'app' && !!session?.accessToken && vaultInitialDecryptDone,
+    staleTime: 30_000,
   });
   const authorizedDevicesQuery = useQuery({
-    queryKey: ['authorized-devices', session?.accessToken],
+    queryKey: ['authorized-devices', vaultCacheKey || session?.email],
     queryFn: () => getAuthorizedDevices(authedFetch),
     enabled: phase === 'app' && !!session?.accessToken && vaultInitialDecryptDone,
+    staleTime: 30_000,
   });
 
   useEffect(() => {
     if (phase !== 'app' || !session?.accessToken || !session?.symEncKey || !session?.symMacKey) return;
     if (!vaultInitialDecryptDone) return;
-    if (!profile?.role || profile.role !== 'admin') return;
+    if (!isAdminProfile(profile)) return;
     if (repairAttemptRef.current === session.accessToken) return;
 
     repairAttemptRef.current = session.accessToken;
@@ -820,213 +835,31 @@ export default function App() {
       setVaultInitialDecryptDone(false);
       return;
     }
-    if (!foldersQuery.data || !ciphersQuery.data) return;
+    if (!encryptedFolders || !encryptedCiphers) return;
 
     let active = true;
     (async () => {
       try {
-        const encKey = base64ToBytes(session.symEncKey!);
-        const macKey = base64ToBytes(session.symMacKey!);
-        const decryptField = async (
-          value: string | null | undefined,
-          fieldEnc: Uint8Array = encKey,
-          fieldMac: Uint8Array = macKey
-        ): Promise<string> => {
-          if (!value || typeof value !== 'string') return '';
-          try {
-            return await decryptStr(value, fieldEnc, fieldMac);
-          } catch {
-            // Backward-compatibility: some records may already be plain text.
-            return value;
-          }
-        };
-        const sameBytes = (a: Uint8Array, b: Uint8Array) => {
-          if (a.byteLength !== b.byteLength) return false;
-          for (let i = 0; i < a.byteLength; i += 1) {
-            if (a[i] !== b[i]) return false;
-          }
-          return true;
-        };
-        const decryptFieldWithSource = async (
-          value: string | null | undefined,
-          itemEnc: Uint8Array,
-          itemMac: Uint8Array,
-          canFallbackToUserKey: boolean
-        ): Promise<{ text: string; source: 'item' | 'user' | 'plain' }> => {
-          const raw = String(value || '').trim();
-          if (!raw) return { text: '', source: 'plain' };
-          try {
-            return { text: await decryptStr(raw, itemEnc, itemMac), source: 'item' };
-          } catch {
-            // 继续尝试旧 user key 数据。
-          }
-          if (canFallbackToUserKey) {
-            try {
-              return { text: await decryptStr(raw, encKey, macKey), source: 'user' };
-            } catch {
-              // 保留原文。
-            }
-          }
-          return { text: raw, source: 'plain' };
-        };
-
-        const folders = await mapAsyncInBatches(
-          foldersQuery.data,
-          async (folder) => ({
-            ...folder,
-            decName: await decryptField(folder.name, encKey, macKey),
-          }),
-          { shouldContinue: () => active }
-        );
-
-        const ciphers = await mapAsyncInBatches(
-          ciphersQuery.data,
-          async (cipher) => {
-            let itemEnc = encKey;
-            let itemMac = macKey;
-            if (cipher.key) {
-              try {
-                const itemKey = await decryptBw(cipher.key, encKey, macKey);
-                itemEnc = itemKey.slice(0, 32);
-                itemMac = itemKey.slice(32, 64);
-              } catch {
-                // keep user key when item key decrypt fails
-              }
-            }
-            const itemUsesUserKey = sameBytes(itemEnc, encKey) && sameBytes(itemMac, macKey);
-
-            const nextCipher: Cipher = {
-              ...cipher,
-              decName: await decryptField(cipher.name || '', itemEnc, itemMac),
-              decNotes: await decryptField(cipher.notes || '', itemEnc, itemMac),
-            };
-            if (cipher.login) {
-              nextCipher.login = {
-                ...cipher.login,
-                decUsername: await decryptField(cipher.login.username || '', itemEnc, itemMac),
-                decPassword: await decryptField(cipher.login.password || '', itemEnc, itemMac),
-                decTotp: await decryptField(cipher.login.totp || '', itemEnc, itemMac),
-                uris: await Promise.all(
-                  (cipher.login.uris || []).map(async (u) => ({
-                    ...u,
-                    decUri: await decryptField(u.uri || '', itemEnc, itemMac),
-                  }))
-                ),
-              };
-            }
-            if (Array.isArray(cipher.passwordHistory)) {
-              nextCipher.passwordHistory = await Promise.all(
-                cipher.passwordHistory.map(async (entry) => ({
-                  ...entry,
-                  decPassword: await decryptField(entry?.password || '', itemEnc, itemMac),
-                }))
-              );
-            }
-            if (cipher.card) {
-              nextCipher.card = {
-                ...cipher.card,
-                decCardholderName: await decryptField(cipher.card.cardholderName || '', itemEnc, itemMac),
-                decNumber: await decryptField(cipher.card.number || '', itemEnc, itemMac),
-                decBrand: await decryptField(cipher.card.brand || '', itemEnc, itemMac),
-                decExpMonth: await decryptField(cipher.card.expMonth || '', itemEnc, itemMac),
-                decExpYear: await decryptField(cipher.card.expYear || '', itemEnc, itemMac),
-                decCode: await decryptField(cipher.card.code || '', itemEnc, itemMac),
-              };
-            }
-            if (cipher.identity) {
-              nextCipher.identity = {
-                ...cipher.identity,
-                decTitle: await decryptField(cipher.identity.title || '', itemEnc, itemMac),
-                decFirstName: await decryptField(cipher.identity.firstName || '', itemEnc, itemMac),
-                decMiddleName: await decryptField(cipher.identity.middleName || '', itemEnc, itemMac),
-                decLastName: await decryptField(cipher.identity.lastName || '', itemEnc, itemMac),
-                decUsername: await decryptField(cipher.identity.username || '', itemEnc, itemMac),
-                decCompany: await decryptField(cipher.identity.company || '', itemEnc, itemMac),
-                decSsn: await decryptField(cipher.identity.ssn || '', itemEnc, itemMac),
-                decPassportNumber: await decryptField(cipher.identity.passportNumber || '', itemEnc, itemMac),
-                decLicenseNumber: await decryptField(cipher.identity.licenseNumber || '', itemEnc, itemMac),
-                decEmail: await decryptField(cipher.identity.email || '', itemEnc, itemMac),
-                decPhone: await decryptField(cipher.identity.phone || '', itemEnc, itemMac),
-                decAddress1: await decryptField(cipher.identity.address1 || '', itemEnc, itemMac),
-                decAddress2: await decryptField(cipher.identity.address2 || '', itemEnc, itemMac),
-                decAddress3: await decryptField(cipher.identity.address3 || '', itemEnc, itemMac),
-                decCity: await decryptField(cipher.identity.city || '', itemEnc, itemMac),
-                decState: await decryptField(cipher.identity.state || '', itemEnc, itemMac),
-                decPostalCode: await decryptField(cipher.identity.postalCode || '', itemEnc, itemMac),
-                decCountry: await decryptField(cipher.identity.country || '', itemEnc, itemMac),
-              };
-            }
-            if (cipher.sshKey) {
-              const encryptedFingerprint = cipher.sshKey.keyFingerprint || cipher.sshKey.fingerprint || '';
-              nextCipher.sshKey = {
-                ...cipher.sshKey,
-                decPrivateKey: await decryptField(cipher.sshKey.privateKey || '', itemEnc, itemMac),
-                decPublicKey: await decryptField(cipher.sshKey.publicKey || '', itemEnc, itemMac),
-                keyFingerprint: encryptedFingerprint || null,
-                fingerprint: encryptedFingerprint || null,
-                decFingerprint: await decryptField(encryptedFingerprint, itemEnc, itemMac),
-              };
-            }
-            if (cipher.fields) {
-              nextCipher.fields = await Promise.all(
-                cipher.fields.map(async (field) => ({
-                  ...field,
-                  decName: await decryptField(field.name || '', itemEnc, itemMac),
-                  decValue: await decryptField(field.value || '', itemEnc, itemMac),
-                }))
-              );
-            }
-            if (Array.isArray(cipher.attachments)) {
-              nextCipher.attachments = await Promise.all(
-                cipher.attachments.map(async (attachment) => {
-                  const attachmentId = String(attachment?.id || '').trim();
-                  const fileNameResult = await decryptFieldWithSource(attachment.fileName || '', itemEnc, itemMac, !itemUsesUserKey);
-                  const metadata: { fileName?: string; key?: string | null } = {};
-
-                  if (attachmentId && fileNameResult.source === 'user') {
-                    metadata.fileName = await encryptBw(new TextEncoder().encode(fileNameResult.text), itemEnc, itemMac);
-                  }
-
-                  const attachmentKey = String(attachment?.key || '').trim();
-                  if (
-                    attachmentId &&
-                    attachmentKey &&
-                    looksLikeCipherString(attachmentKey) &&
-                    !itemUsesUserKey
-                  ) {
-                    try {
-                      await decryptBw(attachmentKey, itemEnc, itemMac);
-                    } catch {
-                      try {
-                        const rawAttachmentKey = await decryptBw(attachmentKey, encKey, macKey);
-                        if (rawAttachmentKey.length >= 64) {
-                          metadata.key = await encryptBw(rawAttachmentKey, itemEnc, itemMac);
-                        }
-                      } catch {
-                        // 文件下载时会继续尝试旧格式。
-                      }
-                    }
-                  }
-
-                  if (attachmentId && Object.keys(metadata).length > 0) {
-                    void repairCipherAttachmentMetadata(authedFetch, cipher.id, attachmentId, metadata);
-                  }
-
-                  return {
-                    ...attachment,
-                    decFileName: fileNameResult.text,
-                  };
-                })
-              );
-            }
-            return nextCipher;
-          },
-          { shouldContinue: () => active }
-        );
+        let result;
+        try {
+          result = await decryptVaultCoreInWorker({
+            folders: encryptedFolders,
+            ciphers: encryptedCiphers,
+            symEncKeyB64: session.symEncKey!,
+            symMacKeyB64: session.symMacKey!,
+          });
+        } catch {
+          result = await decryptVaultCore({
+            folders: encryptedFolders,
+            ciphers: encryptedCiphers,
+            symEncKeyB64: session.symEncKey!,
+            symMacKeyB64: session.symMacKey!,
+          });
+        }
 
         if (!active) return;
-        setDecryptedFolders(folders);
-        setDecryptedCiphers(ciphers);
+        setDecryptedFolders(result.folders);
+        setDecryptedCiphers(result.ciphers);
         setVaultInitialDecryptDone(true);
       } catch (error) {
         if (!active) return;
@@ -1037,7 +870,7 @@ export default function App() {
     return () => {
       active = false;
     };
-  }, [session?.symEncKey, session?.symMacKey, foldersQuery.data, ciphersQuery.data]);
+  }, [session?.symEncKey, session?.symMacKey, encryptedFolders, encryptedCiphers]);
 
   useEffect(() => {
     if (!session?.symEncKey || !session?.symMacKey) {
@@ -1049,53 +882,22 @@ export default function App() {
     let active = true;
     (async () => {
       try {
-        const encKey = base64ToBytes(session.symEncKey!);
-        const macKey = base64ToBytes(session.symMacKey!);
-        const decryptField = async (
-          value: string | null | undefined,
-          fieldEnc: Uint8Array = encKey,
-          fieldMac: Uint8Array = macKey
-        ): Promise<string> => {
-          if (!value || typeof value !== 'string') return '';
-          try {
-            return await decryptStr(value, fieldEnc, fieldMac);
-          } catch {
-            return value;
-          }
-        };
-        const sends = await mapAsyncInBatches(
-          sendsQuery.data,
-          async (send) => {
-            const nextSend: Send = { ...send };
-            try {
-              if (send.key) {
-                const sendKeyRaw = await decryptBw(send.key, encKey, macKey);
-                const derived = await deriveSendKeyParts(sendKeyRaw);
-                nextSend.decName = await decryptField(send.name || '', derived.enc, derived.mac);
-                nextSend.decNotes = await decryptField(send.notes || '', derived.enc, derived.mac);
-                nextSend.decText = await decryptField(send.text?.text || '', derived.enc, derived.mac);
-                if (send.file?.fileName) {
-                  const decFileName = await decryptField(send.file.fileName, derived.enc, derived.mac);
-                  nextSend.file = {
-                    ...(send.file || {}),
-                    fileName: decFileName || send.file.fileName,
-                  };
-                }
-                const shareKey = await buildSendShareKey(send.key, session.symEncKey!, session.symMacKey!);
-                nextSend.decShareKey = shareKey;
-                nextSend.shareUrl = buildPublicSendUrl(window.location.origin, send.accessId, shareKey);
-              } else {
-                nextSend.decName = '';
-                nextSend.decNotes = '';
-                nextSend.decText = '';
-              }
-            } catch {
-              nextSend.decName = t('txt_decrypt_failed');
-            }
-            return nextSend;
-          },
-          { shouldContinue: () => active }
-        );
+        let sends;
+        try {
+          sends = await decryptSendsInWorker({
+            sends: sendsQuery.data,
+            symEncKeyB64: session.symEncKey!,
+            symMacKeyB64: session.symMacKey!,
+            origin: window.location.origin,
+          });
+        } catch {
+          sends = await decryptSends({
+            sends: sendsQuery.data,
+            symEncKeyB64: session.symEncKey!,
+            symMacKeyB64: session.symMacKey!,
+            origin: window.location.origin,
+          });
+        }
 
         if (!active) return;
         setDecryptedSends(sends);
@@ -1110,33 +912,22 @@ export default function App() {
     };
   }, [session?.symEncKey, session?.symMacKey, sendsQuery.data]);
 
-  useEffect(() => {
-    if (!session?.symEncKey || !session?.symMacKey || !foldersQuery.data?.length) return;
-    let cancelled = false;
-    (async () => {
-      const pending = foldersQuery.data.filter((folder) => {
-        if (!folder?.id || !folder?.name) return false;
-        if (migratedPlainFolderIdsRef.current.has(folder.id)) return false;
-        return !looksLikeCipherString(String(folder.name));
-      });
-      if (!pending.length) return;
-      for (const folder of pending) {
-        try {
-          await updateFolder(authedFetch, session, folder.id, String(folder.name));
-          migratedPlainFolderIdsRef.current.add(folder.id);
-        } catch {
-          // keep silent; web still supports plaintext fallback display
-        }
-      }
-      if (!cancelled) await foldersQuery.refetch();
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [session?.symEncKey, session?.symMacKey, foldersQuery.data, authedFetch]);
-
   async function refreshVaultSilently() {
-    await Promise.all([ciphersQuery.refetch(), foldersQuery.refetch(), sendsQuery.refetch()]);
+    if (pendingVaultCoreRefreshRef.current) {
+      await pendingVaultCoreRefreshRef.current;
+      return;
+    }
+    const tasks: Promise<unknown>[] = [refetchVaultCoreData()];
+    if (location === '/sends') {
+      tasks.push(sendsQuery.refetch());
+    }
+    const request = Promise.all(tasks).finally(() => {
+      if (pendingVaultCoreRefreshRef.current === request) {
+        pendingVaultCoreRefreshRef.current = null;
+      }
+    });
+    pendingVaultCoreRefreshRef.current = request;
+    await request;
   }
 
   silentRefreshVaultRef.current = refreshVaultSilently;
@@ -1233,7 +1024,13 @@ export default function App() {
           if (updateType !== SIGNALR_UPDATE_TYPE_SYNC_VAULT) continue;
           const contextId = String(frame.arguments?.[0]?.ContextId || '').trim();
           if (contextId && contextId === getCurrentDeviceIdentifier()) continue;
-          void silentRefreshVaultRef.current();
+          if (notificationRefreshTimerRef.current !== null) {
+            window.clearTimeout(notificationRefreshTimerRef.current);
+          }
+          notificationRefreshTimerRef.current = window.setTimeout(() => {
+            notificationRefreshTimerRef.current = null;
+            void silentRefreshVaultRef.current();
+          }, 250);
         }
       });
 
@@ -1257,6 +1054,10 @@ export default function App() {
 
     return () => {
       disposed = true;
+      if (notificationRefreshTimerRef.current !== null) {
+        window.clearTimeout(notificationRefreshTimerRef.current);
+        notificationRefreshTimerRef.current = null;
+      }
       clearReconnectTimer();
       if (socket) {
         const s = socket;
@@ -1276,13 +1077,20 @@ export default function App() {
     session,
     profile,
     defaultKdfIterations,
-    encryptedCiphers: ciphersQuery.data,
-    encryptedFolders: foldersQuery.data,
-    refetchCiphers: ciphersQuery.refetch,
-    refetchFolders: foldersQuery.refetch,
+    encryptedCiphers,
+    encryptedFolders,
+    refetchCiphers: async () => {
+      const result = await refetchVaultCoreData() as { data?: VaultCoreSnapshot };
+      return { data: result.data?.ciphers };
+    },
+    refetchFolders: async () => {
+      const result = await refetchVaultCoreData() as { data?: VaultCoreSnapshot };
+      return { data: result.data?.folders };
+    },
     refetchSends: sendsQuery.refetch,
     onNotify: pushToast,
     patchDecryptedCiphers: setDecryptedCiphers,
+    patchDecryptedFolders: setDecryptedFolders,
   });
   const accountSecurityActions = useAccountSecurityActions({
     authedFetch,
@@ -1357,10 +1165,10 @@ export default function App() {
   }, [phase, isImportHashRoute, location, navigate]);
 
   useEffect(() => {
-    if (phase === 'app' && profile?.role !== 'admin' && location === '/backup') {
+    if (phase === 'app' && !isAdminProfile(profile) && location === '/backup' && !profileQuery.isFetching) {
       navigate('/vault');
     }
-  }, [phase, profile?.role, location, navigate]);
+  }, [phase, profile?.role, profileQuery.isFetching, location, navigate]);
 
   useEffect(() => {
     if (phase === 'app' && !mobileLayout && location === SETTINGS_HOME_ROUTE) {
@@ -1379,9 +1187,9 @@ export default function App() {
     decryptedCiphers,
     decryptedFolders,
     decryptedSends,
-    ciphersLoading: ciphersQuery.isFetching,
-    foldersLoading: foldersQuery.isFetching,
-    sendsLoading: sendsQuery.isFetching,
+    ciphersLoading: vaultCoreQuery.isFetching && !encryptedVaultCore,
+    foldersLoading: vaultCoreQuery.isFetching && !encryptedVaultCore,
+    sendsLoading: sendsQuery.isFetching && !sendsQuery.data,
     users: usersQuery.data || [],
     invites: invitesQuery.data || [],
     totpEnabled: !!totpStatusQuery.data?.enabled,

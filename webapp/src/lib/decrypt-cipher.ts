@@ -1,14 +1,6 @@
 import { decryptStr, decryptBw } from './crypto';
 import type { Cipher } from './types';
 
-function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
-  if (a.byteLength !== b.byteLength) return false;
-  for (let i = 0; i < a.byteLength; i += 1) {
-    if (a[i] !== b[i]) return false;
-  }
-  return true;
-}
-
 async function decryptField(
   value: string | null | undefined,
   enc: Uint8Array,

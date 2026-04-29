@@ -3,13 +3,13 @@ import { useEffect } from 'preact/hooks';
 import { Link, Route, Switch } from 'wouter';
 import { ArrowUpDown, Cloud, LogOut, Settings as SettingsIcon, Shield, ShieldUser } from 'lucide-preact';
 import type { ImportAttachmentFile, ImportResultSummary } from '@/components/ImportPage';
-import VaultPage from '@/components/VaultPage';
 import type { AdminBackupImportResponse, AdminBackupRunResponse, AdminBackupSettings, RemoteBackupBrowserResponse } from '@/lib/api/backup';
 import type { CiphersImportPayload } from '@/lib/api/vault';
 import { t } from '@/lib/i18n';
 import type { AdminInvite, AdminUser, AuthorizedDevice, Cipher, Folder as VaultFolder, Profile, Send, SendDraft, SessionState, VaultDraft } from '@/lib/types';
 import type { ExportRequest } from '@/lib/export-formats';
 
+const VaultPage = lazy(() => import('@/components/VaultPage'));
 const SendsPage = lazy(() => import('@/components/SendsPage'));
 const TotpCodesPage = lazy(() => import('@/components/TotpCodesPage'));
 const SettingsPage = lazy(() => import('@/components/SettingsPage'));
@@ -129,6 +129,7 @@ export interface AppMainRoutesProps {
 
 export default function AppMainRoutes(props: AppMainRoutesProps) {
   const importRoutePaths = [props.importRoute, '/tools/import', '/tools/import-export', '/tools/import-data', '/import', '/import-export'] as const;
+  const isAdmin = String(props.profile?.role || '').toLowerCase() === 'admin';
   const importPageContent = (
     <Suspense fallback={<RouteContentFallback />}>
       <ImportPage
@@ -181,36 +182,38 @@ export default function AppMainRoutes(props: AppMainRoutesProps) {
         </Suspense>
       </Route>
       <Route path="/vault">
-        <VaultPage
-          ciphers={props.decryptedCiphers}
-          folders={props.decryptedFolders}
-          loading={props.ciphersLoading || props.foldersLoading}
-          emailForReprompt={props.profile?.email || props.session?.email || ''}
-          onRefresh={props.onRefreshVault}
-          onCreate={props.onCreateVaultItem}
-          onUpdate={props.onUpdateVaultItem}
-          onDelete={props.onDeleteVaultItem}
-          onArchive={props.onArchiveVaultItem}
-          onUnarchive={props.onUnarchiveVaultItem}
-          onBulkDelete={props.onBulkDeleteVaultItems}
-          onBulkPermanentDelete={props.onBulkPermanentDeleteVaultItems}
-          onBulkRestore={props.onBulkRestoreVaultItems}
-          onBulkArchive={props.onBulkArchiveVaultItems}
-          onBulkUnarchive={props.onBulkUnarchiveVaultItems}
-          onBulkMove={props.onBulkMoveVaultItems}
-          onVerifyMasterPassword={props.onVerifyMasterPassword}
-          onNotify={props.onNotify}
-          onCreateFolder={props.onCreateFolder}
-          onRenameFolder={props.onRenameFolder}
-          onDeleteFolder={props.onDeleteFolder}
-          onBulkDeleteFolders={props.onBulkDeleteFolders}
-          onDownloadAttachment={props.onDownloadVaultAttachment}
-          downloadingAttachmentKey={props.downloadingAttachmentKey}
-          attachmentDownloadPercent={props.attachmentDownloadPercent}
-          uploadingAttachmentName={props.uploadingAttachmentName}
-          attachmentUploadPercent={props.attachmentUploadPercent}
-          mobileSidebarToggleKey={props.mobileSidebarToggleKey}
-        />
+        <Suspense fallback={<RouteContentFallback />}>
+          <VaultPage
+            ciphers={props.decryptedCiphers}
+            folders={props.decryptedFolders}
+            loading={props.ciphersLoading || props.foldersLoading}
+            emailForReprompt={props.profile?.email || props.session?.email || ''}
+            onRefresh={props.onRefreshVault}
+            onCreate={props.onCreateVaultItem}
+            onUpdate={props.onUpdateVaultItem}
+            onDelete={props.onDeleteVaultItem}
+            onArchive={props.onArchiveVaultItem}
+            onUnarchive={props.onUnarchiveVaultItem}
+            onBulkDelete={props.onBulkDeleteVaultItems}
+            onBulkPermanentDelete={props.onBulkPermanentDeleteVaultItems}
+            onBulkRestore={props.onBulkRestoreVaultItems}
+            onBulkArchive={props.onBulkArchiveVaultItems}
+            onBulkUnarchive={props.onBulkUnarchiveVaultItems}
+            onBulkMove={props.onBulkMoveVaultItems}
+            onVerifyMasterPassword={props.onVerifyMasterPassword}
+            onNotify={props.onNotify}
+            onCreateFolder={props.onCreateFolder}
+            onRenameFolder={props.onRenameFolder}
+            onDeleteFolder={props.onDeleteFolder}
+            onBulkDeleteFolders={props.onBulkDeleteFolders}
+            onDownloadAttachment={props.onDownloadVaultAttachment}
+            downloadingAttachmentKey={props.downloadingAttachmentKey}
+            attachmentDownloadPercent={props.attachmentDownloadPercent}
+            uploadingAttachmentName={props.uploadingAttachmentName}
+            attachmentUploadPercent={props.attachmentUploadPercent}
+            mobileSidebarToggleKey={props.mobileSidebarToggleKey}
+          />
+        </Suspense>
       </Route>
       <Route path={props.settingsAccountRoute}>
         {props.profile && (
@@ -260,13 +263,13 @@ export default function AppMainRoutes(props: AppMainRoutesProps) {
                 <ArrowUpDown size={18} />
                 <span>{t('nav_import_export')}</span>
               </Link>
-              {props.profile.role === 'admin' && (
+              {isAdmin && (
                 <Link href="/admin" className="mobile-settings-link">
                   <ShieldUser size={18} />
                   <span>{t('nav_admin_panel')}</span>
                 </Link>
               )}
-              {props.profile.role === 'admin' && (
+              {isAdmin && (
                 <Link href="/backup" className="mobile-settings-link">
                   <Cloud size={18} />
                   <span>{t('nav_backup_strategy')}</span>
@@ -338,7 +341,7 @@ export default function AppMainRoutes(props: AppMainRoutesProps) {
         <LegacyBackupRedirect onNavigate={props.onNavigate} />
       </Route>
       <Route path="/backup">
-        {props.profile?.role === 'admin' ? (
+        {isAdmin ? (
           <div className="stack">
             {props.mobileLayout && (
               <div className="mobile-settings-subhead">

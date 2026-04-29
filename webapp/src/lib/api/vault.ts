@@ -19,8 +19,8 @@ import {
 import { readResponseBytesWithProgress } from '../download';
 import { loadVaultCoreSyncSnapshot } from './vault-sync';
 
-export async function getFolders(authedFetch: AuthedFetch): Promise<Folder[]> {
-  const body = await loadVaultCoreSyncSnapshot(authedFetch);
+export async function getFolders(authedFetch: AuthedFetch, cacheKey: string): Promise<Folder[]> {
+  const body = await loadVaultCoreSyncSnapshot(authedFetch, cacheKey);
   return body.folders || [];
 }
 
@@ -92,8 +92,8 @@ export async function updateFolder(
   if (!resp.ok) throw new Error('Update folder failed');
 }
 
-export async function getCiphers(authedFetch: AuthedFetch): Promise<Cipher[]> {
-  const body = await loadVaultCoreSyncSnapshot(authedFetch);
+export async function getCiphers(authedFetch: AuthedFetch, cacheKey: string): Promise<Cipher[]> {
+  const body = await loadVaultCoreSyncSnapshot(authedFetch, cacheKey);
   return body.ciphers || [];
 }
 

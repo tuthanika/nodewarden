@@ -14,7 +14,7 @@ import { StorageService } from '../services/storage';
 import { notifyUserVaultSync } from '../durable/notifications-hub';
 import { jsonResponse, errorResponse } from '../utils/response';
 import { generateUUID } from '../utils/uuid';
-import { deleteAllAttachmentsForCipher } from './attachments';
+import { deleteAllAttachmentsForCipher, deleteAllAttachmentsForCiphers } from './attachments';
 import { parsePagination, encodeContinuationToken } from '../utils/pagination';
 import { readActingDeviceIdentifier } from '../utils/device';
 
@@ -744,11 +744,15 @@ export async function handleBulkPermanentDeleteCiphers(request: Request, env: En
     return new Response(null, { status: 204 });
   }
 
-  for (const id of ids) {
-    await deleteAllAttachmentsForCipher(env, id);
+  const ownedCiphers = await storage.getCiphersByIds(ids, userId);
+  const ownedIds = ownedCiphers.map((cipher) => cipher.id);
+  if (!ownedIds.length) {
+    return new Response(null, { status: 204 });
   }
 
-  const revisionDate = await storage.bulkDeleteCiphers(ids, userId);
+  await deleteAllAttachmentsForCiphers(env, ownedIds);
+
+  const revisionDate = await storage.bulkDeleteCiphers(ownedIds, userId);
   if (revisionDate) {
     notifyVaultSyncForRequest(request, env, userId, revisionDate);
   }

@@ -14,6 +14,7 @@ import {
   getBackupLocalDateKey,
   getDefaultBackupSettings,
   getBackupSettingsRepairState,
+  hasBackupSlotBetween,
   isBackupDueNow,
   loadBackupSettings,
   normalizeBackupSettingsInput,
@@ -78,6 +79,98 @@ function getBackupDestinationSummary(destination: BackupDestinationRecord | null
     destinationName: destination.name,
     destinationType: destination.type,
   };
+}
+
+const BACKUP_RUNNER_LOCK_KEY = 'backup.runner.lock.v1';
+const BACKUP_RUNNER_LEASE_MS = 10 * 60 * 1000;
+const BACKUP_RUNNER_HEARTBEAT_MS = 30 * 1000;
+
+interface BackupRunnerLease {
+  token: string;
+  touch: () => Promise<void>;
+  release: () => Promise<void>;
+}
+
+async function acquireBackupRunnerLease(env: Env, reason: string): Promise<BackupRunnerLease | null> {
+  const token = generateUUID();
+  const nowMs = Date.now();
+  const expiresAtMs = nowMs + BACKUP_RUNNER_LEASE_MS;
+  const value = JSON.stringify({
+    token,
+    reason,
+    acquiredAt: new Date(nowMs).toISOString(),
+    touchedAt: new Date(nowMs).toISOString(),
+    expiresAtMs,
+  });
+  const result = await env.DB
+    .prepare(
+      `INSERT INTO config(key, value) VALUES(?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value
+       WHERE COALESCE(CAST(json_extract(config.value, '$.expiresAtMs') AS INTEGER), 0) <= ?`
+    )
+    .bind(BACKUP_RUNNER_LOCK_KEY, value, nowMs)
+    .run();
+
+  if ((result.meta?.changes || 0) < 1) {
+    return null;
+  }
+
+  return {
+    token,
+    touch: async () => {
+      const nextNowMs = Date.now();
+      const nextValue = JSON.stringify({
+        token,
+        reason,
+        acquiredAt: new Date(nowMs).toISOString(),
+        touchedAt: new Date(nextNowMs).toISOString(),
+        expiresAtMs: nextNowMs + BACKUP_RUNNER_LEASE_MS,
+      });
+      await env.DB
+        .prepare(
+          `UPDATE config
+           SET value = ?
+           WHERE key = ?
+             AND json_extract(value, '$.token') = ?`
+        )
+        .bind(nextValue, BACKUP_RUNNER_LOCK_KEY, token)
+        .run();
+    },
+    release: async () => {
+      await env.DB
+        .prepare(
+          `DELETE FROM config
+           WHERE key = ?
+             AND json_extract(value, '$.token') = ?`
+        )
+        .bind(BACKUP_RUNNER_LOCK_KEY, token)
+        .run();
+    },
+  };
+}
+
+async function withBackupRunnerLease<T>(
+  env: Env,
+  reason: string,
+  task: (keepAlive: () => Promise<void>) => Promise<T>
+): Promise<T | null> {
+  const lease = await acquireBackupRunnerLease(env, reason);
+  if (!lease) return null;
+
+  let lastHeartbeatAt = 0;
+  const keepAlive = async () => {
+    const nowMs = Date.now();
+    if (nowMs - lastHeartbeatAt < BACKUP_RUNNER_HEARTBEAT_MS) return;
+    lastHeartbeatAt = nowMs;
+    await lease.touch();
+  };
+
+  try {
+    await keepAlive();
+    return await task(keepAlive);
+  } finally {
+    await lease.release();
+  }
 }
 
 function ensureBackupBlobName(value: string): string {
@@ -160,6 +253,7 @@ async function executeConfiguredBackup(
   actorUserId: string | null,
   trigger: 'manual' | 'scheduled',
   destinationId?: string | null,
+  keepAlive?: (() => Promise<void>) | null,
   progress?: ((event: {
     operation: 'backup-remote-run';
     step: string;
@@ -172,6 +266,9 @@ async function executeConfiguredBackup(
   }) => Promise<void>) | null
 ): Promise<{ fileName: string; fileSize: number; remotePath: string; provider: string }> {
   const maxArchiveUploadAttempts = 3;
+  const touchLease = async () => {
+    await keepAlive?.();
+  };
   const currentSettings = await loadBackupSettings(storage, env, 'UTC');
   const destination = requireBackupDestination(currentSettings, destinationId);
 
@@ -180,9 +277,11 @@ async function executeConfiguredBackup(
   destination.runtime.lastAttemptLocalDate = getBackupLocalDateKey(now, destination.schedule.timezone);
   destination.runtime.lastErrorAt = null;
   destination.runtime.lastErrorMessage = null;
+  await touchLease();
   await saveBackupSettings(storage, env, currentSettings);
 
   try {
+    await touchLease();
     await progress?.({
       operation: 'backup-remote-run',
       step: 'remote_run_prepare',
@@ -190,6 +289,7 @@ async function executeConfiguredBackup(
       stageTitle: 'txt_backup_remote_run_progress_prepare_title',
       stageDetail: 'txt_backup_remote_run_progress_prepare_detail',
     });
+    await touchLease();
     const archive = await buildBackupArchive(env, now, {
       includeAttachments: destination.includeAttachments,
       timeZone: destination.schedule.timezone,
@@ -219,9 +319,11 @@ async function executeConfiguredBackup(
     });
     const remoteSession = createRemoteBackupTransferSession(destination);
     if (destination.includeAttachments) {
+      await touchLease();
       const remoteAttachmentIndex = await loadRemoteAttachmentIndex(remoteSession);
       let attachmentIndexChanged = false;
       for (const attachment of archive.manifest.attachmentBlobs || []) {
+        await touchLease();
         if (remoteAttachmentIndex.get(attachment.blobName) === attachment.sizeBytes) {
           continue;
         }
@@ -238,11 +340,13 @@ async function executeConfiguredBackup(
         attachmentIndexChanged = true;
       }
       if (attachmentIndexChanged) {
+        await touchLease();
         await saveRemoteAttachmentIndex(remoteSession, remoteAttachmentIndex);
       }
     }
     let upload: Awaited<ReturnType<typeof uploadBackupArchive>> | null = null;
     for (let attempt = 1; attempt <= maxArchiveUploadAttempts; attempt++) {
+      await touchLease();
       await progress?.({
         operation: 'backup-remote-run',
         step: 'remote_run_upload_archive',
@@ -252,6 +356,7 @@ async function executeConfiguredBackup(
       });
       upload = await remoteSession.uploadArchive(archive.bytes, archive.fileName);
       try {
+        await touchLease();
         await progress?.({
           operation: 'backup-remote-run',
           step: 'remote_run_verify_archive',
@@ -282,6 +387,7 @@ async function executeConfiguredBackup(
     let prunedFileCount = 0;
     let pruneErrorMessage: string | null = null;
     try {
+      await touchLease();
       await progress?.({
         operation: 'backup-remote-run',
         step: 'remote_run_cleanup',
@@ -300,8 +406,10 @@ async function executeConfiguredBackup(
     destination.runtime.lastUploadedFileName = archive.fileName;
     destination.runtime.lastUploadedSizeBytes = archive.bytes.byteLength;
     destination.runtime.lastUploadedDestination = upload.remotePath;
+    await touchLease();
     await saveBackupSettings(storage, env, currentSettings);
 
+    await touchLease();
     await writeAuditLog(storage, actorUserId, `admin.backup.remote.${trigger}`, 'backup', null, {
       ...getBackupDestinationSummary(destination),
       provider: upload.provider,
@@ -332,8 +440,10 @@ async function executeConfiguredBackup(
   } catch (error) {
     destination.runtime.lastErrorAt = new Date().toISOString();
     destination.runtime.lastErrorMessage = error instanceof Error ? error.message : 'Backup upload failed';
+    await touchLease();
     await saveBackupSettings(storage, env, currentSettings);
 
+    await touchLease();
     await writeAuditLog(storage, actorUserId, `admin.backup.remote.${trigger}.failed`, 'backup', null, {
       ...getBackupDestinationSummary(destination),
       error: destination.runtime.lastErrorMessage,
@@ -404,13 +514,30 @@ async function runImportAndAudit(
 }
 
 export async function runScheduledBackupIfDue(env: Env): Promise<void> {
-  const storage = new StorageService(env.DB);
-  const settings = await loadBackupSettings(storage, env, 'UTC');
-  const now = new Date();
-  for (const destination of settings.destinations) {
-    if (!isBackupDueNow(destination, now, BACKUP_SCHEDULER_WINDOW_MINUTES)) continue;
-    await executeConfiguredBackup(env, storage, null, 'scheduled', destination.id);
-  }
+  await withBackupRunnerLease(env, 'scheduled', async (keepAlive) => {
+    const storage = new StorageService(env.DB);
+    let scanStartMs = Date.now();
+
+    while (true) {
+      await keepAlive();
+      const settings = await loadBackupSettings(storage, env, 'UTC');
+      const now = new Date();
+      const dueDestinations = settings.destinations.filter((destination) =>
+        isBackupDueNow(destination, now, BACKUP_SCHEDULER_WINDOW_MINUTES)
+        || hasBackupSlotBetween(destination, new Date(scanStartMs), now)
+      );
+
+      if (!dueDestinations.length) {
+        return;
+      }
+
+      scanStartMs = now.getTime();
+      for (const destination of dueDestinations) {
+        await keepAlive();
+        await executeConfiguredBackup(env, storage, null, 'scheduled', destination.id, keepAlive);
+      }
+    }
+  });
 }
 
 export async function handleGetAdminBackupSettings(request: Request, env: Env, actorUser: User): Promise<Response> {
@@ -512,7 +639,6 @@ export async function handleRepairAdminBackupSettings(request: Request, env: Env
 export async function handleRunAdminConfiguredBackup(request: Request, env: Env, actorUser: User): Promise<Response> {
   if (!isAdmin(actorUser)) return errorResponse('Forbidden', 403);
 
-  const storage = new StorageService(env.DB);
   try {
     let body: { destinationId?: string } | null = null;
     try {
@@ -536,17 +662,32 @@ export async function handleRunAdminConfiguredBackup(request: Request, env: Env,
     }) => {
       await notifyUserBackupProgress(env, actorUser.id, event, targetDeviceIdentifier);
     };
-    const result = await executeConfiguredBackup(env, storage, actorUser.id, 'manual', body?.destinationId || null, progress);
-    const settings = await loadBackupSettings(storage, env, 'UTC');
+    const outcome = await withBackupRunnerLease(env, `manual:${actorUser.id}`, async (keepAlive) => {
+      const storage = new StorageService(env.DB);
+      const result = await executeConfiguredBackup(
+        env,
+        storage,
+        actorUser.id,
+        'manual',
+        body?.destinationId || null,
+        keepAlive,
+        progress
+      );
+      const settings = await loadBackupSettings(storage, env, 'UTC');
+      return { result, settings };
+    });
+    if (!outcome) {
+      return errorResponse('Another backup run is already in progress', 409);
+    }
     return jsonResponse({
       object: 'backup-run',
       result: {
-        fileName: result.fileName,
-        fileSize: result.fileSize,
-        provider: result.provider,
-        remotePath: result.remotePath,
+        fileName: outcome.result.fileName,
+        fileSize: outcome.result.fileSize,
+        provider: outcome.result.provider,
+        remotePath: outcome.result.remotePath,
       },
-      settings,
+      settings: outcome.settings,
     });
   } catch (error) {
     return errorResponse(error instanceof Error ? error.message : 'Backup run failed', 500);

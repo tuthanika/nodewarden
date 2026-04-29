@@ -144,7 +144,7 @@ function decodeAccessTokenClaims(accessToken: string): AccessTokenClaims {
   }
 }
 
-function buildTransientProfile(token: TokenSuccess, email: string): Profile {
+function buildTransientProfile(token: TokenSuccess, email: string, fallbackProfile: Profile | null = null): Profile {
   const claims = decodeAccessTokenClaims(token.access_token);
   const normalizedEmail = String(claims.email || email || '').trim().toLowerCase();
   const accountKeys = token.accountKeys ?? token.AccountKeys ?? null;
@@ -154,9 +154,11 @@ function buildTransientProfile(token: TokenSuccess, email: string): Profile {
     name: String(claims.name || normalizedEmail || ''),
     key: String(token.Key || ''),
     privateKey: token.PrivateKey ?? null,
-    role: 'user',
+    role: fallbackProfile?.role === 'admin' ? 'admin' : 'user',
     premium: !!claims.premium,
     accountKeys,
+    masterPasswordHint: fallbackProfile?.masterPasswordHint ?? null,
+    publicKey: fallbackProfile?.publicKey ?? null,
     object: 'profile',
   };
 }
@@ -256,6 +258,7 @@ export async function completeLogin(
   masterKey: Uint8Array
 ): Promise<CompletedLogin> {
   const normalizedEmail = email.trim().toLowerCase();
+  const fallbackProfile = loadProfileSnapshot(normalizedEmail);
   const baseSession: SessionState = {
     accessToken: token.access_token,
     refreshToken: token.refresh_token,
@@ -266,7 +269,7 @@ export async function completeLogin(
     () => baseSession,
     () => {}
   );
-  const profile = buildTransientProfile(token, normalizedEmail);
+  const profile = buildTransientProfile(token, normalizedEmail, fallbackProfile);
   if (!profile.key) {
     throw new Error('Missing profile key');
   }

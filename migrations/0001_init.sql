@@ -61,6 +61,7 @@ CREATE INDEX IF NOT EXISTS idx_ciphers_user_updated ON ciphers(user_id, updated_
 CREATE INDEX IF NOT EXISTS idx_ciphers_user_archived ON ciphers(user_id, archived_at);
 CREATE INDEX IF NOT EXISTS idx_ciphers_user_deleted ON ciphers(user_id, deleted_at);
 CREATE INDEX IF NOT EXISTS idx_ciphers_user_deleted_updated ON ciphers(user_id, deleted_at, updated_at);
+CREATE INDEX IF NOT EXISTS idx_ciphers_user_folder ON ciphers(user_id, folder_id);
 
 CREATE TABLE IF NOT EXISTS folders (
   id TEXT PRIMARY KEY,
@@ -181,14 +182,6 @@ CREATE TABLE IF NOT EXISTS login_attempts_ip (
   locked_until INTEGER,
   updated_at INTEGER NOT NULL
 );
-
-CREATE TABLE IF NOT EXISTS api_rate_limits (
-  identifier TEXT NOT NULL,
-  window_start INTEGER NOT NULL,
-  count INTEGER NOT NULL,
-  PRIMARY KEY (identifier, window_start)
-);
-CREATE INDEX IF NOT EXISTS idx_api_rate_window ON api_rate_limits(window_start);
 
 CREATE TABLE IF NOT EXISTS used_attachment_download_tokens (
   jti TEXT PRIMARY KEY,

@@ -6,6 +6,17 @@ import { StorageService } from './storage';
 // The client already does heavy PBKDF2 (600k iterations).
 // This second layer only needs to be non-trivial, not expensive.
 const SERVER_HASH_ITERATIONS = 100_000;
+const AUTH_CONTEXT_CACHE_TTL_MS = 15 * 1000;
+
+interface CachedUserEntry {
+  user: User | null;
+  expiresAt: number;
+}
+
+interface CachedDeviceEntry {
+  device: Awaited<ReturnType<StorageService['getDevice']>>;
+  expiresAt: number;
+}
 
 export interface VerifiedAccessContext {
   payload: JWTPayload;
@@ -14,9 +25,63 @@ export interface VerifiedAccessContext {
 
 export class AuthService {
   private storage: StorageService;
+  private static userCache = new Map<string, CachedUserEntry>();
+  private static deviceCache = new Map<string, CachedDeviceEntry>();
 
   constructor(private env: Env) {
     this.storage = new StorageService(env.DB);
+  }
+
+  private readCachedUser(userId: string): User | null | undefined {
+    const cached = AuthService.userCache.get(userId);
+    if (!cached) return undefined;
+    if (cached.expiresAt <= Date.now()) {
+      AuthService.userCache.delete(userId);
+      return undefined;
+    }
+    return cached.user;
+  }
+
+  private writeCachedUser(userId: string, user: User | null): void {
+    AuthService.userCache.set(userId, {
+      user,
+      expiresAt: Date.now() + AUTH_CONTEXT_CACHE_TTL_MS,
+    });
+  }
+
+  private async getCachedUser(userId: string): Promise<User | null> {
+    const cached = this.readCachedUser(userId);
+    if (cached !== undefined) return cached;
+    const user = await this.storage.getUserById(userId);
+    this.writeCachedUser(userId, user);
+    return user;
+  }
+
+  private readCachedDevice(userId: string, deviceId: string) {
+    const cacheKey = `${userId}:${deviceId}`;
+    const cached = AuthService.deviceCache.get(cacheKey);
+    if (!cached) return undefined;
+    if (cached.expiresAt <= Date.now()) {
+      AuthService.deviceCache.delete(cacheKey);
+      return undefined;
+    }
+    return cached.device;
+  }
+
+  private writeCachedDevice(userId: string, deviceId: string, device: Awaited<ReturnType<StorageService['getDevice']>>): void {
+    const cacheKey = `${userId}:${deviceId}`;
+    AuthService.deviceCache.set(cacheKey, {
+      device,
+      expiresAt: Date.now() + AUTH_CONTEXT_CACHE_TTL_MS,
+    });
+  }
+
+  private async getCachedDevice(userId: string, deviceId: string) {
+    const cached = this.readCachedDevice(userId, deviceId);
+    if (cached !== undefined) return cached;
+    const device = await this.storage.getDevice(userId, deviceId);
+    this.writeCachedDevice(userId, deviceId, device);
+    return device;
   }
 
   // Second-layer hash: PBKDF2-SHA256(clientHash, email-salt, iterations).
@@ -97,15 +162,16 @@ export class AuthService {
     const payload = await verifyJWT(parts[1], this.env.JWT_SECRET);
     if (!payload) return null;
 
-    const user = await this.storage.getUserById(payload.sub);
+    const user = await this.getCachedUser(payload.sub);
     if (!user) return null;
+    if (user.status !== 'active') return null;
 
     if (payload.sstamp !== user.securityStamp) {
       return null;
     }
 
     if (payload.did) {
-      const device = await this.storage.getDevice(user.id, payload.did);
+      const device = await this.getCachedDevice(user.id, payload.did);
       if (!device) return null;
       if (!payload.dstamp || payload.dstamp !== device.sessionStamp) return null;
     }

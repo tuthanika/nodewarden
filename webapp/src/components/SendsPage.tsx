@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { CheckCheck, ChevronLeft, Copy, Eye, EyeOff, File, FileText, LayoutGrid, Pencil, Plus, RefreshCw, Save, Send as SendIcon, Trash2, X } from 'lucide-preact';
 import { copyTextToClipboard } from '@/lib/clipboard';
+import LoadingState from '@/components/LoadingState';
 import type { Send, SendDraft } from '@/lib/types';
 import { t } from '@/lib/i18n';
 
@@ -322,6 +323,7 @@ export default function SendsPage(props: SendsPageProps) {
           </button>
         </div>
         <div className="list-panel">
+          {props.loading && !filteredSends.length && <LoadingState lines={6} compact />}
           {filteredSends.map((send, index) => (
             <div
               key={send.id}
@@ -375,7 +377,7 @@ export default function SendsPage(props: SendsPageProps) {
               </button>
             </div>
           ))}
-          {!filteredSends.length && <div className="empty">{t('txt_no_sends')}</div>}
+          {!props.loading && !filteredSends.length && <div className="empty">{t('txt_no_sends')}</div>}
         </div>
       </section>
 
@@ -553,6 +555,7 @@ export default function SendsPage(props: SendsPageProps) {
             </div>
           </div>
         )}
+        {!isEditing && !selectedSend && props.loading && <LoadingState card lines={4} />}
       </section>
     </div>
   );

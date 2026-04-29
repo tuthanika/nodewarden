@@ -134,7 +134,28 @@ export function loadProfileSnapshot(email?: string | null): Profile | null {
 
 export function saveProfileSnapshot(profile: Profile | null): void {
   if (!profile) return;
-  localStorage.setItem(PROFILE_SNAPSHOT_KEY, JSON.stringify(stripProfileSecrets(profile)));
+  const nextSnapshot = stripProfileSecrets(profile);
+  try {
+    const rawExisting = localStorage.getItem(PROFILE_SNAPSHOT_KEY);
+    if (rawExisting) {
+      const existing = stripProfileSecrets(JSON.parse(rawExisting) as Profile);
+      if (
+        existing
+        && existing.email === nextSnapshot?.email
+        && existing.role === 'admin'
+        && nextSnapshot?.role !== 'admin'
+      ) {
+        localStorage.setItem(PROFILE_SNAPSHOT_KEY, JSON.stringify({
+          ...nextSnapshot,
+          role: 'admin',
+        }));
+        return;
+      }
+    }
+  } catch {
+    // Fall back to writing the normalized snapshot below.
+  }
+  localStorage.setItem(PROFILE_SNAPSHOT_KEY, JSON.stringify(nextSnapshot));
 }
 
 export function clearProfileSnapshot(): void {
@@ -382,12 +403,37 @@ export async function getPasswordHint(email: string): Promise<{ masterPasswordHi
 
 export function createAuthedFetch(getSession: () => SessionState | null, setSession: SessionSetter) {
   return async function authedFetch(input: string, init: RequestInit = {}): Promise<Response> {
+    const retryableRequest = async (headers: Headers): Promise<Response> => {
+      const maxAttempts = 3;
+      let lastError: unknown;
+      for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+        try {
+          const response = await fetch(input, { ...init, headers });
+          if (response.status !== 429 && (response.status < 500 || response.status >= 600)) {
+            return response;
+          }
+          lastError = new Error(`HTTP ${response.status}`);
+          if (attempt === maxAttempts - 1) {
+            return response;
+          }
+        } catch (error) {
+          lastError = error;
+          if (attempt === maxAttempts - 1) {
+            throw error;
+          }
+        }
+        const delayMs = 250 * (2 ** attempt) + Math.floor(Math.random() * 120);
+        await new Promise((resolve) => window.setTimeout(resolve, delayMs));
+      }
+      throw lastError instanceof Error ? lastError : new Error('Request failed');
+    };
+
     const session = getSession();
     if (!session?.accessToken) throw new Error('Unauthorized');
     const headers = new Headers(init.headers || {});
     headers.set('Authorization', `Bearer ${session.accessToken}`);
 
-    let resp = await fetch(input, { ...init, headers });
+    let resp = await retryableRequest(headers);
     if (resp.status !== 401 || (!session.refreshToken && session.authMode !== 'web-cookie')) return resp;
 
     const refreshed = await refreshAccessToken(session);
@@ -410,7 +456,7 @@ export function createAuthedFetch(getSession: () => SessionState | null, setSess
 
     const retryHeaders = new Headers(init.headers || {});
     retryHeaders.set('Authorization', `Bearer ${nextSession.accessToken}`);
-    resp = await fetch(input, { ...init, headers: retryHeaders });
+    resp = await retryableRequest(retryHeaders);
     return resp;
   };
 }
@@ -516,6 +562,19 @@ export async function verifyMasterPassword(
     const body = await parseJson<TokenError>(resp);
     throw new Error(body?.error_description || body?.error || 'Master password verify failed');
   }
+}
+
+export async function getVaultRevisionDate(authedFetch: AuthedFetch): Promise<number> {
+  const resp = await authedFetch('/api/accounts/revision-date');
+  if (!resp.ok) {
+    throw new Error('Failed to load revision date');
+  }
+  const body = await parseJson<number>(resp);
+  const stamp = Number(body);
+  if (!Number.isFinite(stamp) || stamp <= 0) {
+    throw new Error('Invalid revision date');
+  }
+  return stamp;
 }
 
 export async function getTotpStatus(authedFetch: AuthedFetch): Promise<{ enabled: boolean }> {

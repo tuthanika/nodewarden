@@ -48,7 +48,7 @@ function getCorsPolicy(request: Request): { allowOrigin: string | null; allowCre
     return { allowOrigin: origin, allowCredentials: true };
   }
   if (isExtensionOrigin(origin)) {
-    return { allowOrigin: origin, allowCredentials: false };
+    return { allowOrigin: origin, allowCredentials: true };
   }
   return { allowOrigin: null, allowCredentials: false };
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { useMemo } from 'preact/hooks';
 import {
   CreditCard,
   FileKey2,
@@ -10,6 +10,7 @@ import {
 import { copyTextToClipboard } from '@/lib/clipboard';
 import { t } from '@/lib/i18n';
 import type { Cipher, CipherAttachment, CustomFieldType, VaultDraft, VaultDraftField, VaultDraftLoginUri } from '@/lib/types';
+import WebsiteIcon from './WebsiteIcon';
 
 export type TypeFilter = 'login' | 'card' | 'identity' | 'note' | 'ssh';
 export type VaultSortMode = 'edited' | 'created' | 'name';
@@ -27,45 +28,56 @@ interface TypeOption {
   label: string;
 }
 
-export const CREATE_TYPE_OPTIONS: TypeOption[] = [
-  { type: 1, label: t('txt_login') },
-  { type: 3, label: t('txt_card') },
-  { type: 4, label: t('txt_identity') },
-  { type: 2, label: t('txt_note') },
-  { type: 5, label: t('txt_ssh_key') },
-];
+export function getCreateTypeOptions(): TypeOption[] {
+  return [
+    { type: 1, label: t('txt_login') },
+    { type: 3, label: t('txt_card') },
+    { type: 4, label: t('txt_identity') },
+    { type: 2, label: t('txt_note') },
+    { type: 5, label: t('txt_ssh_key') },
+  ];
+}
 
 export const VAULT_SORT_STORAGE_KEY = 'nodewarden.vault.sort.v1';
 export const FOLDER_SORT_STORAGE_KEY = 'nodewarden.folder-sort.v1';
 export const MOBILE_LAYOUT_QUERY = '(max-width: 1180px)';
 export const VAULT_LIST_ROW_HEIGHT = 74;
 export const VAULT_LIST_OVERSCAN = 10;
-export const VAULT_SORT_OPTIONS: Array<{ value: VaultSortMode; label: string }> = [
-  { value: 'edited', label: t('txt_sort_last_edited') },
-  { value: 'created', label: t('txt_sort_created') },
-  { value: 'name', label: t('txt_sort_name') },
-];
-export const FOLDER_SORT_OPTIONS: Array<{ value: VaultSortMode; label: string }> = [
-  { value: 'edited', label: t('txt_sort_last_edited') },
-  { value: 'created', label: t('txt_sort_created') },
-  { value: 'name', label: t('txt_sort_name') },
-];
+export function getVaultSortOptions(): Array<{ value: VaultSortMode; label: string }> {
+  return [
+    { value: 'edited', label: t('txt_sort_last_edited') },
+    { value: 'created', label: t('txt_sort_created') },
+    { value: 'name', label: t('txt_sort_name') },
+  ];
+}
 
-export const FIELD_TYPE_OPTIONS: Array<{ value: CustomFieldType; label: string }> = [
-  { value: 0, label: t('txt_text') },
-  { value: 1, label: t('txt_hidden') },
-  { value: 2, label: t('txt_boolean') },
-];
+export function getFolderSortOptions(): Array<{ value: VaultSortMode; label: string }> {
+  return [
+    { value: 'edited', label: t('txt_sort_last_edited') },
+    { value: 'created', label: t('txt_sort_created') },
+    { value: 'name', label: t('txt_sort_name') },
+  ];
+}
 
-export const WEBSITE_MATCH_OPTIONS: Array<{ value: number | null; label: string }> = [
-  { value: null, label: t('txt_uri_match_default_base_domain') },
-  { value: 0, label: t('txt_uri_match_base_domain') },
-  { value: 1, label: t('txt_uri_match_host') },
-  { value: 3, label: t('txt_uri_match_exact') },
-  { value: 5, label: t('txt_uri_match_never') },
-  { value: 2, label: t('txt_uri_match_starts_with') },
-  { value: 4, label: t('txt_uri_match_regular_expression') },
-];
+export function getFieldTypeOptions(): Array<{ value: CustomFieldType; label: string }> {
+  return [
+    { value: 0, label: t('txt_text') },
+    { value: 1, label: t('txt_hidden') },
+    { value: 2, label: t('txt_boolean') },
+  ];
+}
+
+export function getWebsiteMatchOptions(): Array<{ value: number | null; label: string }> {
+  return [
+    { value: null, label: t('txt_uri_match_default_base_domain') },
+    { value: 0, label: t('txt_uri_match_base_domain') },
+    { value: 1, label: t('txt_uri_match_host') },
+    { value: 3, label: t('txt_uri_match_exact') },
+    { value: 5, label: t('txt_uri_match_never') },
+    { value: 2, label: t('txt_uri_match_starts_with') },
+    { value: 4, label: t('txt_uri_match_regular_expression') },
+  ];
+}
 
 export const TOTP_PERIOD_SECONDS = 30;
 export const TOTP_RING_RADIUS = 14;
@@ -147,28 +159,7 @@ export function toBooleanFieldValue(raw: string): boolean {
   return v === '1' || v === 'true' || v === 'yes' || v === 'on';
 }
 
-export function firstCipherUri(cipher: Cipher): string {
-  const uris = cipher.login?.uris || [];
-  for (const uri of uris) {
-    const raw = uri.decUri || uri.uri || '';
-    if (raw.trim()) return raw.trim();
-  }
-  return '';
-}
-
-export function hostFromUri(uri: string): string {
-  if (!uri.trim()) return '';
-  try {
-    const normalized = /^https?:\/\//i.test(uri) ? uri : `https://${uri}`;
-    return new URL(normalized).hostname || '';
-  } catch {
-    return '';
-  }
-}
-
-export function websiteIconUrl(host: string): string {
-  return `/icons/${encodeURIComponent(host)}/icon.png?fallback=404`;
-}
+export { firstCipherUri, hostFromUri, websiteIconUrl } from '@/lib/website-utils';
 
 export function createEmptyLoginUri(): VaultDraftLoginUri {
   return { uri: '', match: null, originalUri: '', extra: {} };
@@ -176,7 +167,7 @@ export function createEmptyLoginUri(): VaultDraftLoginUri {
 
 export function websiteMatchLabel(value: number | null | undefined): string {
   const normalized = typeof value === 'number' && Number.isFinite(value) ? value : null;
-  return WEBSITE_MATCH_OPTIONS.find((option) => option.value === normalized)?.label || t('txt_uri_match_default_base_domain');
+  return getWebsiteMatchOptions().find((option) => option.value === normalized)?.label || t('txt_uri_match_default_base_domain');
 }
 
 function valueOrFallback(value: string | null | undefined): string {
@@ -433,110 +424,8 @@ export function firstPasskeyCreationTime(cipher: Cipher | null): string | null {
   return null;
 }
 
-const failedIconHosts = new Set<string>();
-const loadedIconHosts = new Set<string>();
-const ICON_LOAD_ROOT_MARGIN = '180px 0px';
-
 export function VaultListIcon({ cipher }: { cipher: Cipher }) {
-  const host = useMemo(() => hostFromUri(firstCipherUri(cipher)), [cipher]);
-  const iconStackRef = useRef<HTMLSpanElement | null>(null);
-  const [errored, setErrored] = useState(() => (host ? failedIconHosts.has(host) : false));
-  const [shouldLoad, setShouldLoad] = useState(() => {
-    if (!host) return true;
-    if (loadedIconHosts.has(host)) return true;
-    return false;
-  });
-  const markIconError = () => {
-    if (host) {
-      failedIconHosts.add(host);
-      loadedIconHosts.delete(host);
-    }
-    setErrored(true);
-  };
-  const hideFallback = () => {
-    if (host) loadedIconHosts.add(host);
-    const stack = iconStackRef.current;
-    if (stack) {
-      const fallback = stack.querySelector('.list-icon-fallback') as HTMLElement | null;
-      if (fallback) fallback.style.display = 'none';
-    }
-  };
-  const handleImgRef = (img: HTMLImageElement | null) => {
-    if (!img || !img.complete) return;
-    if (img.naturalWidth > 0) hideFallback();
-  };
-
-  useEffect(() => {
-    if (!host) {
-      setErrored(false);
-      setShouldLoad(true);
-    } else if (failedIconHosts.has(host)) {
-      setErrored(true);
-      setShouldLoad(false);
-    } else {
-      setErrored(false);
-      setShouldLoad(loadedIconHosts.has(host));
-    }
-    const fallback = iconStackRef.current?.querySelector('.list-icon-fallback') as HTMLElement | null;
-    if (fallback) fallback.style.display = '';
-  }, [host]);
-
-  useEffect(() => {
-    if (!host || errored || shouldLoad) return;
-    const node = iconStackRef.current;
-    if (!node) return;
-    if (typeof IntersectionObserver !== 'function') {
-      setShouldLoad(true);
-      return;
-    }
-
-    let cancelled = false;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (!entry.isIntersecting && entry.intersectionRatio <= 0) continue;
-          if (!cancelled) setShouldLoad(true);
-          observer.disconnect();
-          break;
-        }
-      },
-      { rootMargin: ICON_LOAD_ROOT_MARGIN }
-    );
-
-    observer.observe(node);
-    return () => {
-      cancelled = true;
-      observer.disconnect();
-    };
-  }, [host, errored, shouldLoad]);
-
-  if (host && !errored) {
-    return (
-      <span className="list-icon-stack" ref={iconStackRef}>
-        <span className="list-icon-fallback">
-          <Globe size={18} />
-        </span>
-        {shouldLoad && (
-          <img
-            className="list-icon loaded"
-            src={websiteIconUrl(host)}
-            alt=""
-            loading="lazy"
-            decoding="async"
-            referrerPolicy="no-referrer"
-            ref={handleImgRef}
-            onLoad={hideFallback}
-            onError={markIconError}
-          />
-        )}
-      </span>
-    );
-  }
-  return (
-    <span className="list-icon-fallback">
-      <TypeIcon type={Number(cipher.type || 1)} />
-    </span>
-  );
+  return <WebsiteIcon cipher={cipher} fallback={<TypeIcon type={Number(cipher.type || 1)} />} />;
 }
 
 export function copyToClipboard(value: string): void {

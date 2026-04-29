@@ -21,7 +21,9 @@ import { copyTextToClipboard as copyTextWithFeedback } from '@/lib/clipboard';
 import { calcTotpNow } from '@/lib/crypto';
 import { t } from '@/lib/i18n';
 import type { Cipher } from '@/lib/types';
-import { isCipherVisibleInNormalVault, websiteIconUrl } from '@/components/vault/vault-page-helpers';
+import LoadingState from '@/components/LoadingState';
+import WebsiteIcon from '@/components/vault/WebsiteIcon';
+import { isCipherVisibleInNormalVault } from '@/components/vault/vault-page-helpers';
 
 interface TotpCodesPageProps {
   ciphers: Cipher[];
@@ -34,10 +36,6 @@ const TOTP_RING_RADIUS = 14;
 const TOTP_RING_CIRCUMFERENCE = 2 * Math.PI * TOTP_RING_RADIUS;
 const TOTP_ORDER_STORAGE_KEY = 'nodewarden.totp-order';
 const TOTP_REFRESH_BATCH_SIZE = 16;
-const ICON_LOAD_ROOT_MARGIN = '180px 0px';
-const failedIconHosts = new Set<string>();
-const loadedIconHosts = new Set<string>();
-
 function getTotpTimeState(): { windowId: number; remain: number } {
   const epoch = Math.floor(Date.now() / 1000);
   return {
@@ -53,125 +51,8 @@ function formatTotp(code: string): string {
   return `${code.slice(0, 3)} ${code.slice(3, 6)}`;
 }
 
-function firstCipherUri(cipher: Cipher): string {
-  const uris = cipher.login?.uris || [];
-  for (const uri of uris) {
-    const raw = uri.decUri || uri.uri || '';
-    if (raw.trim()) return raw.trim();
-  }
-  return '';
-}
-
-function hostFromUri(uri: string): string {
-  if (!uri.trim()) return '';
-  try {
-    const normalized = /^https?:\/\//i.test(uri) ? uri : `https://${uri}`;
-    return new URL(normalized).hostname || '';
-  } catch {
-    return '';
-  }
-}
-
 function TotpListIcon({ cipher }: { cipher: Cipher }) {
-  const host = useMemo(() => hostFromUri(firstCipherUri(cipher)), [cipher]);
-  const iconStackRef = useRef<HTMLSpanElement | null>(null);
-  const [errored, setErrored] = useState(() => (host ? failedIconHosts.has(host) : false));
-  const [shouldLoad, setShouldLoad] = useState(() => {
-    if (!host) return true;
-    if (loadedIconHosts.has(host)) return true;
-    return false;
-  });
-  const markIconError = () => {
-    if (host) {
-      failedIconHosts.add(host);
-      loadedIconHosts.delete(host);
-    }
-    setErrored(true);
-  };
-  const hideFallback = () => {
-    if (host) loadedIconHosts.add(host);
-    const stack = iconStackRef.current;
-    if (stack) {
-      const fallback = stack.querySelector('.list-icon-fallback') as HTMLElement | null;
-      if (fallback) fallback.style.display = 'none';
-    }
-  };
-  const handleImgRef = (img: HTMLImageElement | null) => {
-    if (!img || !img.complete) return;
-    if (img.naturalWidth > 0) hideFallback();
-  };
-
-  useEffect(() => {
-    if (!host) {
-      setErrored(false);
-      setShouldLoad(true);
-    } else if (failedIconHosts.has(host)) {
-      setErrored(true);
-      setShouldLoad(false);
-    } else {
-      setErrored(false);
-      setShouldLoad(loadedIconHosts.has(host));
-    }
-    const fallback = iconStackRef.current?.querySelector('.list-icon-fallback') as HTMLElement | null;
-    if (fallback) fallback.style.display = '';
-  }, [host]);
-
-  useEffect(() => {
-    if (!host || errored || shouldLoad) return;
-    const node = iconStackRef.current;
-    if (!node) return;
-    if (typeof IntersectionObserver !== 'function') {
-      setShouldLoad(true);
-      return;
-    }
-
-    let cancelled = false;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (!entry.isIntersecting && entry.intersectionRatio <= 0) continue;
-          if (!cancelled) setShouldLoad(true);
-          observer.disconnect();
-          break;
-        }
-      },
-      { rootMargin: ICON_LOAD_ROOT_MARGIN }
-    );
-
-    observer.observe(node);
-    return () => {
-      cancelled = true;
-      observer.disconnect();
-    };
-  }, [host, errored, shouldLoad]);
-
-  if (host && !errored) {
-    return (
-      <span className="list-icon-stack" ref={iconStackRef}>
-        <span className="list-icon-fallback">
-          <Globe size={18} />
-        </span>
-        {shouldLoad && (
-          <img
-            className="list-icon loaded"
-            src={websiteIconUrl(host)}
-            alt=""
-            loading="lazy"
-            decoding="async"
-            referrerPolicy="no-referrer"
-            ref={handleImgRef}
-            onLoad={hideFallback}
-            onError={markIconError}
-          />
-        )}
-      </span>
-    );
-  }
-  return (
-    <span className="list-icon-fallback">
-      <Globe size={18} />
-    </span>
-  );
+  return <WebsiteIcon cipher={cipher} fallback={<Globe size={18} />} />;
 }
 
 interface SortableTotpRowProps {
@@ -447,6 +328,7 @@ export default function TotpCodesPage(props: TotpCodesPageProps) {
           className="totp-codes-list"
           style={{ '--totp-columns': String(columnCount) } as Record<string, string>}
         >
+          {!totpItems.length && props.loading && <LoadingState lines={6} />}
           {!totpItems.length && !props.loading && <div className="empty">{t('txt_no_verification_codes')}</div>}
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <SortableContext items={sortableTotpItems} strategy={rectSortingStrategy}>

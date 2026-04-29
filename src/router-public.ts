@@ -61,7 +61,7 @@ function handleNwFavicon(): Response {
     status: 200,
     headers: {
       'Content-Type': 'image/svg+xml; charset=utf-8',
-      'Cache-Control': `public, max-age=${LIMITS.cache.iconTtlSeconds}`,
+      'Cache-Control': `public, max-age=${LIMITS.cache.iconTtlSeconds}, immutable`,
     },
   });
 }
@@ -181,7 +181,7 @@ async function handleWebsiteIcon(host: string, fallbackMode: 'default' | 'not-fo
         status: 200,
         headers: {
           'Content-Type': resp.headers.get('Content-Type') || 'image/png',
-          'Cache-Control': `public, max-age=${LIMITS.cache.iconTtlSeconds}`,
+          'Cache-Control': `public, max-age=${LIMITS.cache.iconTtlSeconds}, immutable`,
         },
       });
     }

@@ -1,4 +1,5 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import LoadingState from '@/components/LoadingState';
 import VaultDialogs from '@/components/vault/VaultDialogs';
 import VaultDetailView from '@/components/vault/VaultDetailView';
 import VaultEditor from '@/components/vault/VaultEditor';
@@ -1139,7 +1140,7 @@ const folderName = useCallback((id: string | null | undefined): string => {
             </div>
           )}
 
-          {!isEditing && !selectedCipher && <div className="empty card">{t('txt_select_an_item')}</div>}
+          {!isEditing && !selectedCipher && (props.loading ? <LoadingState card lines={5} /> : <div className="empty card">{t('txt_select_an_item')}</div>)}
         </section>
       </div>
 

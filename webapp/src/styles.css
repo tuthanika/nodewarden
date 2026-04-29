@@ -170,3 +170,73 @@
 :root[data-theme='dark'] .tree-btn:hover {
   background: var(--panel-subtle);
 }
+
+.loading-state,
+.loading-state-card {
+  display: grid;
+  gap: 12px;
+}
+
+.loading-state.compact,
+.loading-state-card.compact {
+  gap: 10px;
+}
+
+.loading-state-card {
+  padding: 16px;
+}
+
+.loading-state-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.loading-state-icon {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel-muted) 78%, transparent);
+}
+
+.loading-state-text {
+  display: grid;
+  gap: 8px;
+  flex: 1;
+}
+
+.loading-state-line {
+  height: 12px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--panel-muted) 80%, transparent);
+}
+
+.loading-state-line.short {
+  width: 42%;
+}
+
+.shimmer {
+  position: relative;
+  overflow: hidden;
+}
+
+.shimmer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, white 38%, transparent) 48%,
+    transparent 100%
+  );
+  animation: loading-shimmer 1.25s ease-in-out infinite;
+}
+
+@keyframes loading-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}

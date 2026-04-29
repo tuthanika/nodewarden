@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'preact/hooks';
-import { Clipboard, KeyRound, Lightbulb, RefreshCw, ShieldCheck, ShieldOff } from 'lucide-preact';
+import { Clipboard, KeyRound, RefreshCw, ShieldCheck, ShieldOff } from 'lucide-preact';
 import { copyTextToClipboard } from '@/lib/clipboard';
 import qrcode from 'qrcode-generator';
 import type { Profile } from '@/lib/types';
-import { t } from '@/lib/i18n';
+import { AVAILABLE_LOCALES, getLocale, setLocale, t, type Locale } from '@/lib/i18n';
 import ConfirmDialog from '@/components/ConfirmDialog';
 
 interface SettingsPageProps {
@@ -79,6 +79,7 @@ export default function SettingsPage(props: SettingsPageProps) {
   const [masterPasswordPrompt, setMasterPasswordPrompt] = useState<null | 'recovery' | 'apiKey' | 'rotateApiKey'>(null);
   const [masterPasswordPromptValue, setMasterPasswordPromptValue] = useState('');
   const [masterPasswordPromptSubmitting, setMasterPasswordPromptSubmitting] = useState(false);
+  const [selectedLocale, setSelectedLocale] = useState<Locale>(() => getLocale());
 
   useEffect(() => {
     clearLegacyTotpSetupSecrets();
@@ -167,6 +168,13 @@ export default function SettingsPage(props: SettingsPageProps) {
     return parsed.toLocaleString();
   }
 
+  async function changeLocale(next: Locale): Promise<void> {
+    if (next === getLocale()) return;
+    setSelectedLocale(next);
+    await setLocale(next);
+    window.location.reload();
+  }
+
   return (
     <div className="settings-modules-grid">
       <section className="card settings-module">
@@ -200,9 +208,23 @@ export default function SettingsPage(props: SettingsPageProps) {
         </div>
       </section>
 
-      <section className="card settings-module settings-module-placeholder">
-        <Lightbulb size={26} aria-hidden="true" />
-        <span>{t('txt_in_planning')}</span>
+      <section className="card settings-module">
+        <h3>{t('txt_language')}</h3>
+        <label className="field">
+          <span>{t('txt_display_language')}</span>
+          <select
+            className="input"
+            value={selectedLocale}
+            onInput={(e) => void changeLocale((e.currentTarget as HTMLSelectElement).value as Locale)}
+          >
+            {AVAILABLE_LOCALES.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <div className="field-help">{t('txt_language_saved_locally')}</div>
+        </label>
       </section>
 
       <section className="card settings-module">

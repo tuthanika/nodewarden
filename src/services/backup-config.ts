@@ -598,6 +598,50 @@ function getBackupSlotStartsForLocalDay(
   return slots;
 }
 
+export function hasBackupSlotBetween(
+  destination: BackupDestinationRecord,
+  startInclusive: Date,
+  endExclusive: Date
+): boolean {
+  if (!destination.schedule.enabled) return false;
+  const startMs = startInclusive.getTime();
+  const endMs = endExclusive.getTime();
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) return false;
+
+  const lastAttemptAt = destination.runtime.lastAttemptAt ? new Date(destination.runtime.lastAttemptAt) : null;
+  const lastAttemptMs = lastAttemptAt && Number.isFinite(lastAttemptAt.getTime())
+    ? lastAttemptAt.getTime()
+    : Number.NEGATIVE_INFINITY;
+
+  const dayCursor = new Date(startMs);
+  dayCursor.setUTCHours(0, 0, 0, 0);
+  const endDay = new Date(endMs);
+  endDay.setUTCHours(0, 0, 0, 0);
+  const checkedLocalDateKeys = new Set<string>();
+
+  while (dayCursor.getTime() <= endDay.getTime() + 24 * 60 * 60 * 1000) {
+    const localDateKey = getBackupLocalDateKey(dayCursor, destination.schedule.timezone);
+    if (!checkedLocalDateKeys.has(localDateKey)) {
+      checkedLocalDateKeys.add(localDateKey);
+      const slotStarts = getBackupSlotStartsForLocalDay(
+        localDateKey,
+        destination.schedule.timezone,
+        destination.schedule.startTime,
+        destination.schedule.intervalHours
+      );
+      for (const slotStart of slotStarts) {
+        const slotStartMs = slotStart.getTime();
+        if (slotStartMs < startMs || slotStartMs >= endMs) continue;
+        if (lastAttemptMs >= slotStartMs) continue;
+        return true;
+      }
+    }
+    dayCursor.setUTCDate(dayCursor.getUTCDate() + 1);
+  }
+
+  return false;
+}
+
 export function isBackupDueNow(
   destination: BackupDestinationRecord,
   now: Date,

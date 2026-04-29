@@ -21,13 +21,13 @@ import { CSS } from '@dnd-kit/utilities';
 import type { Cipher, Folder, VaultDraft, VaultDraftField } from '@/lib/types';
 import { t } from '@/lib/i18n';
 import {
-  CREATE_TYPE_OPTIONS,
   cipherTypeLabel,
   createEmptyLoginUri,
   formatAttachmentSize,
   formatHistoryTime,
+  getCreateTypeOptions,
+  getWebsiteMatchOptions,
   toBooleanFieldValue,
-  WEBSITE_MATCH_OPTIONS,
 } from '@/components/vault/vault-page-helpers';
 
 interface VaultEditorProps {
@@ -77,6 +77,7 @@ interface SortableWebsiteRowProps {
 }
 
 function SortableWebsiteRow(props: SortableWebsiteRowProps) {
+  const websiteMatchOptions = getWebsiteMatchOptions();
   const { attributes, listeners, setActivatorNodeRef, setNodeRef, transform, transition, isDragging } = useSortable({
     id: props.id,
   });
@@ -117,7 +118,7 @@ function SortableWebsiteRow(props: SortableWebsiteRowProps) {
           props.onUpdateMatch(props.index, raw === '' ? null : Number(raw));
         }}
       >
-        {WEBSITE_MATCH_OPTIONS.map((option) => (
+        {websiteMatchOptions.map((option) => (
           <option key={`website-match-${String(option.value)}`} value={option.value == null ? '' : String(option.value)}>
             {option.label}
           </option>
@@ -134,6 +135,7 @@ function SortableWebsiteRow(props: SortableWebsiteRowProps) {
 }
 
 export default function VaultEditor(props: VaultEditorProps) {
+  const createTypeOptions = getCreateTypeOptions();
   const uriIdSeedRef = useRef(0);
   const [uriItemIds, setUriItemIds] = useState<string[]>([]);
   const [activeUriId, setActiveUriId] = useState<string | null>(null);
@@ -232,7 +234,7 @@ export default function VaultEditor(props: VaultEditorProps) {
                 if (nextType === 5) props.onSeedSshDefaults();
               }}
             >
-              {CREATE_TYPE_OPTIONS.map((option) => (
+              {createTypeOptions.map((option) => (
                 <option key={option.type} value={option.type}>
                   {option.label}
                 </option>

@@ -1,0 +1,32 @@
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
+
+const localeDir = path.join(__dirname, '..', 'webapp', 'src', 'lib', 'i18n', 'locales');
+
+function readLocale(fileName, variableName) {
+  let code = fs.readFileSync(path.join(localeDir, fileName), 'utf8');
+  code = code
+    .replace(/const (\w+): Record<string, string> =/g, 'const $1 =')
+    .replace(/export default \w+;\s*$/m, '');
+  code += `\nresult = ${variableName};`;
+  const sandbox = { result: null };
+  vm.createContext(sandbox);
+  vm.runInContext(code, sandbox, { filename: fileName });
+  return sandbox.result;
+}
+
+function writeLocale(fileName, variableName, table, header) {
+  const body = JSON.stringify(table, null, 2);
+  fs.writeFileSync(
+    path.join(localeDir, fileName),
+    `${header}\nconst ${variableName}: Record<string, string> = ${body};\n\nexport default ${variableName};\n`,
+    'utf8'
+  );
+}
+
+module.exports = {
+  localeDir,
+  readLocale,
+  writeLocale,
+};
