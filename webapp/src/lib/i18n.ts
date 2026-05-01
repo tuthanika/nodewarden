@@ -1,4 +1,9 @@
-export type Locale = 'en' | 'zh-CN' | 'zh-TW' | 'ru';
+export type Locale =
+  | 'en'
+  | 'zh-CN'
+  | 'zh-TW'
+  | 'ru'
+  | 'es';
 
 const LOCALE_STORAGE_KEY = 'nodewarden.locale';
 
@@ -9,6 +14,7 @@ export const AVAILABLE_LOCALES: readonly { value: Locale; label: string }[] = [
   { value: 'zh-CN', label: '简体中文' },
   { value: 'zh-TW', label: '繁體中文' },
   { value: 'ru', label: 'Русский' },
+  { value: 'es', label: 'Español' },
 ];
 
 let locale: Locale = resolveInitialLocale();
@@ -33,22 +39,25 @@ function resolveInitialLocale(): Locale {
       if (normalized === 'zh-tw' || normalized === 'zh-hk' || normalized === 'zh-mo' || normalized.includes('hant')) return 'zh-TW';
       if (normalized.startsWith('zh')) return 'zh-CN';
       if (normalized.startsWith('ru')) return 'ru';
+      if (normalized.startsWith('es')) return 'es';
     }
   }
   return 'en';
 }
 
+const localeLoaders: Record<Locale, () => Promise<{ default: MessageTable }>> = {
+  en: () => import('./i18n/locales/en'),
+  'zh-CN': () => import('./i18n/locales/zh-CN'),
+  'zh-TW': () => import('./i18n/locales/zh-TW'),
+  ru: () => import('./i18n/locales/ru'),
+  es: () => import('./i18n/locales/es'),
+};
+
 async function loadLocaleMessages(next: Locale): Promise<MessageTable> {
   const cached = loadedMessages.get(next);
   if (cached) return cached;
 
-  const mod = next === 'zh-CN'
-    ? await import('./i18n/locales/zh-CN')
-    : next === 'zh-TW'
-      ? await import('./i18n/locales/zh-TW')
-      : next === 'ru'
-        ? await import('./i18n/locales/ru')
-        : await import('./i18n/locales/en');
+  const mod = await localeLoaders[next]();
   loadedMessages.set(next, mod.default);
   return mod.default;
 }

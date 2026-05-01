@@ -4,6 +4,14 @@ const vm = require('vm');
 
 const localeDir = path.join(__dirname, '..', 'webapp', 'src', 'lib', 'i18n', 'locales');
 
+const localeFiles = [
+  ['en', 'en.ts', 'en', 'English'],
+  ['zh-CN', 'zh-CN.ts', 'zhCN', 'Simplified Chinese'],
+  ['zh-TW', 'zh-TW.ts', 'zhTW', 'Traditional Chinese'],
+  ['ru', 'ru.ts', 'ru', 'Russian'],
+  ['es', 'es.ts', 'es', 'Spanish'],
+];
+
 function readLocale(fileName, variableName) {
   let code = fs.readFileSync(path.join(localeDir, fileName), 'utf8');
   code = code
@@ -26,6 +34,7 @@ function writeLocale(fileName, variableName, table, header) {
 }
 
 module.exports = {
+  localeFiles,
   localeDir,
   readLocale,
   writeLocale,

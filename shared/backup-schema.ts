@@ -1,13 +1,13 @@
 export const BACKUP_DEFAULT_TIMEZONE = 'UTC';
 export const BACKUP_DEFAULT_RETENTION_COUNT = 30;
-export const BACKUP_DEFAULT_E3_REGION = 'auto';
+export const BACKUP_DEFAULT_S3_REGION = 'auto';
 export const BACKUP_DEFAULT_REMOTE_PATH = 'nodewarden';
 export const BACKUP_DEFAULT_INTERVAL_HOURS = 24;
 export const BACKUP_DEFAULT_START_TIME = '03:00';
 
-export type BackupDestinationType = 'e3' | 'webdav';
+export type BackupDestinationType = 's3' | 'webdav';
 
-export interface E3BackupDestination {
+export interface S3BackupDestination {
   endpoint: string;
   bucket: string;
   region: string;
@@ -24,7 +24,7 @@ export interface WebDavBackupDestination {
 }
 
 export type BackupDestinationConfig =
-  | E3BackupDestination
+  | S3BackupDestination
   | WebDavBackupDestination;
 
 export interface BackupRuntimeState {
@@ -91,11 +91,11 @@ export function createDefaultBackupScheduleConfig(timezone: string = BACKUP_DEFA
 }
 
 export function createDefaultBackupDestinationConfig(type: BackupDestinationType): BackupDestinationConfig {
-  if (type === 'e3') {
+  if (type === 's3') {
     return {
       endpoint: '',
       bucket: '',
-      region: BACKUP_DEFAULT_E3_REGION,
+      region: BACKUP_DEFAULT_S3_REGION,
       accessKeyId: '',
       secretAccessKey: '',
       rootPath: BACKUP_DEFAULT_REMOTE_PATH,
@@ -110,7 +110,7 @@ export function createDefaultBackupDestinationConfig(type: BackupDestinationType
 }
 
 export function createDefaultBackupDestinationName(type: BackupDestinationType, index: number): string {
-  if (type === 'e3') return `E3 ${index}`;
+  if (type === 's3') return `S3 ${index}`;
   return `WebDAV ${index}`;
 }
 

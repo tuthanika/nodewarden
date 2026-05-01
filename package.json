@@ -10,7 +10,7 @@
     "dev": "wrangler dev -c wrangler.toml",
     "dev:kv": "wrangler dev -c wrangler.kv.toml",
     "build": "vite build --config webapp/vite.config.ts",
-    "i18n:generate:zh-tw": "node scripts/i18n-generate-zh-tw.cjs",
+    "i18n": "node scripts/i18n-validate.cjs",
     "i18n:validate": "node scripts/i18n-validate.cjs",
     "deploy": "wrangler deploy",
     "deploy:kv": "wrangler deploy -c wrangler.kv.toml"

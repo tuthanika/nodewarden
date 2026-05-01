@@ -78,6 +78,43 @@ function syncCipherComputedAliases(cipher: Cipher): Cipher {
   return cipher;
 }
 
+function isValidEncString(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  const dot = trimmed.indexOf('.');
+  if (dot <= 0) return false;
+  const type = Number(trimmed.slice(0, dot));
+  if (!Number.isInteger(type) || type < 0) return false;
+  const parts = trimmed.slice(dot + 1).split('|');
+  if (parts.some((part) => part.length === 0)) return false;
+
+  // Bitwarden's legacy symmetric EncString variants require IV + data,
+  // while the authenticated AES-CBC-HMAC variant requires IV + data + MAC.
+  if (type === 0 || type === 1 || type === 4) return parts.length >= 2;
+  if (type === 2) return parts.length === 3;
+
+  // Keep newer one-part formats, such as COSE Encrypt0, future-compatible.
+  return parts.length >= 1;
+}
+
+function optionalEncString(value: unknown): string | null {
+  if (value == null || value === '') return null;
+  return isValidEncString(value) ? value.trim() : null;
+}
+
+function sanitizeEncryptedObject<T extends Record<string, any>>(
+  source: T | null | undefined,
+  encryptedKeys: readonly string[]
+): T | null {
+  if (!source || typeof source !== 'object') return source ?? null;
+  const next: Record<string, any> = { ...source };
+  for (const key of encryptedKeys) {
+    if (!Object.prototype.hasOwnProperty.call(next, key)) continue;
+    next[key] = optionalEncString(next[key]);
+  }
+  return next as T;
+}
+
 function normalizeCipherForStorage(cipher: Cipher): Cipher {
   cipher.login = normalizeCipherLoginForStorage(cipher.login);
   cipher.sshKey = normalizeCipherSshKeyForCompatibility(cipher.sshKey);
@@ -100,7 +137,53 @@ export function normalizeCipherLoginForStorage(login: any): any {
 export function normalizeCipherLoginForCompatibility(login: any): any {
   const normalized = normalizeCipherLoginForStorage(login);
   if (!normalized || typeof normalized !== 'object') return normalized ?? null;
-  return normalized;
+  const next = sanitizeEncryptedObject(normalized, ['username', 'password', 'totp', 'uri']);
+  if (!next) return null;
+  next.uris = Array.isArray(next.uris)
+    ? next.uris
+        .map((uri: any) => sanitizeEncryptedObject(uri, ['uri', 'uriChecksum']))
+        .filter((uri: any) => !!uri && (uri.uri || uri.uriChecksum || uri.match != null))
+    : null;
+  next.fido2Credentials = normalizeFido2CredentialsForCompatibility(next.fido2Credentials);
+  return next;
+}
+
+function normalizeFido2CredentialsForCompatibility(credentials: any): any[] | null {
+  if (!Array.isArray(credentials) || credentials.length === 0) return null;
+  const requiredEncryptedKeys = [
+    'credentialId',
+    'keyType',
+    'keyAlgorithm',
+    'keyCurve',
+    'keyValue',
+    'rpId',
+    'counter',
+    'discoverable',
+  ];
+  const optionalEncryptedKeys = ['userHandle', 'userName', 'rpName', 'userDisplayName'];
+  const out: any[] = [];
+
+  for (const credential of credentials) {
+    if (!credential || typeof credential !== 'object') continue;
+    const next: Record<string, any> = { ...credential };
+    let valid = true;
+    for (const key of requiredEncryptedKeys) {
+      if (!isValidEncString(next[key])) {
+        valid = false;
+        break;
+      }
+      next[key] = String(next[key]).trim();
+    }
+    if (!valid) continue;
+    for (const key of optionalEncryptedKeys) {
+      if (Object.prototype.hasOwnProperty.call(next, key)) {
+        next[key] = optionalEncString(next[key]);
+      }
+    }
+    out.push(next);
+  }
+
+  return out.length ? out : null;
 }
 
 // Android 2026.2.0 requires sshKey.keyFingerprint in sync payloads.
@@ -118,8 +201,18 @@ export function normalizeCipherSshKeyForCompatibility(sshKey: any): any {
       ? ''
       : String(candidate);
 
+  if (
+    !isValidEncString(sshKey.privateKey) ||
+    !isValidEncString(sshKey.publicKey) ||
+    !isValidEncString(normalizedFingerprint)
+  ) {
+    return null;
+  }
+
   return {
     ...sshKey,
+    privateKey: String(sshKey.privateKey).trim(),
+    publicKey: String(sshKey.publicKey).trim(),
     keyFingerprint: normalizedFingerprint,
     fingerprint: normalizedFingerprint,
   };
@@ -128,16 +221,52 @@ export function normalizeCipherSshKeyForCompatibility(sshKey: any): any {
 // Format attachments for API response
 export function formatAttachments(attachments: Attachment[]): any[] | null {
   if (attachments.length === 0) return null;
-  return attachments.map(a => ({
-    id: a.id,
-    fileName: a.fileName,
-    // Bitwarden clients decode attachment size as string in cipher payloads.
-    size: String(Number(a.size) || 0),
-    sizeName: a.sizeName,
-    key: a.key,
-    url: `/api/ciphers/${a.cipherId}/attachment/${a.id}`,  // Android requires non-null url!
-    object: 'attachment',
-  }));
+  const formatted = attachments
+    .filter((a) => isValidEncString(a.fileName))
+    .map(a => ({
+      id: a.id,
+      fileName: a.fileName.trim(),
+      // Bitwarden clients decode attachment size as string in cipher payloads.
+      size: String(Number(a.size) || 0),
+      sizeName: a.sizeName,
+      key: optionalEncString(a.key),
+      url: `/api/ciphers/${a.cipherId}/attachment/${a.id}`,  // Android requires non-null url!
+      object: 'attachment',
+    }));
+  return formatted.length ? formatted : null;
+}
+
+function normalizeCipherFieldsForCompatibility(fields: any): any[] | null {
+  if (!Array.isArray(fields) || fields.length === 0) return null;
+  const out = fields
+    .map((field: any) => {
+      if (!field || typeof field !== 'object') return null;
+      return {
+        ...field,
+        name: optionalEncString(field.name),
+        value: optionalEncString(field.value),
+        type: Number(field.type) || 0,
+        linkedId: field.linkedId ?? null,
+      };
+    })
+    .filter(Boolean);
+  return out.length ? out : null;
+}
+
+function normalizePasswordHistoryForCompatibility(passwordHistory: any): PasswordHistory[] | null {
+  if (!Array.isArray(passwordHistory) || passwordHistory.length === 0) return null;
+  const out = passwordHistory
+    .filter((entry: any) => entry && typeof entry === 'object' && isValidEncString(entry.password))
+    .map((entry: any) => ({
+      ...entry,
+      password: String(entry.password).trim(),
+      lastUsedDate: normalizeCipherTimestamp(entry.lastUsedDate) ?? new Date().toISOString(),
+    }));
+  return out.length ? out : null;
+}
+
+export function isCipherResponseSyncCompatible(cipher: CipherResponse): boolean {
+  return isValidEncString(cipher.name);
 }
 
 // Convert internal cipher to API response format.
@@ -151,6 +280,27 @@ export function cipherToResponse(
   // Strip internal-only fields that must not appear in the API response
   const { userId, createdAt, updatedAt, archivedAt, deletedAt, ...passthrough } = cipher;
   const normalizedLogin = normalizeCipherLoginForCompatibility((passthrough as any).login ?? null);
+  const normalizedCard = sanitizeEncryptedObject((passthrough as any).card ?? null, ['cardholderName', 'brand', 'number', 'expMonth', 'expYear', 'code']);
+  const normalizedIdentity = sanitizeEncryptedObject((passthrough as any).identity ?? null, [
+    'title',
+    'firstName',
+    'middleName',
+    'lastName',
+    'address1',
+    'address2',
+    'address3',
+    'city',
+    'state',
+    'postalCode',
+    'country',
+    'company',
+    'email',
+    'phone',
+    'ssn',
+    'username',
+    'passportNumber',
+    'licenseNumber',
+  ]);
   const normalizedSshKey = normalizeCipherSshKeyForCompatibility((passthrough as any).sshKey ?? null);
 
   return {
@@ -174,8 +324,15 @@ export function cipherToResponse(
     object: 'cipherDetails',
     collectionIds: Array.isArray((passthrough as any).collectionIds) ? (passthrough as any).collectionIds : [],
     attachments: formatAttachments(attachments),
+    name: isValidEncString(cipher.name) ? cipher.name.trim() : cipher.name,
+    notes: optionalEncString(cipher.notes),
     login: normalizedLogin,
+    card: normalizedCard,
+    identity: normalizedIdentity,
+    fields: normalizeCipherFieldsForCompatibility((passthrough as any).fields),
+    passwordHistory: normalizePasswordHistoryForCompatibility((passthrough as any).passwordHistory),
     sshKey: normalizedSshKey,
+    key: optionalEncString(cipher.key),
     encryptedFor: (passthrough as any).encryptedFor ?? null,
   };
 }

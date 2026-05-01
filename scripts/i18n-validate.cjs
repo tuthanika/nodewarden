@@ -1,11 +1,4 @@
-const { readLocale } = require('./i18n-utils.cjs');
-
-const localeFiles = [
-  ['en', 'en.ts', 'en'],
-  ['zh-CN', 'zh-CN.ts', 'zhCN'],
-  ['zh-TW', 'zh-TW.ts', 'zhTW'],
-  ['ru', 'ru.ts', 'ru'],
-];
+const { localeFiles, readLocale } = require('./i18n-utils.cjs');
 
 const locales = Object.fromEntries(
   localeFiles.map(([locale, fileName, variableName]) => [locale, readLocale(fileName, variableName)])
@@ -14,6 +7,17 @@ const base = locales.en;
 const baseKeys = Object.keys(base).sort();
 const placeholderRe = /\{\w+\}/g;
 const errors = [];
+const intentionallyEnglishKeys = new Set([
+  'txt_backup_destination_detail_note',
+  'txt_backup_protocol_webdav',
+  'txt_backup_protocol_s3',
+  'txt_backup_recommend_group_webdav',
+  'txt_backup_recommend_group_s3',
+  'txt_backup_destination_name_default_webdav',
+  'txt_backup_destination_name_default_s3',
+  'txt_dash',
+  'txt_text_3',
+]);
 
 for (const [locale, table] of Object.entries(locales)) {
   const keys = Object.keys(table).sort();
@@ -28,6 +32,17 @@ for (const [locale, table] of Object.entries(locales)) {
     const localePlaceholders = Array.from(String(table[key]).matchAll(placeholderRe), (match) => match[0]).sort().join('|');
     if (basePlaceholders !== localePlaceholders) {
       errors.push({ locale, key, basePlaceholders, localePlaceholders });
+    }
+  }
+
+  if (locale !== 'en') {
+    const sameAsEnglish = baseKeys.filter((key) => table[key] === base[key] && !intentionallyEnglishKeys.has(key));
+    if (sameAsEnglish.length > 40) {
+      errors.push({
+        locale,
+        sameAsEnglishCount: sameAsEnglish.length,
+        sameAsEnglishSample: sameAsEnglish.slice(0, 25),
+      });
     }
   }
 }

@@ -1,8 +1,8 @@
 import { CloudUpload, Save, Trash2 } from 'lucide-preact';
 import type {
   BackupDestinationRecord,
-  E3BackupDestination,
   RemoteBackupBrowserResponse,
+  S3BackupDestination,
   WebDavBackupDestination,
 } from '@/lib/api/backup';
 import { COMMON_TIME_ZONES, getDestinationTypeLabel } from '@/lib/backup-center';
@@ -399,97 +399,97 @@ export function BackupDestinationDetail(props: BackupDestinationDetailProps) {
             </div>
           ) : null}
 
-          {props.selectedDestination.type === 'e3' ? (
+          {props.selectedDestination.type === 's3' ? (
             <div className="field-grid">
               <label className="field field-span-2">
-                <span>{t('txt_backup_e3_endpoint')}</span>
+                <span>{t('txt_backup_s3_endpoint')}</span>
                 <input
                   className="input"
-                  value={(props.selectedDestination.destination as E3BackupDestination).endpoint}
+                  value={(props.selectedDestination.destination as S3BackupDestination).endpoint}
                   disabled={props.loadingSettings || props.disableWhileBusy}
                   placeholder="https://s3.example.com"
                   onInput={(event) => props.onUpdateDestination((destination) => ({
                     ...destination,
                     destination: {
-                      ...(destination.destination as E3BackupDestination),
+                      ...(destination.destination as S3BackupDestination),
                       endpoint: (event.currentTarget as HTMLInputElement).value,
                     },
                   }))}
                 />
               </label>
               <label className="field">
-                <span>{t('txt_backup_e3_bucket')}</span>
+                <span>{t('txt_backup_s3_bucket')}</span>
                 <input
                   className="input"
-                  value={(props.selectedDestination.destination as E3BackupDestination).bucket}
+                  value={(props.selectedDestination.destination as S3BackupDestination).bucket}
                   disabled={props.loadingSettings || props.disableWhileBusy}
                   onInput={(event) => props.onUpdateDestination((destination) => ({
                     ...destination,
                     destination: {
-                      ...(destination.destination as E3BackupDestination),
+                      ...(destination.destination as S3BackupDestination),
                       bucket: (event.currentTarget as HTMLInputElement).value,
                     },
                   }))}
                 />
               </label>
               <label className="field">
-                <span>{t('txt_backup_e3_region')}</span>
+                <span>{t('txt_backup_s3_region')}</span>
                 <input
                   className="input"
-                  value={(props.selectedDestination.destination as E3BackupDestination).region}
+                  value={(props.selectedDestination.destination as S3BackupDestination).region}
                   disabled={props.loadingSettings || props.disableWhileBusy}
                   placeholder="auto"
                   onInput={(event) => props.onUpdateDestination((destination) => ({
                     ...destination,
                     destination: {
-                      ...(destination.destination as E3BackupDestination),
+                      ...(destination.destination as S3BackupDestination),
                       region: (event.currentTarget as HTMLInputElement).value,
                     },
                   }))}
                 />
               </label>
               <label className="field">
-                <span>{t('txt_backup_e3_access_key')}</span>
+                <span>{t('txt_backup_s3_access_key')}</span>
                 <input
                   className="input"
-                  value={(props.selectedDestination.destination as E3BackupDestination).accessKeyId}
+                  value={(props.selectedDestination.destination as S3BackupDestination).accessKeyId}
                   disabled={props.loadingSettings || props.disableWhileBusy}
                   onInput={(event) => props.onUpdateDestination((destination) => ({
                     ...destination,
                     destination: {
-                      ...(destination.destination as E3BackupDestination),
+                      ...(destination.destination as S3BackupDestination),
                       accessKeyId: (event.currentTarget as HTMLInputElement).value,
                     },
                   }))}
                 />
               </label>
               <label className="field">
-                <span>{t('txt_backup_e3_secret_key')}</span>
+                <span>{t('txt_backup_s3_secret_key')}</span>
                 <input
                   className="input"
                   type="password"
-                  value={(props.selectedDestination.destination as E3BackupDestination).secretAccessKey}
+                  value={(props.selectedDestination.destination as S3BackupDestination).secretAccessKey}
                   disabled={props.loadingSettings || props.disableWhileBusy}
                   onInput={(event) => props.onUpdateDestination((destination) => ({
                     ...destination,
                     destination: {
-                      ...(destination.destination as E3BackupDestination),
+                      ...(destination.destination as S3BackupDestination),
                       secretAccessKey: (event.currentTarget as HTMLInputElement).value,
                     },
                   }))}
                 />
               </label>
               <label className="field field-span-2">
-                <span>{t('txt_backup_e3_path')}</span>
+                <span>{t('txt_backup_s3_path')}</span>
                 <input
                   className="input"
-                  value={(props.selectedDestination.destination as E3BackupDestination).rootPath}
+                  value={(props.selectedDestination.destination as S3BackupDestination).rootPath}
                   disabled={props.loadingSettings || props.disableWhileBusy}
                   placeholder="nodewarden/backups"
                   onInput={(event) => props.onUpdateDestination((destination) => ({
                     ...destination,
                     destination: {
-                      ...(destination.destination as E3BackupDestination),
+                      ...(destination.destination as S3BackupDestination),
                       rootPath: (event.currentTarget as HTMLInputElement).value,
                     },
                   }))}
