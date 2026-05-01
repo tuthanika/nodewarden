@@ -26,7 +26,14 @@ export default function StandalonePageFrame(props: StandalonePageFrameProps) {
         <span> | </span>
         <a href="https://github.com/shuaiplus" target="_blank" rel="noreferrer">Author: @shuaiplus</a>
         <span> | </span>
-        <span className="standalone-version">v{APP_VERSION}</span>
+        <a
+          href="https://github.com/shuaiplus/NodeWarden/releases/latest"
+          target="_blank"
+          rel="noreferrer"
+          className="standalone-version"
+        >
+          v{APP_VERSION}
+        </a>
       </div>
     </div>
   );
