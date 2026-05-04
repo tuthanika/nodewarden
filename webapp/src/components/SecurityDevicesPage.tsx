@@ -1,12 +1,14 @@
 import { useState } from 'preact/hooks';
 import { Clock3, Pencil, RefreshCw, ShieldOff, Trash2 } from 'lucide-preact';
 import ConfirmDialog from '@/components/ConfirmDialog';
+import LoadingState from '@/components/LoadingState';
 import type { AuthorizedDevice } from '@/lib/types';
 import { t } from '@/lib/i18n';
 
 interface SecurityDevicesPageProps {
   devices: AuthorizedDevice[];
   loading: boolean;
+  error: string;
   onRefresh: () => void;
   onRenameDevice: (device: AuthorizedDevice, name: string) => Promise<void>;
   onRevokeTrust: (device: AuthorizedDevice) => void;
@@ -72,7 +74,7 @@ export default function SecurityDevicesPage(props: SecurityDevicesPageProps) {
             </div>
           </div>
           <div className="actions">
-            <button type="button" className="btn btn-secondary small" onClick={props.onRefresh}>
+            <button type="button" className="btn btn-secondary small" disabled={props.loading} onClick={props.onRefresh}>
               <RefreshCw size={14} className="btn-icon" />
               {t('txt_refresh')}
             </button>
@@ -90,6 +92,15 @@ export default function SecurityDevicesPage(props: SecurityDevicesPageProps) {
 
         <section className="card">
         <h3 className="section-title-flush">{t('txt_authorized_devices')}</h3>
+        {!!props.error && (
+          <div className="local-error">
+            <span>{props.error}</span>
+            <button type="button" className="btn btn-secondary small" disabled={props.loading} onClick={props.onRefresh}>
+              <RefreshCw size={14} className="btn-icon" />
+              {t('txt_refresh')}
+            </button>
+          </div>
+        )}
         <table className="table">
           <thead>
             <tr>
@@ -166,6 +177,13 @@ export default function SecurityDevicesPage(props: SecurityDevicesPageProps) {
                 </td>
               </tr>
             ))}
+            {props.loading && props.devices.length === 0 && (
+              <tr>
+                <td colSpan={7}>
+                  <LoadingState lines={5} compact />
+                </td>
+              </tr>
+            )}
             {!props.loading && props.devices.length === 0 && (
               <tr>
                 <td colSpan={7}>

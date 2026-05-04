@@ -36,6 +36,7 @@
 
 :root[data-theme='dark'] .muted,
 :root[data-theme='dark'] .detail-sub,
+:root[data-theme='dark'] .detail-folder-line,
 :root[data-theme='dark'] .field-help,
 :root[data-theme='dark'] .list-sub,
 :root[data-theme='dark'] .kv-label,
@@ -295,4 +296,9 @@
   background: var(--overlay-strong);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
+}
+
+:root[data-theme='dark'] .not-found-code {
+  background: color-mix(in srgb, var(--primary) 18%, var(--panel));
+  color: var(--primary-strong);
 }

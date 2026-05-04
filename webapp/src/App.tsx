@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { useLocation } from 'wouter';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import AppAuthenticatedShell from '@/components/AppAuthenticatedShell';
 import AppGlobalOverlays, { type AppConfirmState } from '@/components/AppGlobalOverlays';
 import AuthViews from '@/components/AuthViews';
+import NotFoundPage from '@/components/NotFoundPage';
 import PublicSendPage from '@/components/PublicSendPage';
 import RecoverTwoFactorPage from '@/components/RecoverTwoFactorPage';
 import JwtWarningPage from '@/components/JwtWarningPage';
@@ -29,6 +30,7 @@ import {
   parseSignalRTextFrames,
   readInviteCodeFromUrl,
 } from '@/lib/app-support';
+import { preloadAuthenticatedWorkspace } from '@/lib/app-preload';
 import {
   bootstrapAppSession,
   type CompletedLogin,
@@ -71,9 +73,31 @@ const IMPORT_ROUTE_PATHS = [IMPORT_ROUTE, '/tools/import', '/tools/import-export
 const IMPORT_ROUTE_ALIASES: ReadonlySet<string> = new Set(IMPORT_ROUTE_PATHS.filter((path) => path !== IMPORT_ROUTE));
 const SETTINGS_HOME_ROUTE = '/settings';
 const SETTINGS_ACCOUNT_ROUTE = '/settings/account';
+const AUTH_ROUTE_PATHS = ['/', '/login', '/register', '/lock', '/recover-2fa'] as const;
+const APP_ROUTE_PATHS = [
+  '/',
+  '/vault',
+  '/vault/totp',
+  '/sends',
+  '/admin',
+  '/security/devices',
+  '/backup',
+  '/settings',
+  SETTINGS_ACCOUNT_ROUTE,
+  '/help',
+  ...IMPORT_ROUTE_PATHS,
+] as const;
+const AUTH_ROUTES: ReadonlySet<string> = new Set(AUTH_ROUTE_PATHS);
+const APP_ROUTES: ReadonlySet<string> = new Set(APP_ROUTE_PATHS);
 
 function isAdminProfile(profile: Profile | null): profile is Profile {
   return String(profile?.role || '').toLowerCase() === 'admin';
+}
+
+function normalizeRoutePath(path: string): string {
+  const pathOnly = String(path || '/').split('?')[0].split('#')[0];
+  const normalized = pathOnly.startsWith('/') ? pathOnly : `/${pathOnly}`;
+  return normalized.length > 1 ? normalized.replace(/\/+$/, '') : '/';
 }
 const THEME_STORAGE_KEY = 'nodewarden.theme.preference.v1';
 const SIGNALR_RECORD_SEPARATOR = String.fromCharCode(0x1e);
@@ -117,6 +141,7 @@ export default function App() {
   const initialBootstrap = useMemo(() => readInitialAppBootstrapState(), []);
   const initialInviteCode = useMemo(() => readInviteCodeFromUrl(), []);
   const initialProfileSnapshot = useMemo(() => loadProfileSnapshot(initialBootstrap.session?.email), [initialBootstrap]);
+  const queryClient = useQueryClient();
   const [pendingAuthAction, setPendingAuthAction] = useState<'login' | 'register' | 'unlock' | null>(null);
   const [location, navigate] = useLocation();
   const [phase, setPhase] = useState<AppPhase>(initialBootstrap.phase);
@@ -169,6 +194,8 @@ export default function App() {
   const [decryptedSends, setDecryptedSends] = useState<Send[]>([]);
   const [cachedVaultCore, setCachedVaultCore] = useState<VaultCoreSnapshot | null>(null);
   const [vaultInitialDecryptDone, setVaultInitialDecryptDone] = useState(false);
+  const [vaultDecryptError, setVaultDecryptError] = useState('');
+  const [sendsDecryptDone, setSendsDecryptDone] = useState(false);
   const sessionRef = useRef<SessionState | null>(initialBootstrap.session);
   const silentRefreshVaultRef = useRef<() => Promise<void>>(async () => {});
   const refreshAuthorizedDevicesRef = useRef<() => Promise<void>>(async () => {});
@@ -769,12 +796,25 @@ export default function App() {
   const encryptedVaultCore = vaultCoreQuery.data || cachedVaultCore;
   const encryptedFolders = encryptedVaultCore?.folders;
   const encryptedCiphers = encryptedVaultCore?.ciphers;
+  const encryptedSendsFromSync = encryptedVaultCore?.sends;
+  const sendsQueryKey = useMemo(() => ['sends', vaultCacheKey || session?.email] as const, [vaultCacheKey, session?.email]);
   const sendsQuery = useQuery({
-    queryKey: ['sends', vaultCacheKey || session?.email],
+    queryKey: sendsQueryKey,
     queryFn: () => getSends(authedFetch),
-    enabled: phase === 'app' && !!session?.symEncKey && !!session?.symMacKey && (vaultInitialDecryptDone || location === '/sends'),
+    enabled: phase === 'app' && !!session?.symEncKey && !!session?.symMacKey && location === '/sends' && !encryptedSendsFromSync,
     staleTime: 30_000,
   });
+  const encryptedSends = sendsQuery.data || encryptedSendsFromSync;
+  async function refetchSendsFromVaultCore() {
+    const result = await refetchVaultCoreData() as { data?: VaultCoreSnapshot };
+    const sends = Array.isArray(result.data?.sends) ? result.data.sends : [];
+    queryClient.setQueryData(sendsQueryKey, sends);
+    return { data: sends };
+  }
+  useEffect(() => {
+    if (!Array.isArray(encryptedSendsFromSync)) return;
+    queryClient.setQueryData(sendsQueryKey, encryptedSendsFromSync);
+  }, [queryClient, sendsQueryKey, encryptedSendsFromSync]);
   const profileQuery = useQuery({
     queryKey: ['profile', vaultCacheKey || session?.email],
     queryFn: () => getProfile(authedFetch),
@@ -811,6 +851,17 @@ export default function App() {
     enabled: phase === 'app' && !!session?.accessToken && vaultInitialDecryptDone,
     staleTime: 30_000,
   });
+  useQuery({
+    queryKey: ['admin-backup-settings', vaultCacheKey],
+    queryFn: () => backupActions.loadSettings(),
+    enabled: phase === 'app' && isAdmin && vaultInitialDecryptDone,
+    staleTime: 30_000,
+  });
+
+  useEffect(() => {
+    if (phase !== 'app' || !vaultInitialDecryptDone) return;
+    void preloadAuthenticatedWorkspace(isAdmin);
+  }, [phase, vaultInitialDecryptDone, isAdmin]);
 
   useEffect(() => {
     if (phase !== 'app' || !session?.accessToken || !session?.symEncKey || !session?.symMacKey) return;
@@ -833,6 +884,8 @@ export default function App() {
       setDecryptedCiphers([]);
       setDecryptedSends([]);
       setVaultInitialDecryptDone(false);
+      setVaultDecryptError('');
+      setSendsDecryptDone(false);
       return;
     }
     if (!encryptedFolders || !encryptedCiphers) return;
@@ -840,6 +893,7 @@ export default function App() {
     let active = true;
     (async () => {
       try {
+        setVaultDecryptError('');
         let result;
         try {
           result = await decryptVaultCoreInWorker({
@@ -863,7 +917,10 @@ export default function App() {
         setVaultInitialDecryptDone(true);
       } catch (error) {
         if (!active) return;
-        pushToast('error', error instanceof Error ? error.message : t('txt_decrypt_failed_2'));
+        const message = error instanceof Error ? error.message : t('txt_decrypt_failed_2');
+        setVaultDecryptError(message);
+        setVaultInitialDecryptDone(true);
+        pushToast('error', message);
       }
     })();
 
@@ -875,24 +932,34 @@ export default function App() {
   useEffect(() => {
     if (!session?.symEncKey || !session?.symMacKey) {
       setDecryptedSends([]);
+      setSendsDecryptDone(false);
       return;
     }
-    if (!sendsQuery.data) return;
+    if (!encryptedSends) {
+      setSendsDecryptDone(false);
+      return;
+    }
+    if (!encryptedSends.length) {
+      setDecryptedSends([]);
+      setSendsDecryptDone(true);
+      return;
+    }
 
     let active = true;
+    setSendsDecryptDone(false);
     (async () => {
       try {
         let sends;
         try {
           sends = await decryptSendsInWorker({
-            sends: sendsQuery.data,
+            sends: encryptedSends,
             symEncKeyB64: session.symEncKey!,
             symMacKeyB64: session.symMacKey!,
             origin: window.location.origin,
           });
         } catch {
           sends = await decryptSends({
-            sends: sendsQuery.data,
+            sends: encryptedSends,
             symEncKeyB64: session.symEncKey!,
             symMacKeyB64: session.symMacKey!,
             origin: window.location.origin,
@@ -901,8 +968,10 @@ export default function App() {
 
         if (!active) return;
         setDecryptedSends(sends);
+        setSendsDecryptDone(true);
       } catch (error) {
         if (!active) return;
+        setSendsDecryptDone(true);
         pushToast('error', error instanceof Error ? error.message : t('txt_decrypt_failed_2'));
       }
     })();
@@ -910,18 +979,14 @@ export default function App() {
     return () => {
       active = false;
     };
-  }, [session?.symEncKey, session?.symMacKey, sendsQuery.data]);
+  }, [session?.symEncKey, session?.symMacKey, encryptedSends]);
 
   async function refreshVaultSilently() {
     if (pendingVaultCoreRefreshRef.current) {
       await pendingVaultCoreRefreshRef.current;
       return;
     }
-    const tasks: Promise<unknown>[] = [refetchVaultCoreData()];
-    if (location === '/sends') {
-      tasks.push(sendsQuery.refetch());
-    }
-    const request = Promise.all(tasks).finally(() => {
+    const request = refetchVaultCoreData().finally(() => {
       if (pendingVaultCoreRefreshRef.current === request) {
         pendingVaultCoreRefreshRef.current = null;
       }
@@ -1087,7 +1152,7 @@ export default function App() {
       const result = await refetchVaultCoreData() as { data?: VaultCoreSnapshot };
       return { data: result.data?.folders };
     },
-    refetchSends: sendsQuery.refetch,
+    refetchSends: refetchSendsFromVaultCore,
     onNotify: pushToast,
     patchDecryptedCiphers: setDecryptedCiphers,
     patchDecryptedFolders: setDecryptedFolders,
@@ -1127,11 +1192,17 @@ export default function App() {
   const trimmedHashPath = hashPathOnly.replace(/^\/+/, '').replace(/\/+$/, '');
   const normalizedHashPath = trimmedHashPath ? `/${trimmedHashPath}` : '/';
   const isImportHashRoute = IMPORT_ROUTE_ALIASES.has(normalizedHashPath);
-  const effectiveLocation = hashPath.startsWith('/send/') || hashPath === '/recover-2fa' ? hashPath : location;
+  const normalizedLocation = normalizeRoutePath(location);
+  const routeLocation = hashPath.startsWith('/') ? normalizedHashPath : normalizedLocation;
+  const effectiveLocation = routeLocation;
   const publicSendMatch = effectiveLocation.match(/^\/send\/([^/]+)(?:\/([^/]+))?\/?$/i);
   const isRecoverTwoFactorRoute = effectiveLocation === '/recover-2fa';
   const isPublicSendRoute = !!publicSendMatch;
-  const isImportRoute = location === IMPORT_ROUTE || IMPORT_ROUTE_ALIASES.has(location);
+  const isMalformedSendRoute = /^\/send(?:\/|$)/i.test(effectiveLocation) && !publicSendMatch;
+  const isKnownAuthRoute = AUTH_ROUTES.has(routeLocation) || isPublicSendRoute || isRecoverTwoFactorRoute;
+  const isKnownAppRoute = APP_ROUTES.has(routeLocation) || isPublicSendRoute || isImportHashRoute;
+  const isUnknownRoute = isMalformedSendRoute || (phase === 'app' ? !isKnownAppRoute : !isKnownAuthRoute && !APP_ROUTES.has(routeLocation));
+  const isImportRoute = routeLocation === IMPORT_ROUTE || IMPORT_ROUTE_ALIASES.has(routeLocation);
   const showSidebarToggle = mobileLayout && (location === '/vault' || location === '/sends');
   const sidebarToggleTitle = location === '/vault' ? t('txt_folders') : t('txt_type');
   const mobilePrimaryRoute =
@@ -1178,6 +1249,7 @@ export default function App() {
 
   const mainRoutesProps = {
     profile,
+    profileLoading: profileQuery.isFetching && !profile,
     session,
     mobileLayout,
     mobileSidebarToggleKey,
@@ -1187,16 +1259,20 @@ export default function App() {
     decryptedCiphers,
     decryptedFolders,
     decryptedSends,
-    ciphersLoading: vaultCoreQuery.isFetching && !encryptedVaultCore,
-    foldersLoading: vaultCoreQuery.isFetching && !encryptedVaultCore,
-    sendsLoading: sendsQuery.isFetching && !sendsQuery.data,
+    vaultError: vaultCoreQuery.isError && !encryptedVaultCore ? t('txt_load_vault_failed') : vaultDecryptError,
+    ciphersLoading: !(vaultCoreQuery.isError && !encryptedVaultCore) && !vaultDecryptError && !vaultInitialDecryptDone,
+    foldersLoading: !(vaultCoreQuery.isError && !encryptedVaultCore) && !vaultDecryptError && !vaultInitialDecryptDone,
+    sendsLoading: (sendsQuery.isFetching && !encryptedSends) || (!!encryptedSends && !sendsDecryptDone),
     users: usersQuery.data || [],
     invites: invitesQuery.data || [],
+    adminLoading: (usersQuery.isFetching && !usersQuery.data) || (invitesQuery.isFetching && !invitesQuery.data),
+    adminError: usersQuery.isError || invitesQuery.isError ? t('txt_load_admin_data_failed') : '',
     totpEnabled: !!totpStatusQuery.data?.enabled,
     lockTimeoutMinutes,
     sessionTimeoutAction,
     authorizedDevices: authorizedDevicesQuery.data || [],
     authorizedDevicesLoading: authorizedDevicesQuery.isFetching,
+    authorizedDevicesError: authorizedDevicesQuery.isError && !authorizedDevicesQuery.data ? t('txt_load_devices_failed') : '',
     onNavigate: navigate,
     onLogout: handleLogout,
     onNotify: pushToast,
@@ -1258,7 +1334,11 @@ export default function App() {
     onExportBackup: backupActions.exportBackup,
     onImportBackup: backupActions.importBackup,
     onImportBackupAllowingChecksumMismatch: backupActions.importBackupAllowingChecksumMismatch,
-    onLoadBackupSettings: backupActions.loadSettings,
+    onLoadBackupSettings: () => queryClient.ensureQueryData({
+      queryKey: ['admin-backup-settings', vaultCacheKey],
+      queryFn: () => backupActions.loadSettings(),
+      staleTime: 30_000,
+    }),
     onSaveBackupSettings: backupActions.saveSettings,
     onRunRemoteBackup: backupActions.runRemoteBackup,
     onListRemoteBackups: backupActions.listRemoteBackups,
@@ -1277,6 +1357,15 @@ export default function App() {
     return (
       <>
         <PublicSendPage accessId={decodeURIComponent(publicSendMatch[1])} keyPart={publicSendMatch[2] ? decodeURIComponent(publicSendMatch[2]) : null} />
+        {renderPassiveOverlays()}
+      </>
+    );
+  }
+
+  if (isUnknownRoute) {
+    return (
+      <>
+        <NotFoundPage />
         {renderPassiveOverlays()}
       </>
     );

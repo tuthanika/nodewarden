@@ -5,6 +5,8 @@ export type Locale =
   | 'ru'
   | 'es';
 
+import enMessages from './i18n/locales/en';
+
 const LOCALE_STORAGE_KEY = 'nodewarden.locale';
 
 type MessageTable = Record<string, string>;
@@ -18,8 +20,8 @@ export const AVAILABLE_LOCALES: readonly { value: Locale; label: string }[] = [
 ];
 
 let locale: Locale = resolveInitialLocale();
-let activeMessages: MessageTable = {};
-const loadedMessages = new Map<Locale, MessageTable>();
+let activeMessages: MessageTable = enMessages;
+const loadedMessages = new Map<Locale, MessageTable>([['en', enMessages]]);
 
 function isLocale(value: unknown): value is Locale {
   return AVAILABLE_LOCALES.some((item) => item.value === value);
@@ -46,7 +48,7 @@ function resolveInitialLocale(): Locale {
 }
 
 const localeLoaders: Record<Locale, () => Promise<{ default: MessageTable }>> = {
-  en: () => import('./i18n/locales/en'),
+  en: () => Promise.resolve({ default: enMessages }),
   'zh-CN': () => import('./i18n/locales/zh-CN'),
   'zh-TW': () => import('./i18n/locales/zh-TW'),
   ru: () => import('./i18n/locales/ru'),
@@ -63,11 +65,7 @@ async function loadLocaleMessages(next: Locale): Promise<MessageTable> {
 }
 
 async function loadFallbackMessages(): Promise<MessageTable> {
-  const cached = loadedMessages.get('en');
-  if (cached) return cached;
-  const mod = await import('./i18n/locales/en');
-  loadedMessages.set('en', mod.default);
-  return mod.default;
+  return enMessages;
 }
 
 export type I18nParams = Record<string, string | number | null | undefined>;

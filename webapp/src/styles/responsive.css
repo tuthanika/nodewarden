@@ -61,15 +61,15 @@
 
 @media (max-width: 1180px) {
   .auth-page {
-    @apply items-start p-3.5;
+    @apply items-center p-3.5;
   }
 
   .standalone-shell {
-    @apply w-full max-w-[460px] gap-2.5 pt-3;
+    @apply w-full max-w-[460px] gap-2.5;
   }
 
   .standalone-brand-outside {
-    @apply justify-start;
+    @apply justify-center;
   }
 
   .standalone-brand-logo {
@@ -501,6 +501,10 @@
     height: 160px;
   }
 
+  .totp-scan-actions {
+    grid-template-columns: 1fr;
+  }
+
   .invite-toolbar {
     align-items: stretch;
   }
@@ -659,6 +663,49 @@
 }
 
 @media (max-width: 640px) {
+  .settings-module h3 {
+    margin-bottom: 12px;
+  }
+
+  .settings-module .field,
+  .auth-card .field {
+    margin-bottom: 12px;
+  }
+
+  .settings-module .field > span,
+  .auth-card .field > span {
+    margin-top: 0;
+    margin-bottom: 6px;
+  }
+
+  .settings-module .field-grid,
+  .auth-card .field-grid,
+  .session-timeout-fields {
+    gap: 12px;
+  }
+
+  .settings-module .btn,
+  .auth-card .btn:not(.full) {
+    margin-top: 2px;
+  }
+
+  .dialog-mask.totp-scan-mask {
+    display: block;
+    padding: 0;
+    background: #0f172a;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .dialog-card.totp-scan-dialog {
+    width: 100vw;
+    max-width: none;
+    height: 100dvh;
+    max-height: 100dvh;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
   .backup-interval-row {
     grid-template-columns: 1fr;
   }

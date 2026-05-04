@@ -3,6 +3,7 @@ import { APP_VERSION } from '@shared/app-version';
 
 interface StandalonePageFrameProps {
   title: string;
+  eyebrow?: ComponentChildren;
   children: ComponentChildren;
 }
 
@@ -17,6 +18,7 @@ export default function StandalonePageFrame(props: StandalonePageFrameProps) {
       </div>
 
       <div className="auth-card">
+        {props.eyebrow && <div className="standalone-eyebrow">{props.eyebrow}</div>}
         <h1 className="standalone-title">{props.title}</h1>
         {props.children}
       </div>

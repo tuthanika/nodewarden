@@ -141,6 +141,26 @@ function normalizeIconHost(rawHost: string): string | null {
   }
 }
 
+const ICON_UPSTREAM_TIMEOUT_MS = 2500;
+
+async function fetchIconSource(source: { url: string; headers?: HeadersInit }): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), ICON_UPSTREAM_TIMEOUT_MS);
+  try {
+    return await fetch(source.url, {
+      headers: source.headers,
+      redirect: 'follow',
+      signal: controller.signal,
+      cf: {
+        cacheEverything: true,
+        cacheTtl: LIMITS.cache.iconTtlSeconds,
+      },
+    } as RequestInit & { cf: { cacheEverything: boolean; cacheTtl: number } });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function handleWebsiteIcon(host: string, fallbackMode: 'default' | 'not-found' = 'default'): Promise<Response> {
   const normalizedHost = normalizeIconHost(host);
   if (!normalizedHost) return fallbackMode === 'not-found' ? handleMissingWebsiteIcon() : handleNwFavicon();
@@ -164,14 +184,7 @@ async function handleWebsiteIcon(host: string, fallbackMode: 'default' | 'not-fo
 
   try {
     for (const source of upstreamSources) {
-      const resp = await fetch(source.url, {
-        headers: source.headers,
-        redirect: 'follow',
-        cf: {
-          cacheEverything: true,
-          cacheTtl: LIMITS.cache.iconTtlSeconds,
-        },
-      } as RequestInit & { cf: { cacheEverything: boolean; cacheTtl: number } });
+      const resp = await fetchIconSource(source);
 
       if (!resp.ok) continue;
       const contentType = String(resp.headers.get('Content-Type') || '').toLowerCase();

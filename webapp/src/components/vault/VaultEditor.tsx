@@ -1,6 +1,8 @@
 import type { JSX, RefObject } from 'preact';
-import { CheckCheck, Download, GripVertical, Paperclip, Plus, RefreshCw, Star, StarOff, Trash2, Upload, X } from 'lucide-preact';
+import { createPortal } from 'preact/compat';
+import { CheckCheck, Download, GripVertical, Paperclip, Plus, QrCode, RefreshCw, Star, StarOff, Trash2, Upload, X } from 'lucide-preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
+import { useDialogLifecycle } from '@/components/ConfirmDialog';
 import {
   closestCenter,
   DndContext,
@@ -137,8 +139,16 @@ function SortableWebsiteRow(props: SortableWebsiteRowProps) {
 export default function VaultEditor(props: VaultEditorProps) {
   const createTypeOptions = getCreateTypeOptions();
   const uriIdSeedRef = useRef(0);
+  const totpQrVideoRef = useRef<HTMLVideoElement | null>(null);
+  const totpQrFileRef = useRef<HTMLInputElement | null>(null);
+  const totpQrStreamRef = useRef<MediaStream | null>(null);
+  const totpQrFrameRef = useRef<number | null>(null);
   const [uriItemIds, setUriItemIds] = useState<string[]>([]);
   const [activeUriId, setActiveUriId] = useState<string | null>(null);
+  const [totpQrOpen, setTotpQrOpen] = useState(false);
+  const [totpQrStatus, setTotpQrStatus] = useState('');
+  const [totpQrBusy, setTotpQrBusy] = useState(false);
+  useDialogLifecycle(totpQrOpen, () => setTotpQrOpen(false));
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
@@ -155,6 +165,63 @@ export default function VaultEditor(props: VaultEditorProps) {
 
   const createUriId = () => `login-uri-${uriIdSeedRef.current++}`;
 
+  const stopTotpQrScanner = () => {
+    if (totpQrFrameRef.current != null) {
+      window.cancelAnimationFrame(totpQrFrameRef.current);
+      totpQrFrameRef.current = null;
+    }
+    if (totpQrStreamRef.current) {
+      for (const track of totpQrStreamRef.current.getTracks()) track.stop();
+      totpQrStreamRef.current = null;
+    }
+    if (totpQrVideoRef.current) {
+      totpQrVideoRef.current.srcObject = null;
+    }
+  };
+
+  const applyTotpQrValue = (value: string) => {
+    const trimmed = value.trim();
+    if (!trimmed) return false;
+    props.onUpdateDraft({ loginTotp: trimmed });
+    setTotpQrStatus(t('txt_totp_qr_scanned'));
+    setTotpQrOpen(false);
+    return true;
+  };
+
+  const createTotpQrDetector = (): BarcodeDetector | null => {
+    if (typeof window === 'undefined' || !window.BarcodeDetector) return null;
+    return new window.BarcodeDetector({ formats: ['qr_code'] });
+  };
+
+  const decodeTotpQrImage = async (source: ImageBitmapSource): Promise<boolean> => {
+    const detector = createTotpQrDetector();
+    if (!detector) {
+      setTotpQrStatus(t('txt_totp_qr_unsupported'));
+      return false;
+    }
+    const results = await detector.detect(source);
+    const value = String(results[0]?.rawValue || '').trim();
+    if (!value) return false;
+    return applyTotpQrValue(value);
+  };
+
+  const handleTotpQrFile = async (file: File | null) => {
+    if (!file) return;
+    setTotpQrBusy(true);
+    setTotpQrStatus(t('txt_totp_qr_scanning'));
+    let bitmap: ImageBitmap | null = null;
+    try {
+      bitmap = await createImageBitmap(file);
+      const found = await decodeTotpQrImage(bitmap);
+      if (!found) setTotpQrStatus(t('txt_totp_qr_not_found'));
+    } catch {
+      setTotpQrStatus(t('txt_totp_qr_scan_failed'));
+    } finally {
+      bitmap?.close();
+      setTotpQrBusy(false);
+    }
+  };
+
   useEffect(() => {
     setUriItemIds((prev) => {
       if (prev.length === props.draft.loginUris.length) return prev;
@@ -169,6 +236,77 @@ export default function VaultEditor(props: VaultEditorProps) {
     setUriItemIds(props.draft.loginUris.map(() => createUriId()));
     setActiveUriId(null);
   }, [props.draft.id, props.isCreating]);
+
+  useEffect(() => {
+    if (!totpQrOpen) {
+      stopTotpQrScanner();
+      return;
+    }
+    let stopped = false;
+    const detector = createTotpQrDetector();
+    if (!detector) {
+      setTotpQrStatus(t('txt_totp_qr_unsupported'));
+      return () => {
+        stopped = true;
+        stopTotpQrScanner();
+      };
+    }
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setTotpQrStatus(t('txt_totp_qr_camera_unavailable'));
+      return () => {
+        stopped = true;
+        stopTotpQrScanner();
+      };
+    }
+
+    const scan = async () => {
+      if (stopped) return;
+      const video = totpQrVideoRef.current;
+      if (!video || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+        totpQrFrameRef.current = window.requestAnimationFrame(scan);
+        return;
+      }
+      try {
+        const results = await detector.detect(video);
+        const value = String(results[0]?.rawValue || '').trim();
+        if (value && applyTotpQrValue(value)) return;
+      } catch {
+        // Keep the camera active; transient frame decode failures are common.
+      }
+      totpQrFrameRef.current = window.requestAnimationFrame(scan);
+    };
+
+    setTotpQrBusy(true);
+    setTotpQrStatus(t('txt_totp_qr_starting_camera'));
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false })
+      .then((stream) => {
+        if (stopped) {
+          for (const track of stream.getTracks()) track.stop();
+          return;
+        }
+        totpQrStreamRef.current = stream;
+        const video = totpQrVideoRef.current;
+        if (!video) return;
+        video.srcObject = stream;
+        setTotpQrStatus(t('txt_totp_qr_point_camera'));
+        void video.play().then(() => {
+          setTotpQrBusy(false);
+          totpQrFrameRef.current = window.requestAnimationFrame(scan);
+        }).catch(() => {
+          setTotpQrBusy(false);
+          setTotpQrStatus(t('txt_totp_qr_camera_unavailable'));
+        });
+      })
+      .catch(() => {
+        setTotpQrBusy(false);
+        setTotpQrStatus(t('txt_totp_qr_camera_unavailable'));
+      });
+
+    return () => {
+      stopped = true;
+      stopTotpQrScanner();
+    };
+  }, [totpQrOpen]);
 
   const formatDownloadLabel = (attachmentId: string) => {
     const downloadKey = `${props.selectedCipher?.id || ''}:${attachmentId}`;
@@ -274,7 +412,22 @@ export default function VaultEditor(props: VaultEditorProps) {
           </div>
           <label className="field">
             <span>{t('txt_totp_secret')}</span>
-            <input className="input" value={props.draft.loginTotp} onInput={(e) => props.onUpdateDraft({ loginTotp: (e.currentTarget as HTMLInputElement).value })} />
+            <div className="input-action-wrap">
+              <input className="input" value={props.draft.loginTotp} onInput={(e) => props.onUpdateDraft({ loginTotp: (e.currentTarget as HTMLInputElement).value })} />
+              <button
+                type="button"
+                className="input-icon-btn"
+                title={t('txt_scan_totp_qr')}
+                aria-label={t('txt_scan_totp_qr')}
+                disabled={props.busy}
+                onClick={() => {
+                  setTotpQrStatus('');
+                  setTotpQrOpen(true);
+                }}
+              >
+                <QrCode size={18} className="btn-icon" />
+              </button>
+            </div>
           </label>
           <div className="section-head">
             <h4>{t('txt_websites')}</h4>
@@ -571,6 +724,52 @@ export default function VaultEditor(props: VaultEditorProps) {
         )}
       </div>
       {props.localError && <div className="local-error">{props.localError}</div>}
+      {totpQrOpen && typeof document !== 'undefined' ? createPortal((
+        <div className="dialog-mask totp-scan-mask open" onClick={(event) => event.target === event.currentTarget && setTotpQrOpen(false)}>
+          <section className="dialog-card totp-scan-dialog open" role="dialog" aria-modal="true" aria-label={t('txt_scan_totp_qr')}>
+            <div className="totp-scan-head">
+              <h3 className="dialog-title">{t('txt_scan_totp_qr')}</h3>
+              <button
+                type="button"
+                className="totp-scan-close"
+                onClick={() => setTotpQrOpen(false)}
+                title={t('txt_close')}
+                aria-label={t('txt_close')}
+              >
+                <X size={20} className="btn-icon" />
+              </button>
+            </div>
+            <div className="totp-scan-frame">
+              <video ref={totpQrVideoRef} className="totp-scan-video" muted playsInline />
+              <div className="totp-scan-corners" aria-hidden="true" />
+            </div>
+            <div className="totp-scan-footer">
+              <div className="dialog-message totp-scan-status">{totpQrStatus || t('txt_totp_qr_point_camera')}</div>
+              <div className="actions totp-scan-actions">
+                <button type="button" className="btn btn-secondary dialog-btn" disabled={totpQrBusy} onClick={() => totpQrFileRef.current?.click()}>
+                  <Upload size={14} className="btn-icon" />
+                  {t('txt_totp_qr_choose_image')}
+                </button>
+                <button type="button" className="btn btn-primary dialog-btn" onClick={() => setTotpQrOpen(false)}>
+                  <X size={14} className="btn-icon" />
+                  {t('txt_close')}
+                </button>
+              </div>
+            </div>
+            <input
+              ref={totpQrFileRef}
+              type="file"
+              accept="image/*"
+              className="attachment-file-input"
+              onChange={(event) => {
+                const input = event.currentTarget as HTMLInputElement;
+                void handleTotpQrFile(input.files?.[0] || null);
+                input.value = '';
+              }}
+            />
+          </section>
+        </div>
+      ), document.body) : null}
     </>
   );
 }

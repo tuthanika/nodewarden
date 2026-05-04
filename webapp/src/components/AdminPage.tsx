@@ -1,6 +1,7 @@
 import { useState } from 'preact/hooks';
 import { ChevronLeft, ChevronRight, Clipboard, Plus, RefreshCw, Trash2, UserCheck, UserX } from 'lucide-preact';
 import { copyTextToClipboard } from '@/lib/clipboard';
+import LoadingState from '@/components/LoadingState';
 import type { AdminInvite, AdminUser } from '@/lib/types';
 import { t } from '@/lib/i18n';
 
@@ -8,6 +9,8 @@ interface AdminPageProps {
   currentUserId: string;
   users: AdminUser[];
   invites: AdminInvite[];
+  loading: boolean;
+  error: string;
   onRefresh: () => void;
   onCreateInvite: (hours: number) => Promise<void>;
   onDeleteAllInvites: () => Promise<void>;
@@ -48,8 +51,22 @@ export default function AdminPage(props: AdminPageProps) {
 
   return (
     <div className="stack">
+      {!!props.error && (
+        <div className="local-error">
+          <span>{props.error}</span>
+          <button type="button" className="btn btn-secondary small" onClick={props.onRefresh}>
+            <RefreshCw size={14} className="btn-icon" />
+            {t('txt_refresh')}
+          </button>
+        </div>
+      )}
       <section className="card">
-        <h3>{t('txt_users')}</h3>
+        <div className="section-head">
+          <h3>{t('txt_users')}</h3>
+          <button type="button" className="btn btn-secondary small" disabled={props.loading} onClick={props.onRefresh}>
+            <RefreshCw size={14} className="btn-icon" /> {t('txt_refresh')}
+          </button>
+        </div>
         <table className="table">
           <thead>
             <tr>
@@ -94,6 +111,20 @@ export default function AdminPage(props: AdminPageProps) {
                 </tr>
               );
             })}
+            {props.loading && !props.users.length && (
+              <tr>
+                <td colSpan={5}>
+                  <LoadingState lines={4} compact />
+                </td>
+              </tr>
+            )}
+            {!props.loading && !props.users.length && (
+              <tr>
+                <td colSpan={5}>
+                  <div className="empty empty-comfortable">{t('txt_no_users_found')}</div>
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </section>
@@ -101,7 +132,7 @@ export default function AdminPage(props: AdminPageProps) {
       <section className="card">
         <div className="section-head">
           <h3>{t('txt_invites')}</h3>
-          <button type="button" className="btn btn-secondary" onClick={props.onRefresh}>
+          <button type="button" className="btn btn-secondary" disabled={props.loading} onClick={props.onRefresh}>
             <RefreshCw size={14} className="btn-icon" /> {t('txt_sync')}
           </button>
         </div>
@@ -160,6 +191,20 @@ export default function AdminPage(props: AdminPageProps) {
                 </td>
               </tr>
             ))}
+            {props.loading && !props.invites.length && (
+              <tr>
+                <td colSpan={4}>
+                  <LoadingState lines={4} compact />
+                </td>
+              </tr>
+            )}
+            {!props.loading && !props.invites.length && (
+              <tr>
+                <td colSpan={4}>
+                  <div className="empty empty-comfortable">{t('txt_no_invites_found')}</div>
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
         <div className="actions">

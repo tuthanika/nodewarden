@@ -3,6 +3,7 @@ import { useEffect } from 'preact/hooks';
 import { Link, Route, Switch } from 'wouter';
 import { ArrowUpDown, Cloud, LogOut, Settings as SettingsIcon, Shield, ShieldUser } from 'lucide-preact';
 import type { ImportAttachmentFile, ImportResultSummary } from '@/components/ImportPage';
+import LoadingState from '@/components/LoadingState';
 import type { AdminBackupImportResponse, AdminBackupRunResponse, AdminBackupSettings, RemoteBackupBrowserResponse } from '@/lib/api/backup';
 import type { CiphersImportPayload } from '@/lib/api/vault';
 import { t } from '@/lib/i18n';
@@ -19,7 +20,7 @@ const BackupCenterPage = lazy(() => import('@/components/BackupCenterPage'));
 const ImportPage = lazy(() => import('@/components/ImportPage'));
 
 function RouteContentFallback() {
-  return <div className="loading-screen">{t('txt_loading_nodewarden')}</div>;
+  return <LoadingState card lines={5} />;
 }
 
 function LegacyBackupRedirect(props: { onNavigate: (path: string) => void }) {
@@ -31,6 +32,7 @@ function LegacyBackupRedirect(props: { onNavigate: (path: string) => void }) {
 
 export interface AppMainRoutesProps {
   profile: Profile | null;
+  profileLoading: boolean;
   session: SessionState | null;
   mobileLayout: boolean;
   mobileSidebarToggleKey: number;
@@ -40,16 +42,20 @@ export interface AppMainRoutesProps {
   decryptedCiphers: Cipher[];
   decryptedFolders: VaultFolder[];
   decryptedSends: Send[];
+  vaultError: string;
   ciphersLoading: boolean;
   foldersLoading: boolean;
   sendsLoading: boolean;
   users: AdminUser[];
   invites: AdminInvite[];
+  adminLoading: boolean;
+  adminError: string;
   totpEnabled: boolean;
   lockTimeoutMinutes: 0 | 1 | 5 | 15 | 30;
   sessionTimeoutAction: 'lock' | 'logout';
   authorizedDevices: AuthorizedDevice[];
   authorizedDevicesLoading: boolean;
+  authorizedDevicesError: string;
   onNavigate: (path: string) => void;
   onLogout: () => void;
   onNotify: (type: 'success' | 'error' | 'warning', text: string) => void;
@@ -187,6 +193,7 @@ export default function AppMainRoutes(props: AppMainRoutesProps) {
             ciphers={props.decryptedCiphers}
             folders={props.decryptedFolders}
             loading={props.ciphersLoading || props.foldersLoading}
+            error={props.vaultError}
             emailForReprompt={props.profile?.email || props.session?.email || ''}
             onRefresh={props.onRefreshVault}
             onCreate={props.onCreateVaultItem}
@@ -216,7 +223,7 @@ export default function AppMainRoutes(props: AppMainRoutesProps) {
         </Suspense>
       </Route>
       <Route path={props.settingsAccountRoute}>
-        {props.profile && (
+        {props.profile ? (
           <div className="stack">
             {props.mobileLayout && (
               <div className="mobile-settings-subhead">
@@ -245,10 +252,12 @@ export default function AppMainRoutes(props: AppMainRoutesProps) {
               />
             </Suspense>
           </div>
-        )}
+        ) : props.profileLoading ? (
+          <LoadingState card lines={5} />
+        ) : null}
       </Route>
       <Route path="/settings">
-        {props.profile && (
+        {props.profile ? (
           <section className="card mobile-settings-card">
             <div className="mobile-settings-links">
               <Link href={props.settingsAccountRoute} className="mobile-settings-link">
@@ -281,7 +290,9 @@ export default function AppMainRoutes(props: AppMainRoutesProps) {
               {t('txt_sign_out')}
             </button>
           </section>
-        )}
+        ) : props.profileLoading ? (
+          <LoadingState card lines={4} />
+        ) : null}
       </Route>
       <Route path="/security/devices">
         <div className="stack">
@@ -297,6 +308,7 @@ export default function AppMainRoutes(props: AppMainRoutesProps) {
             <SecurityDevicesPage
               devices={props.authorizedDevices}
               loading={props.authorizedDevicesLoading}
+              error={props.authorizedDevicesError}
               onRefresh={() => void props.onRefreshAuthorizedDevices()}
               onRenameDevice={props.onRenameAuthorizedDevice}
               onRevokeTrust={props.onRevokeDeviceTrust}
@@ -322,6 +334,8 @@ export default function AppMainRoutes(props: AppMainRoutesProps) {
               currentUserId={props.profile?.id || ''}
               users={props.users}
               invites={props.invites}
+              loading={props.adminLoading}
+              error={props.adminError}
               onRefresh={props.onRefreshAdmin}
               onCreateInvite={props.onCreateInvite}
               onDeleteAllInvites={props.onDeleteAllInvites}

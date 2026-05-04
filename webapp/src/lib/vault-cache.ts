@@ -1,8 +1,9 @@
-import type { Cipher, Folder } from './types';
+import type { Cipher, Folder, Send } from './types';
 
 export interface VaultCoreSnapshot {
   ciphers: Cipher[];
   folders: Folder[];
+  sends: Send[];
 }
 
 interface VaultCoreCacheRecord {

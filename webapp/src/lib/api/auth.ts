@@ -46,6 +46,8 @@ interface RefreshSuccess {
 
 type RefreshResult = RefreshFailure | RefreshSuccess;
 
+const pendingRefreshes = new Map<string, Promise<RefreshResult>>();
+
 function randomHex(length: number): string {
   const bytes = crypto.getRandomValues(new Uint8Array(Math.max(1, Math.ceil(length / 2))));
   return Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, length);
@@ -312,6 +314,25 @@ export async function refreshAccessToken(session: SessionState): Promise<Refresh
   }
 }
 
+function refreshKey(session: SessionState): string {
+  if (session.authMode === 'web-cookie') return `web-cookie:${session.email || ''}`;
+  return `token:${session.refreshToken || ''}`;
+}
+
+function refreshAccessTokenOnce(session: SessionState): Promise<RefreshResult> {
+  const key = refreshKey(session);
+  const existing = pendingRefreshes.get(key);
+  if (existing) return existing;
+
+  const request = refreshAccessToken(session).finally(() => {
+    if (pendingRefreshes.get(key) === request) {
+      pendingRefreshes.delete(key);
+    }
+  });
+  pendingRefreshes.set(key, request);
+  return request;
+}
+
 export async function revokeCurrentSession(session: SessionState | null): Promise<void> {
   const body = new URLSearchParams();
   if (session?.authMode !== 'web-cookie' && session?.refreshToken) {
@@ -436,7 +457,16 @@ export function createAuthedFetch(getSession: () => SessionState | null, setSess
     let resp = await retryableRequest(headers);
     if (resp.status !== 401 || (!session.refreshToken && session.authMode !== 'web-cookie')) return resp;
 
-    const refreshed = await refreshAccessToken(session);
+    const latest = getSession();
+    if (latest?.accessToken && latest.accessToken !== session.accessToken) {
+      const latestHeaders = new Headers(init.headers || {});
+      latestHeaders.set('Authorization', `Bearer ${latest.accessToken}`);
+      resp = await retryableRequest(latestHeaders);
+      if (resp.status !== 401) return resp;
+    }
+
+    const refreshSource = latest || session;
+    const refreshed = await refreshAccessTokenOnce(refreshSource);
     if (!refreshed.ok) {
       if (refreshed.transient) {
         throw new Error(refreshed.error || 'Session refresh temporarily unavailable');
@@ -446,10 +476,10 @@ export function createAuthedFetch(getSession: () => SessionState | null, setSess
     }
 
     const nextSession: SessionState = {
-      ...session,
+      ...refreshSource,
       accessToken: refreshed.token.access_token,
-      refreshToken: refreshed.token.refresh_token || session.refreshToken,
-      authMode: refreshed.token.web_session ? 'web-cookie' : (session.authMode || 'token'),
+      refreshToken: refreshed.token.refresh_token || refreshSource.refreshToken,
+      authMode: refreshed.token.web_session ? 'web-cookie' : (refreshSource.authMode || 'token'),
     };
     setSession(nextSession);
     saveSession(nextSession);

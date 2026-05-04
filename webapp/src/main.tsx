@@ -15,14 +15,19 @@ const queryClient = new QueryClient({
   },
 });
 
-async function bootstrap(): Promise<void> {
-  await initI18n();
+const root = document.getElementById('root')!;
+
+function renderApp(): void {
   render(
     <QueryClientProvider client={queryClient}>
       <App />
     </QueryClientProvider>,
-    document.getElementById('root')!
+    root
   );
 }
 
-void bootstrap();
+renderApp();
+
+void initI18n().then(() => {
+  renderApp();
+});

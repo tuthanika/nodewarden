@@ -24,6 +24,7 @@ interface VirtualRange {
 interface VaultListPanelProps {
   busy: boolean;
   loading: boolean;
+  error: string;
   searchInput: string;
   sortMode: VaultSortMode;
   sortMenuOpen: boolean;
@@ -238,6 +239,14 @@ export default function VaultListPanel(props: VaultListPanelProps) {
 
       <div className="list-panel" ref={props.listPanelRef} onScroll={(event) => props.onScroll((event.currentTarget as HTMLDivElement).scrollTop)}>
         {props.loading && !props.filteredCiphers.length && <LoadingState lines={7} compact />}
+        {!props.loading && !!props.error && !props.filteredCiphers.length && (
+          <div className="empty vault-error-state">
+            <strong>{props.error}</strong>
+            <button type="button" className="btn btn-secondary small" disabled={props.busy} onClick={props.onSyncVault}>
+              {t('txt_retry_sync')}
+            </button>
+          </div>
+        )}
         {!!props.filteredCiphers.length && (
           <div style={{ paddingTop: `${props.virtualRange.padTop}px`, paddingBottom: `${props.virtualRange.padBottom}px` }}>
             {props.visibleCiphers.map((cipher) => (
@@ -253,7 +262,7 @@ export default function VaultListPanel(props: VaultListPanelProps) {
             ))}
           </div>
         )}
-        {!props.loading && !props.filteredCiphers.length && <div className="empty">{t('txt_no_items')}</div>}
+        {!props.loading && !props.error && !props.filteredCiphers.length && <div className="empty">{t('txt_no_items')}</div>}
       </div>
     </section>
   );

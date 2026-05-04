@@ -1,12 +1,13 @@
 import { createPortal } from 'preact/compat';
 import { useMemo, useState } from 'preact/hooks';
-import { Archive, Clipboard, Download, Eye, EyeOff, ExternalLink, Paperclip, Pencil, RotateCcw, Trash2, X } from 'lucide-preact';
+import { Archive, Clipboard, Download, Eye, EyeOff, ExternalLink, Folder, Paperclip, Pencil, RotateCcw, Trash2, X } from 'lucide-preact';
 import { useDialogLifecycle } from '@/components/ConfirmDialog';
 import type { Cipher } from '@/lib/types';
 import { t } from '@/lib/i18n';
 import {
   TOTP_PERIOD_SECONDS,
   TOTP_RING_CIRCUMFERENCE,
+  VaultListIcon,
   copyToClipboard,
   formatAttachmentSize,
   formatHistoryTime,
@@ -115,8 +116,18 @@ export default function VaultDetailView(props: VaultDetailViewProps) {
       {(Number(props.selectedCipher.reprompt || 0) !== 1 || props.repromptApprovedCipherId === props.selectedCipher.id) && (
         <>
           <div className="card">
-            <h3 className="detail-title">{props.selectedCipher.decName || t('txt_no_name')}</h3>
-            <div className="detail-sub">{props.folderName(props.selectedCipher.folderId)}</div>
+            <div className="detail-title-row">
+              <span className="detail-title-icon" aria-hidden="true">
+                <VaultListIcon cipher={props.selectedCipher} />
+              </span>
+              <div className="detail-title-main">
+                <h3 className="detail-title">{props.selectedCipher.decName || t('txt_no_name')}</h3>
+                <div className="detail-folder-line">
+                  <Folder size={13} aria-hidden="true" />
+                  <span>{props.folderName(props.selectedCipher.folderId)}</span>
+                </div>
+              </div>
+            </div>
             {isArchived && <div className="list-badge archive-badge">{t('txt_archived')}</div>}
           </div>
 

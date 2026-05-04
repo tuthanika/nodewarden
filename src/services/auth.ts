@@ -57,6 +57,12 @@ export class AuthService {
     return user;
   }
 
+  private async getFreshUser(userId: string): Promise<User | null> {
+    const user = await this.storage.getUserById(userId);
+    this.writeCachedUser(userId, user);
+    return user;
+  }
+
   private readCachedDevice(userId: string, deviceId: string) {
     const cacheKey = `${userId}:${deviceId}`;
     const cached = AuthService.deviceCache.get(cacheKey);
@@ -79,6 +85,12 @@ export class AuthService {
   private async getCachedDevice(userId: string, deviceId: string) {
     const cached = this.readCachedDevice(userId, deviceId);
     if (cached !== undefined) return cached;
+    const device = await this.storage.getDevice(userId, deviceId);
+    this.writeCachedDevice(userId, deviceId, device);
+    return device;
+  }
+
+  private async getFreshDevice(userId: string, deviceId: string) {
     const device = await this.storage.getDevice(userId, deviceId);
     this.writeCachedDevice(userId, deviceId, device);
     return device;
@@ -162,7 +174,10 @@ export class AuthService {
     const payload = await verifyJWT(parts[1], this.env.JWT_SECRET);
     if (!payload) return null;
 
-    const user = await this.getCachedUser(payload.sub);
+    let user = await this.getCachedUser(payload.sub);
+    if (!user || user.status !== 'active' || payload.sstamp !== user.securityStamp) {
+      user = await this.getFreshUser(payload.sub);
+    }
     if (!user) return null;
     if (user.status !== 'active') return null;
 
@@ -171,7 +186,10 @@ export class AuthService {
     }
 
     if (payload.did) {
-      const device = await this.getCachedDevice(user.id, payload.did);
+      let device = await this.getCachedDevice(user.id, payload.did);
+      if (!device || !payload.dstamp || payload.dstamp !== device.sessionStamp) {
+        device = await this.getFreshDevice(user.id, payload.did);
+      }
       if (!device) return null;
       if (!payload.dstamp || payload.dstamp !== device.sessionStamp) return null;
     }

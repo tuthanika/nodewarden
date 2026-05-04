@@ -698,7 +698,7 @@
 }
 
 .local-error {
-  @apply mt-2.5 font-semibold;
+  @apply mt-2.5 flex flex-wrap items-center gap-2 font-semibold;
   color: #b42318;
 }
 

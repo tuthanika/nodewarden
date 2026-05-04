@@ -30,6 +30,7 @@ export default defineConfig({
 
           const localeMatch = normalized.match(/\/src\/lib\/i18n\/locales\/(.+)\.ts$/);
           if (localeMatch) {
+            if (localeMatch[1] === 'en') return undefined;
             return `i18n-${localeMatch[1]}`;
           }
 
@@ -52,19 +53,14 @@ export default defineConfig({
             normalized.includes('/src/lib/import-') ||
             normalized.includes('/src/lib/export-formats.ts') ||
             normalized.includes('/src/components/SendsPage.tsx') ||
-            normalized.includes('/src/components/TotpCodesPage.tsx')
-          ) {
-            return 'workspace-suite';
-          }
-
-          if (
+            normalized.includes('/src/components/TotpCodesPage.tsx') ||
             normalized.includes('/src/components/BackupCenterPage.tsx') ||
             normalized.includes('/src/components/backup-center/') ||
             normalized.includes('/src/components/SettingsPage.tsx') ||
             normalized.includes('/src/components/SecurityDevicesPage.tsx') ||
             normalized.includes('/src/components/AdminPage.tsx')
           ) {
-            return 'management-suite';
+            return 'workspace-suite';
           }
 
           return undefined;

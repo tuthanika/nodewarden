@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { Download, Eye, Lock } from 'lucide-preact';
+import { Clipboard, Download, Eye, Lock } from 'lucide-preact';
 import { accessPublicSend, accessPublicSendFile, decryptPublicSend, decryptPublicSendFileBytes } from '@/lib/api/send';
+import { copyTextToClipboard } from '@/lib/clipboard';
 import { toBufferSource } from '@/lib/crypto';
 import { downloadBytesAsFile, readResponseBytesWithProgress } from '@/lib/download';
+import NotFoundPage from '@/components/NotFoundPage';
 import StandalonePageFrame from '@/components/StandalonePageFrame';
 import { t } from '@/lib/i18n';
 
@@ -25,6 +27,25 @@ interface PublicSendData {
   decFileName?: string | null;
   expirationDate?: string | null;
   file?: PublicSendFileData | null;
+}
+
+function decodeBase64Url(value: string): Uint8Array | null {
+  try {
+    const raw = value.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = raw + '='.repeat((4 - (raw.length % 4)) % 4);
+    const decoded = atob(padded);
+    const out = new Uint8Array(decoded.length);
+    for (let i = 0; i < decoded.length; i += 1) out[i] = decoded.charCodeAt(i);
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+function hasUsableSendKey(keyPart: string | null): boolean {
+  if (!keyPart) return false;
+  const bytes = decodeBase64Url(keyPart);
+  return !!bytes && bytes.length >= 16;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -69,6 +90,7 @@ export default function PublicSendPage(props: PublicSendPageProps) {
   const [password, setPassword] = useState('');
   const [needPassword, setNeedPassword] = useState(false);
   const [error, setError] = useState('');
+  const [notFound, setNotFound] = useState(false);
   const [sendData, setSendData] = useState<PublicSendData | null>(null);
   const [busy, setBusy] = useState(false);
   const [downloadPercent, setDownloadPercent] = useState<number | null>(null);
@@ -83,8 +105,14 @@ export default function PublicSendPage(props: PublicSendPageProps) {
     loadAbortRef.current = controller;
     setBusy(true);
     setError('');
+    setNotFound(false);
     setLoading(true);
     try {
+      if (!hasUsableSendKey(props.keyPart)) {
+        setNotFound(true);
+        setSendData(null);
+        return;
+      }
       const data = await accessPublicSend(props.accessId, props.keyPart, pass, { signal: controller.signal });
       if (controller.signal.aborted || requestId !== loadRequestRef.current) return;
       if (!props.keyPart) {
@@ -104,6 +132,10 @@ export default function PublicSendPage(props: PublicSendPageProps) {
       if (err.status === 401) {
         setNeedPassword(true);
         setError(t('txt_this_send_is_password_protected'));
+      } else if (err.status === 404) {
+        setNeedPassword(false);
+        setNotFound(true);
+        setError('');
       } else {
         setError(err.message || t('txt_failed_to_open_send'));
       }
@@ -158,9 +190,16 @@ export default function PublicSendPage(props: PublicSendPageProps) {
     };
   }, [props.accessId, props.keyPart]);
 
+  if (!loading && notFound) {
+    return <NotFoundPage title={t('txt_page_not_found')} message={t('txt_send_unavailable')} />;
+  }
+
   return (
     <div className="auth-page public-send-page">
-      <StandalonePageFrame title={t('txt_nodewarden_send')}>
+      <StandalonePageFrame
+        title={sendData ? (sendData.decName || t('txt_no_name')) : t('txt_nodewarden_send')}
+        eyebrow={sendData ? t('txt_nodewarden_send') : undefined}
+      >
         {loading && <p className="muted">{t('txt_loading')}</p>}
 
         {!loading && needPassword && (
@@ -190,9 +229,20 @@ export default function PublicSendPage(props: PublicSendPageProps) {
 
         {!loading && sendData && (
           <>
-            <h2 className="public-send-title">{sendData.decName || t('txt_no_name')}</h2>
             {sendData.type === 0 ? (
               <div className="card public-send-card">
+                <div className="public-send-card-head">
+                  <span>{t('txt_text_send')}</span>
+                  <button
+                    type="button"
+                    className="btn btn-secondary small public-send-copy-btn"
+                    disabled={!sendData.decText}
+                    onClick={() => void copyTextToClipboard(sendData.decText || '')}
+                  >
+                    <Clipboard size={14} className="btn-icon" />
+                    {t('txt_copy')}
+                  </button>
+                </div>
                 <div className="notes">{sendData.decText || ''}</div>
               </div>
             ) : (

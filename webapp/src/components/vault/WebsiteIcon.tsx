@@ -3,9 +3,8 @@ import type { ComponentChildren } from 'preact';
 import { Globe } from 'lucide-preact';
 import type { Cipher } from '@/lib/types';
 import {
+  getWebsiteIconImageUrl,
   getWebsiteIconStatus,
-  markWebsiteIconErrored,
-  markWebsiteIconLoaded,
   preloadWebsiteIcon,
   subscribeWebsiteIconStatus,
 } from '@/lib/website-icon-cache';
@@ -24,17 +23,23 @@ export default function WebsiteIcon(props: WebsiteIconProps) {
   const nodeRef = useRef<HTMLSpanElement | null>(null);
   const [shouldLoad, setShouldLoad] = useState(() => (host ? getWebsiteIconStatus(host) === 'loaded' : true));
   const [status, setStatus] = useState(() => (host ? getWebsiteIconStatus(host) : 'idle'));
+  const [imageUrl, setImageUrl] = useState(() => (host ? getWebsiteIconImageUrl(host) : ''));
 
   useEffect(() => {
     if (!host) {
       setShouldLoad(true);
       setStatus('idle');
+      setImageUrl('');
       return;
     }
     const nextStatus = getWebsiteIconStatus(host);
     setShouldLoad(nextStatus === 'loaded');
     setStatus(nextStatus);
-    return subscribeWebsiteIconStatus(host, setStatus);
+    setImageUrl(getWebsiteIconImageUrl(host));
+    return subscribeWebsiteIconStatus(host, (next) => {
+      setStatus(next);
+      setImageUrl(getWebsiteIconImageUrl(host));
+    });
   }, [host]);
 
   useEffect(() => {
@@ -70,7 +75,9 @@ export default function WebsiteIcon(props: WebsiteIconProps) {
     if (!host || !src || !shouldLoad || status === 'loaded' || status === 'error') return;
     let disposed = false;
     void preloadWebsiteIcon(host, src).then((nextStatus) => {
-      if (!disposed) setStatus(nextStatus);
+      if (disposed) return;
+      setStatus(nextStatus);
+      setImageUrl(getWebsiteIconImageUrl(host));
     });
     return () => {
       disposed = true;
@@ -84,16 +91,13 @@ export default function WebsiteIcon(props: WebsiteIconProps) {
   return (
     <span className="list-icon-stack" ref={nodeRef}>
       {status !== 'loaded' && <span className="list-icon-fallback">{props.fallback ?? <Globe size={18} />}</span>}
-      {status === 'loaded' && (
+      {status === 'loaded' && imageUrl && (
         <img
           className="list-icon loaded"
-          src={src}
+          src={imageUrl}
           alt=""
           loading="lazy"
           decoding="async"
-          referrerPolicy="no-referrer"
-          onLoad={() => markWebsiteIconLoaded(host)}
-          onError={() => markWebsiteIconErrored(host)}
         />
       )}
     </span>
