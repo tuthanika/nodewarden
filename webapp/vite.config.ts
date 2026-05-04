@@ -5,82 +5,97 @@ import { defineConfig } from 'vite';
 
 const rootDir = fileURLToPath(new URL('.', import.meta.url));
 
-export default defineConfig({
-  root: rootDir,
-  plugins: [preact()],
-  resolve: {
-    alias: {
-      '@': path.resolve(rootDir, 'src'),
-      '@shared': path.resolve(rootDir, '../shared'),
+export default defineConfig(({ mode }) => {
+  const isDemo = mode === 'demo';
+
+  return {
+    root: rootDir,
+    plugins: [preact()],
+    define: {
+      __NODEWARDEN_DEMO__: JSON.stringify(isDemo),
     },
-  },
-  build: {
-    outDir: path.resolve(rootDir, '../dist'),
-    emptyOutDir: true,
-    sourcemap: false,
-    target: 'esnext',
-    rollupOptions: {
-      output: {
-        manualChunks(id) {
-          if (id.includes('/node_modules/')) {
-            return 'vendor';
-          }
+    resolve: {
+      alias: {
+        '@/lib/demo': path.resolve(rootDir, isDemo ? 'src/lib/demo.ts' : 'src/lib/demo.empty.ts'),
+        '@/lib/demo-brand-icons': path.resolve(
+          rootDir,
+          isDemo ? 'src/lib/demo-brand-icons.ts' : 'src/lib/demo.empty.ts'
+        ),
+        '@': path.resolve(rootDir, 'src'),
+        '@shared': path.resolve(rootDir, '../shared'),
+      },
+    },
+    build: {
+      outDir: path.resolve(rootDir, '../dist'),
+      emptyOutDir: true,
+      sourcemap: false,
+      target: 'esnext',
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('/node_modules/')) {
+              return 'vendor';
+            }
 
-          const normalized = id.replace(/\\/g, '/');
+            const normalized = id.replace(/\\/g, '/');
 
-          const localeMatch = normalized.match(/\/src\/lib\/i18n\/locales\/(.+)\.ts$/);
-          if (localeMatch) {
-            if (localeMatch[1] === 'en') return undefined;
-            return `i18n-${localeMatch[1]}`;
-          }
+            const localeMatch = normalized.match(/\/src\/lib\/i18n\/locales\/(.+)\.ts$/);
+            if (localeMatch) {
+              if (localeMatch[1] === 'en') return undefined;
+              return `i18n-${localeMatch[1]}`;
+            }
 
-          if (normalized.includes('/src/lib/i18n.ts')) {
-            return 'i18n-core';
-          }
+            if (normalized.includes('/src/lib/i18n.ts')) {
+              return 'i18n-core';
+            }
 
-          if (
-            normalized.includes('/src/components/AuthViews.tsx') ||
-            normalized.includes('/src/components/PublicSendPage.tsx') ||
-            normalized.includes('/src/components/RecoverTwoFactorPage.tsx') ||
-            normalized.includes('/src/components/JwtWarningPage.tsx') ||
-            normalized.includes('/src/lib/app-auth.ts')
-          ) {
-            return 'auth-suite';
-          }
+            if (
+              normalized.includes('/src/components/AuthViews.tsx') ||
+              normalized.includes('/src/components/PublicSendPage.tsx') ||
+              normalized.includes('/src/components/RecoverTwoFactorPage.tsx') ||
+              normalized.includes('/src/components/JwtWarningPage.tsx') ||
+              normalized.includes('/src/lib/app-auth.ts')
+            ) {
+              return 'auth-suite';
+            }
 
-          if (
-            normalized.includes('/src/components/ImportPage.tsx') ||
-            normalized.includes('/src/lib/import-') ||
-            normalized.includes('/src/lib/export-formats.ts') ||
-            normalized.includes('/src/components/SendsPage.tsx') ||
-            normalized.includes('/src/components/TotpCodesPage.tsx') ||
-            normalized.includes('/src/components/BackupCenterPage.tsx') ||
-            normalized.includes('/src/components/backup-center/') ||
-            normalized.includes('/src/components/SettingsPage.tsx') ||
-            normalized.includes('/src/components/SecurityDevicesPage.tsx') ||
-            normalized.includes('/src/components/AdminPage.tsx')
-          ) {
-            return 'workspace-suite';
-          }
+            if (
+              !isDemo &&
+              (
+                normalized.includes('/src/components/ImportPage.tsx') ||
+                normalized.includes('/src/lib/import-') ||
+                normalized.includes('/src/lib/export-formats.ts') ||
+                normalized.includes('/src/components/SendsPage.tsx') ||
+                normalized.includes('/src/components/TotpCodesPage.tsx') ||
+                normalized.includes('/src/components/BackupCenterPage.tsx') ||
+                normalized.includes('/src/components/backup-center/') ||
+                normalized.includes('/src/components/SettingsPage.tsx') ||
+                normalized.includes('/src/components/SecurityDevicesPage.tsx') ||
+                normalized.includes('/src/components/AdminPage.tsx')
+              )
+            ) {
+              return 'workspace-suite';
+            }
 
-          return undefined;
+            return undefined;
+          },
         },
       },
     },
-  },
-  server: {
-    port: 5173,
-    fs: {
-      allow: [path.resolve(rootDir, '..')],
+    server: {
+      port: 5173,
+      fs: {
+        allow: [path.resolve(rootDir, '..')],
+      },
+      proxy: {
+        '/api': 'http://127.0.0.1:8787',
+        '/identity': 'http://127.0.0.1:8787',
+        '/setup': 'http://127.0.0.1:8787',
+        '/icons': 'http://127.0.0.1:8787',
+        '/config': 'http://127.0.0.1:8787',
+        '/notifications': 'http://127.0.0.1:8787',
+        '/.well-known': 'http://127.0.0.1:8787',
+      },
     },
-    proxy: {
-      '/api': 'http://127.0.0.1:8787',
-      '/identity': 'http://127.0.0.1:8787',
-      '/setup': 'http://127.0.0.1:8787',
-      '/icons': 'http://127.0.0.1:8787',
-      '/config': 'http://127.0.0.1:8787',
-      '/notifications': 'http://127.0.0.1:8787',
-      '/.well-known': 'http://127.0.0.1:8787',
-    },
-  },
+  };
 });

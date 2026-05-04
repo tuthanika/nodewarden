@@ -224,8 +224,17 @@ export default function SendsPage(props: SendsPageProps) {
     }
   }
 
+  function getAccessUrl(send: Send): string {
+    const rawUrl = send.shareUrl || `/send/${send.accessId}`;
+    if (/^https?:\/\//i.test(rawUrl)) return rawUrl;
+    if (rawUrl.startsWith('/#/')) return `${window.location.origin}${rawUrl}`;
+    if (rawUrl.startsWith('#/')) return `${window.location.origin}/${rawUrl}`;
+    if (rawUrl.startsWith('/')) return `${window.location.origin}/#${rawUrl}`;
+    return `${window.location.origin}/#/${rawUrl.replace(/^\/+/, '')}`;
+  }
+
   function copyAccessUrl(send: Send): void {
-    const url = send.shareUrl || `${window.location.origin}/#/send/${send.accessId}`;
+    const url = getAccessUrl(send);
     void copyTextToClipboard(url, { successMessage: t('txt_link_copied') });
   }
 

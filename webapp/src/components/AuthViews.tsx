@@ -19,6 +19,9 @@ interface RegisterValues {
 
 interface AuthViewsProps {
   mode: 'login' | 'register' | 'locked';
+  relaxedLoginInput?: boolean;
+  authPlaceholder?: string;
+  unlockPlaceholder?: string;
   pendingAction: 'login' | 'register' | 'unlock' | null;
   unlockReady: boolean;
   unlockPreparing: boolean;
@@ -46,6 +49,7 @@ function PasswordField(props: {
   onInput: (v: string) => void;
   autoFocus?: boolean;
   autoComplete?: string;
+  placeholder?: string;
 }) {
   const [show, setShow] = useState(false);
   return (
@@ -59,6 +63,7 @@ function PasswordField(props: {
           onInput={(e) => props.onInput((e.currentTarget as HTMLInputElement).value)}
           autoFocus={props.autoFocus}
           autoComplete={props.autoComplete}
+          placeholder={props.placeholder}
         />
         <button type="button" className="eye-btn" onClick={() => setShow((v) => !v)}>
           {show ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -90,6 +95,7 @@ export default function AuthViews(props: AuthViewsProps) {
               value={props.unlockPassword}
               autoFocus
               autoComplete="current-password"
+              placeholder={props.unlockPlaceholder}
               onInput={props.onChangeUnlock}
             />
             <div className="auth-support-row">
@@ -217,9 +223,10 @@ export default function AuthViews(props: AuthViewsProps) {
             <span>{t('txt_email')}</span>
             <input
               className="input"
-              type="email"
+              type={props.relaxedLoginInput ? 'text' : 'email'}
               value={props.loginValues.email}
               autoComplete="username"
+              placeholder={props.authPlaceholder}
               onInput={(e) => props.onChangeLogin({ ...props.loginValues, email: (e.currentTarget as HTMLInputElement).value })}
             />
           </label>
@@ -227,6 +234,7 @@ export default function AuthViews(props: AuthViewsProps) {
             label={t('txt_master_password')}
             value={props.loginValues.password}
             autoComplete="current-password"
+            placeholder={props.authPlaceholder}
             onInput={(v) => props.onChangeLogin({ ...props.loginValues, password: v })}
             autoFocus
           />
