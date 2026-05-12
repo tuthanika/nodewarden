@@ -1,6 +1,14 @@
 // IMPORTANT:
-// Keep this schema list in sync with migrations/0001_init.sql.
-// Any new table/column/index must be added to both places together.
+// This is the runtime D1 schema bootstrap. Keep it in sync with
+// migrations/0001_init.sql. Any new table/column/index must be added to both
+// places together.
+//
+// WHEN CHANGING THIS:
+// - Bump STORAGE_SCHEMA_VERSION in src/services/storage.ts so existing installs
+//   rerun these idempotent statements.
+// - If the new table stores persistent data, update the backup export/import
+//   contract in src/services/backup-archive.ts and backup-import.ts.
+// - Keep statements idempotent; D1 may execute them again on later requests.
 const SCHEMA_STATEMENTS: readonly string[] = [
   'CREATE TABLE IF NOT EXISTS users (' +
   'id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, name TEXT, master_password_hint TEXT, master_password_hash TEXT NOT NULL, ' +
@@ -14,6 +22,11 @@ const SCHEMA_STATEMENTS: readonly string[] = [
   'ALTER TABLE users ADD COLUMN totp_secret TEXT',
   'ALTER TABLE users ADD COLUMN totp_recovery_code TEXT',
   'ALTER TABLE users ADD COLUMN api_key TEXT',
+
+  'CREATE TABLE IF NOT EXISTS domain_settings (' +
+  'user_id TEXT PRIMARY KEY, equivalent_domains TEXT NOT NULL DEFAULT \'[]\', custom_equivalent_domains TEXT NOT NULL DEFAULT \'[]\', excluded_global_equivalent_domains TEXT NOT NULL DEFAULT \'[]\', updated_at TEXT NOT NULL, ' +
+  'FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE)',
+  'ALTER TABLE domain_settings ADD COLUMN custom_equivalent_domains TEXT NOT NULL DEFAULT \'[]\'',
 
   'CREATE TABLE IF NOT EXISTS user_revisions (' +
   'user_id TEXT PRIMARY KEY, revision_date TEXT NOT NULL, ' +

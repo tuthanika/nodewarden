@@ -55,6 +55,34 @@ export interface User {
   updatedAt: string;
 }
 
+export interface UserDomainSettings {
+  userId: string;
+  equivalentDomains: string[][];
+  customEquivalentDomains: CustomEquivalentDomain[];
+  excludedGlobalEquivalentDomains: number[];
+  updatedAt: string | null;
+}
+
+export interface CustomEquivalentDomain {
+  id: string;
+  domains: string[];
+  excluded: boolean;
+}
+
+export interface GlobalEquivalentDomain {
+  type: number;
+  domains: string[];
+  excluded: boolean;
+  [key: string]: unknown;
+}
+
+export interface DomainRulesResponse {
+  equivalentDomains: string[][];
+  customEquivalentDomains: CustomEquivalentDomain[];
+  globalEquivalentDomains: GlobalEquivalentDomain[];
+  object: 'domains';
+}
+
 export interface Invite {
   code: string;
   createdBy: string;

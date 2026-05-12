@@ -28,6 +28,89 @@ interface TypeOption {
   label: string;
 }
 
+export const CARD_BRAND_OPTIONS = [
+  'Visa',
+  'Mastercard',
+  'American Express',
+  'Discover',
+  'Diners Club',
+  'JCB',
+  'Maestro',
+  'UnionPay',
+  'RuPay',
+] as const;
+
+type CardBrand = typeof CARD_BRAND_OPTIONS[number];
+
+const CARD_BRAND_ALIASES: Record<string, CardBrand> = {
+  amex: 'American Express',
+  'american express': 'American Express',
+  americanexpress: 'American Express',
+  discover: 'Discover',
+  diners: 'Diners Club',
+  'diners club': 'Diners Club',
+  dinersclub: 'Diners Club',
+  jcb: 'JCB',
+  maestro: 'Maestro',
+  mastercard: 'Mastercard',
+  master: 'Mastercard',
+  rupay: 'RuPay',
+  unionpay: 'UnionPay',
+  'union pay': 'UnionPay',
+  visa: 'Visa',
+};
+
+const CARD_BRAND_LOGO_SLUGS: Partial<Record<CardBrand, string>> = {
+  'American Express': 'american-express',
+  'Diners Club': 'diners',
+  Discover: 'discover',
+  JCB: 'jcb',
+  Maestro: 'maestro',
+  Mastercard: 'mastercard',
+  UnionPay: 'unionpay',
+  Visa: 'visa',
+};
+
+export function normalizeCardBrand(value: string | null | undefined): string {
+  const normalized = String(value || '').trim();
+  if (!normalized) return '';
+  return CARD_BRAND_ALIASES[normalized.toLowerCase().replace(/\s+/g, ' ')] || normalized;
+}
+
+export function displayCardBrand(value: string | null | undefined): string {
+  return normalizeCardBrand(value);
+}
+
+export function cardLast4(value: string | null | undefined): string {
+  const digits = String(value || '').replace(/\D/g, '');
+  return digits.length >= 4 ? digits.slice(-4) : '';
+}
+
+export function cardListSubtitle(cipher: Cipher): string {
+  const brand = displayCardBrand(cipher.card?.decBrand ?? cipher.card?.brand);
+  const last4 = cardLast4(cipher.card?.decNumber ?? cipher.card?.number);
+  if (brand && last4) return `${brand}, *${last4}`;
+  if (brand) return brand;
+  if (last4) return `*${last4}`;
+  return cipherTypeLabel(3);
+}
+
+export function CardBrandIcon({ brand }: { brand?: string | null }) {
+  const display = displayCardBrand(brand);
+  const key = display.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'generic';
+  const label = display || t('txt_card');
+  const logoSlug = CARD_BRAND_LOGO_SLUGS[display as CardBrand];
+  return (
+    <span className={`card-brand-icon card-brand-${key}`} aria-label={label} title={label}>
+      {logoSlug ? (
+        <img src={`/payment-logos/cards/${logoSlug}.svg`} alt="" loading="lazy" decoding="async" />
+      ) : (
+        <CreditCard size={18} />
+      )}
+    </span>
+  );
+}
+
 export function getCreateTypeOptions(): TypeOption[] {
   return [
     { type: 1, label: t('txt_login') },
@@ -323,7 +406,7 @@ export function draftFromCipher(cipher: Cipher): VaultDraft {
   if (cipher.card) {
     draft.cardholderName = cipher.card.decCardholderName || '';
     draft.cardNumber = cipher.card.decNumber || '';
-    draft.cardBrand = cipher.card.decBrand || '';
+    draft.cardBrand = normalizeCardBrand(cipher.card.decBrand || '');
     draft.cardExpMonth = cipher.card.decExpMonth || '';
     draft.cardExpYear = cipher.card.decExpYear || '';
     draft.cardCode = cipher.card.decCode || '';
@@ -425,6 +508,9 @@ export function firstPasskeyCreationTime(cipher: Cipher | null): string | null {
 }
 
 export function VaultListIcon({ cipher }: { cipher: Cipher }) {
+  if (Number(cipher.type || 1) === 3) {
+    return <CardBrandIcon brand={cipher.card?.decBrand ?? cipher.card?.brand} />;
+  }
   return <WebsiteIcon cipher={cipher} fallback={<TypeIcon type={Number(cipher.type || 1)} />} />;
 }
 

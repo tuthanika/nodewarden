@@ -233,6 +233,21 @@ export async function deleteTrustedTwoFactorTokensByUserId(db: D1Database, userI
   return Number(result.meta.changes ?? 0);
 }
 
+export async function updateTrustedTwoFactorTokensExpiryByDevice(
+  db: D1Database,
+  userId: string,
+  deviceIdentifier: string,
+  expiresAtMs: number
+): Promise<number> {
+  const now = Date.now();
+  await db.prepare('DELETE FROM trusted_two_factor_device_tokens WHERE expires_at < ?').bind(now).run();
+  const result = await db
+    .prepare('UPDATE trusted_two_factor_device_tokens SET expires_at = ? WHERE user_id = ? AND device_identifier = ? AND expires_at >= ?')
+    .bind(expiresAtMs, userId, deviceIdentifier, now)
+    .run();
+  return Number(result.meta.changes ?? 0);
+}
+
 export async function saveTrustedTwoFactorDeviceToken(
   db: D1Database,
   trustedTokenKey: TrustedTokenKeyFn,

@@ -1,5 +1,9 @@
 const { localeFiles, readLocale } = require('./i18n-utils.cjs');
 
+// CONTRACT:
+// This is the authoritative locale consistency gate. It checks key parity,
+// placeholder parity, and accidental mostly-English locale files. Run after any
+// user-facing text or locale-file change.
 const locales = Object.fromEntries(
   localeFiles.map(([locale, fileName, variableName]) => [locale, readLocale(fileName, variableName)])
 );

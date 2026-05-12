@@ -65,6 +65,7 @@ import {
 } from './handlers/attachments';
 import { handleAuthenticatedDeviceRoute } from './router-devices';
 import { handleAdminRoute } from './router-admin';
+import { handleGetDomains, handleUpdateDomains } from './handlers/domains';
 
 export async function handleAuthenticatedRoute(
   request: Request,
@@ -297,14 +298,9 @@ export async function handleAuthenticatedRoute(
     return null;
   }
 
-  if (path === '/api/settings/domains') {
-    if (method === 'GET' || method === 'PUT' || method === 'POST') {
-      return jsonResponse({
-        equivalentDomains: [],
-        globalEquivalentDomains: [],
-        object: 'domains',
-      });
-    }
+  if (path === '/api/settings/domains' || path === '/settings/domains') {
+    if (method === 'GET') return handleGetDomains(env, userId);
+    if (method === 'PUT' || method === 'POST') return handleUpdateDomains(request, env, userId);
     return null;
   }
 

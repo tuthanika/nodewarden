@@ -47,6 +47,9 @@
 :root[data-theme='dark'] .or,
 :root[data-theme='dark'] .mobile-tab,
 :root[data-theme='dark'] .side-link,
+:root[data-theme='dark'] .side-group-trigger,
+:root[data-theme='dark'] .side-sub-link,
+:root[data-theme='dark'] .nav-layout-trigger,
 :root[data-theme='dark'] .user-chip,
 :root[data-theme='dark'] .list-count,
 :root[data-theme='dark'] .totp-code-username,
@@ -195,14 +198,38 @@
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.24), 0 0 0 1px rgba(139, 184, 255, 0.12);
 }
 
+:root[data-theme='dark'] .card-brand-icon {
+  color: #bfdbfe;
+  background: linear-gradient(180deg, #1f2937 0%, #111827 100%);
+  border-color: color-mix(in srgb, var(--primary) 30%, var(--line));
+}
+
+:root[data-theme='dark'] .card-brand-icon:has(img) {
+  background: #fff;
+}
+
+:root[data-theme='dark'] .card-brand-american-express {
+  color: #fff;
+  background: #2563eb;
+}
+
+:root[data-theme='dark'] .card-brand-mastercard,
+:root[data-theme='dark'] .card-brand-maestro,
+:root[data-theme='dark'] .card-brand-discover {
+  color: #f8fafc;
+}
+
 :root[data-theme='dark'] .mobile-sidebar-sheet,
 :root[data-theme='dark'] .mobile-sidebar-close,
+:root[data-theme='dark'] .nav-layout-menu,
+:root[data-theme='dark'] .nav-layout-trigger,
 :root[data-theme='dark'] .table tr,
 :root[data-theme='dark'] .settings-subcard,
 :root[data-theme='dark'] .import-summary-table-wrap,
 :root[data-theme='dark'] .backup-help-bubble,
 :root[data-theme='dark'] .backup-recommendation-card,
 :root[data-theme='dark'] .backup-recommendation-dav-item,
+:root[data-theme='dark'] .backup-recommendations-summary,
 :root[data-theme='dark'] .backup-browser-path,
 :root[data-theme='dark'] .backup-browser-list,
 :root[data-theme='dark'] .restore-progress-card,
@@ -229,6 +256,13 @@
 }
 
 :root[data-theme='dark'] .mobile-sidebar-close:hover,
+:root[data-theme='dark'] .side-link:hover,
+:root[data-theme='dark'] .side-group-trigger:hover,
+:root[data-theme='dark'] .side-sub-link:hover,
+:root[data-theme='dark'] .nav-layout-trigger:hover,
+:root[data-theme='dark'] .nav-layout-trigger.active,
+:root[data-theme='dark'] .nav-layout-option:hover,
+:root[data-theme='dark'] .nav-layout-option.active,
 :root[data-theme='dark'] .mobile-sidebar-sheet .tree-btn.active,
 :root[data-theme='dark'] .mobile-settings-link.active,
 :root[data-theme='dark'] .backup-destination-item.active,
@@ -247,7 +281,7 @@
 :root[data-theme='dark'] .restore-progress-card,
 :root[data-theme='dark'] .restore-progress-current,
 :root[data-theme='dark'] .restore-progress-elapsed {
-  border-color: var(--line-soft);
+  border-color: var(--line);
 }
 
 :root[data-theme='dark'] .import-summary-table th {

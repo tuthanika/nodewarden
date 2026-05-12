@@ -85,6 +85,10 @@ const BACKUP_RUNNER_LOCK_KEY = 'backup.runner.lock.v1';
 const BACKUP_RUNNER_LEASE_MS = 10 * 60 * 1000;
 const BACKUP_RUNNER_HEARTBEAT_MS = 30 * 1000;
 
+// CONTRACT:
+// The runner lock is a config-row lease, not a queue. It only prevents two
+// backup/restore jobs from overlapping. Manual runs return conflict when the
+// lease is held; scheduled runs skip quietly. Never export this row in backups.
 interface BackupRunnerLease {
   token: string;
   touch: () => Promise<void>;

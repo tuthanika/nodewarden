@@ -94,6 +94,7 @@ export interface RemoteBackupBrowserResponse {
 export interface AdminBackupImportCounts {
   config: number;
   users: number;
+  domainSettings?: number;
   userRevisions: number;
   folders: number;
   ciphers: number;

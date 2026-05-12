@@ -1,8 +1,14 @@
 PRAGMA foreign_keys = ON;
 
 -- IMPORTANT:
--- Keep this file in sync with src/services/storage.ts (SCHEMA_STATEMENTS).
+-- This is the initial D1 schema. Keep it in sync with
+-- src/services/storage-schema.ts (SCHEMA_STATEMENTS).
 -- Any new table/column/index must be added to both places together.
+--
+-- WHEN CHANGING THIS:
+-- - Also bump STORAGE_SCHEMA_VERSION in src/services/storage.ts.
+-- - If the new table stores persistent data, update backup export/import.
+-- - Keep src/services/storage-schema.ts idempotent for existing installs.
 
 CREATE TABLE IF NOT EXISTS config (
   key TEXT PRIMARY KEY,
@@ -31,6 +37,15 @@ CREATE TABLE IF NOT EXISTS users (
   api_key TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS domain_settings (
+  user_id TEXT PRIMARY KEY,
+  equivalent_domains TEXT NOT NULL DEFAULT '[]',
+  custom_equivalent_domains TEXT NOT NULL DEFAULT '[]',
+  excluded_global_equivalent_domains TEXT NOT NULL DEFAULT '[]',
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
 -- Per-user sync revision date
@@ -115,6 +130,8 @@ CREATE TABLE IF NOT EXISTS refresh_tokens (
   token TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
   expires_at INTEGER NOT NULL,
+  device_identifier TEXT,
+  device_session_stamp TEXT,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user ON refresh_tokens(user_id);
@@ -155,6 +172,8 @@ CREATE TABLE IF NOT EXISTS devices (
   encrypted_user_key TEXT,
   encrypted_public_key TEXT,
   encrypted_private_key TEXT,
+  banned INTEGER NOT NULL DEFAULT 0,
+  banned_at TEXT,
   device_note TEXT,
   last_seen_at TEXT,
   created_at TEXT NOT NULL,

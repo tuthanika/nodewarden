@@ -14,16 +14,14 @@
 </p>
 
 <p align="center">
-  <a href="./RELEASE_NOTES.md">更新日志</a> |
-  <a href="https://github.com/shuaiplus/NodeWarden/issues/new/choose">提交问题</a> |
-  <a href="https://github.com/shuaiplus/NodeWarden/releases/latest">最新发布</a><br />
-  <a href="./nodewarden.wiki/Home.md">文档首页</a> |
-  <a href="./nodewarden.wiki/快速开始.md">快速开始</a><br />
   <a href="https://t.me/NodeWarden_News">Telegram 频道</a> |
-  <a href="https://t.me/NodeWarden_Official">Telegram 群组</a><br />
+  <a href="https://t.me/NodeWarden_Official">Telegram 群组</a>
 </p>
 
-English: <a href="./README_EN.md"><code>README_EN.md</code></a>
+<p align="center">
+  <a href="./README_EN.md">English</a> |
+  <a href="./CONTRIBUTING.md">贡献指南</a>
+</p>
 
 > **免责声明**  
 > 本项目仅供学习与交流使用，请定期备份你的密码库。  

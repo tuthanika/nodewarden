@@ -287,6 +287,7 @@ export interface WebBootstrapResponse {
   defaultKdfIterations?: number;
   jwtUnsafeReason?: 'missing' | 'default' | 'too_short' | null;
   jwtSecretMinLength?: number;
+  registrationInviteRequired?: boolean;
 }
 
 export interface TokenSuccess {
@@ -358,4 +359,23 @@ export interface AuthorizedDevice {
   trusted: boolean;
   trustedTokenCount: number;
   trustedUntil: string | null;
+}
+
+export interface GlobalEquivalentDomain {
+  type: number;
+  domains: string[];
+  excluded: boolean;
+}
+
+export interface CustomEquivalentDomain {
+  id: string;
+  domains: string[];
+  excluded: boolean;
+}
+
+export interface DomainRules {
+  equivalentDomains: string[][];
+  customEquivalentDomains: CustomEquivalentDomain[];
+  globalEquivalentDomains: GlobalEquivalentDomain[];
+  object: 'domains';
 }

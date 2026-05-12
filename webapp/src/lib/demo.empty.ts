@@ -19,6 +19,7 @@ export function createDemoBackupSettings(): AdminBackupSettings {
 export function createDemoInitialBootstrapState(): InitialAppBootstrapState {
   return {
     defaultKdfIterations: 600000,
+    registrationInviteRequired: true,
     jwtWarning: null,
     session: null,
     phase: 'login',

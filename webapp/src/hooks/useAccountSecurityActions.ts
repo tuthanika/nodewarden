@@ -11,6 +11,7 @@ import {
   revokeAuthorizedDeviceTrust,
   revokeAllAuthorizedDeviceTrust,
   setTotp,
+  trustAuthorizedDevicePermanently,
   updateAuthorizedDeviceName,
   updateProfile,
 } from '@/lib/api/auth';
@@ -202,6 +203,26 @@ export default function useAccountSecurityActions(options: UseAccountSecurityAct
                 onNotify('success', t('txt_device_authorization_revoked'));
               } catch (error) {
                 onNotify('error', error instanceof Error ? error.message : t('txt_revoke_device_trust_failed'));
+              }
+            })();
+          },
+        });
+      },
+
+      openTrustDevicePermanently(device: AuthorizedDevice) {
+        onSetConfirm({
+          title: t('txt_trust_device_permanently'),
+          message: t('txt_trust_device_permanently_for_name', { name: device.name }),
+          danger: false,
+          onConfirm: () => {
+            onSetConfirm(null);
+            void (async () => {
+              try {
+                await trustAuthorizedDevicePermanently(authedFetch, device.identifier);
+                await refetchAuthorizedDevices();
+                onNotify('success', t('txt_device_trusted_permanently'));
+              } catch (error) {
+                onNotify('error', error instanceof Error ? error.message : t('txt_trust_device_permanently_failed'));
               }
             })();
           },

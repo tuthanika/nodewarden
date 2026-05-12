@@ -31,13 +31,33 @@ function isWorkerHandledPath(path: string): boolean {
   );
 }
 
+function addSearchIndexHeaders(request: Request, response: Response): Response {
+  const url = new URL(request.url);
+  const contentType = String(response.headers.get('Content-Type') || '').toLowerCase();
+  const shouldNoIndex =
+    url.pathname === '/robots.txt' ||
+    contentType.includes('text/html');
+
+  if (!shouldNoIndex) return response;
+
+  const headers = new Headers(response.headers);
+  headers.set('X-Robots-Tag', 'noindex, nofollow, noarchive, nosnippet');
+
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
 async function maybeServeAsset(request: Request, env: Env): Promise<Response | null> {
   if (!env.ASSETS) return null;
   if (request.method !== 'GET' && request.method !== 'HEAD') return null;
   const url = new URL(request.url);
   if (isWorkerHandledPath(url.pathname)) return null;
 
-  return env.ASSETS.fetch(request);
+  const response = await env.ASSETS.fetch(request);
+  return addSearchIndexHeaders(request, response);
 }
 
 async function ensureDatabaseInitialized(env: Env): Promise<void> {

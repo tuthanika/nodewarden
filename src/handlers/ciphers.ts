@@ -18,6 +18,11 @@ import { deleteAllAttachmentsForCipher, deleteAllAttachmentsForCiphers } from '.
 import { parsePagination, encodeContinuationToken } from '../utils/pagination';
 import { readActingDeviceIdentifier } from '../utils/device';
 
+// CONTRACT:
+// Cipher JSON is the highest-risk Bitwarden compatibility surface. Preserve
+// unknown/future client fields by default, then override only server-owned
+// fields. Any change to cipher response shape must be checked against /api/sync,
+// attachments, import/export, and current official clients.
 function normalizeOptionalId(value: unknown): string | null {
   if (value == null) return null;
   const normalized = String(value).trim();

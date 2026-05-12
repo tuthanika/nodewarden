@@ -9,6 +9,7 @@ import {
   MOBILE_LAYOUT_QUERY,
   VAULT_LIST_OVERSCAN,
   VAULT_LIST_ROW_HEIGHT,
+  cardListSubtitle,
   FOLDER_SORT_STORAGE_KEY,
   VAULT_SORT_STORAGE_KEY,
   cipherTypeKey,
@@ -263,6 +264,8 @@ export default function VaultPage(props: VaultPageProps) {
     setRepromptApprovedCipherId(null);
     setRepromptPassword('');
     setRepromptOpen(false);
+    setShowPassword(false);
+    setHiddenFieldVisibleMap({});
   }, [selectedCipherId]);
 
   useEffect(() => {
@@ -499,6 +502,9 @@ const folderName = useCallback((id: string | null | undefined): string => {
     if (Number(cipher.type || 1) === 1) {
       return cipher.login?.decUsername || cipherMetaById.get(cipher.id)?.firstUri || '';
     }
+    if (Number(cipher.type || 1) === 3) {
+      return cardListSubtitle(cipher);
+    }
     return cipherTypeLabel(Number(cipher.type || 1));
   }, [cipherMetaById]);
 
@@ -516,6 +522,7 @@ const folderName = useCallback((id: string | null | undefined): string => {
     setCreateMenuOpen(false);
     setSelectedCipherId('');
     setShowPassword(false);
+    setHiddenFieldVisibleMap({});
     setLocalError('');
     setAttachmentQueue([]);
     setRemovedAttachmentIds({});
@@ -530,6 +537,7 @@ const folderName = useCallback((id: string | null | undefined): string => {
     setIsCreating(false);
     setIsEditing(true);
     setShowPassword(false);
+    setHiddenFieldVisibleMap({});
     setLocalError('');
     setAttachmentQueue([]);
     setRemovedAttachmentIds({});
@@ -542,6 +550,8 @@ const folderName = useCallback((id: string | null | undefined): string => {
     setDraft(null);
     setIsEditing(false);
     setIsCreating(false);
+    setShowPassword(false);
+    setHiddenFieldVisibleMap({});
     setLocalError('');
     setAttachmentQueue([]);
     setRemovedAttachmentIds({});
@@ -971,6 +981,8 @@ const folderName = useCallback((id: string | null | undefined): string => {
     }
     setSelectedCipherId(cipherId);
     setRepromptApprovedCipherId(null);
+    setShowPassword(false);
+    setHiddenFieldVisibleMap({});
     if (isMobileLayout) setMobilePanel('detail');
     setMobileSidebarOpen(false);
   }, [isEditing, isCreating, cancelEdit, isMobileLayout]);

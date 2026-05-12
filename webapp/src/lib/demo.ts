@@ -789,6 +789,7 @@ async function runDemoRemoteRestoreProgress(fileName: string): Promise<void> {
 export function createDemoInitialBootstrapState(): InitialAppBootstrapState {
   return {
     defaultKdfIterations: 600000,
+    registrationInviteRequired: true,
     jwtWarning: null,
     session: null,
     phase: 'login',
@@ -909,6 +910,8 @@ export function createDemoMainRoutesProps(base: AppMainRoutesProps, notify: Noti
     authorizedDevices: state.authorizedDevices,
     authorizedDevicesLoading: false,
     authorizedDevicesError: '',
+    domainRulesLoading: false,
+    domainRulesError: '',
     onImport: async () => {
       await readonly();
       return createDemoImportResult();
@@ -1055,6 +1058,10 @@ export function createDemoMainRoutesProps(base: AppMainRoutesProps, notify: Noti
     onRefreshAuthorizedDevices: async () => {
       notify('success', t('txt_demo_devices_refreshed'));
     },
+    onRefreshDomainRules: () => {
+      notify('success', t('txt_domain_rules_refreshed'));
+    },
+    onSaveDomainRules: readonly,
     onRenameAuthorizedDevice: async (device, name) => {
       const normalized = String(name || '').trim();
       if (!normalized) {
@@ -1075,6 +1082,14 @@ export function createDemoMainRoutesProps(base: AppMainRoutesProps, notify: Noti
           : item
       )));
       notify('success', t('txt_device_authorization_revoked'));
+    },
+    onTrustDevicePermanently: (device) => {
+      state.setAuthorizedDevices((prev) => prev.map((item) => (
+        item.identifier === device.identifier && item.trusted
+          ? { ...item, trustedUntil: '2099-12-31T23:59:59.000Z', revisionDate: new Date().toISOString() }
+          : item
+      )));
+      notify('success', t('txt_device_trusted_permanently'));
     },
     onRemoveDevice: (device) => {
       state.setAuthorizedDevices((prev) => prev.filter((item) => item.identifier !== device.identifier));

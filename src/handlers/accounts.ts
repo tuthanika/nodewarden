@@ -9,6 +9,11 @@ import { isTotpEnabled, verifyTotpToken } from '../utils/totp';
 import { createRecoveryCode, recoveryCodeEquals } from '../utils/recovery-code';
 import { buildAccountKeys } from '../utils/user-decryption';
 
+// CONTRACT:
+// users.master_password_hash is server-side login verification only. It does
+// not decrypt vault data. Password changes must keep encrypted user key material,
+// securityStamp, refresh-token invalidation, and client compatibility together.
+// Password hints are non-secret reminders; never treat them as recovery secrets.
 function looksLikeEncString(value: string): boolean {
   if (!value) return false;
   const firstDot = value.indexOf('.');

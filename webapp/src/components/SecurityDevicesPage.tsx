@@ -1,5 +1,5 @@
 import { useState } from 'preact/hooks';
-import { Clock3, Pencil, RefreshCw, ShieldOff, Trash2 } from 'lucide-preact';
+import { Clock3, Pencil, RefreshCw, ShieldCheck, ShieldOff, Trash2 } from 'lucide-preact';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import LoadingState from '@/components/LoadingState';
 import type { AuthorizedDevice } from '@/lib/types';
@@ -12,6 +12,7 @@ interface SecurityDevicesPageProps {
   onRefresh: () => void;
   onRenameDevice: (device: AuthorizedDevice, name: string) => Promise<void>;
   onRevokeTrust: (device: AuthorizedDevice) => void;
+  onTrustPermanently: (device: AuthorizedDevice) => void;
   onRemoveDevice: (device: AuthorizedDevice) => void;
   onRevokeAll: () => void;
   onRemoveAll: () => void;
@@ -22,6 +23,12 @@ function formatDateTime(value: string | null | undefined): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return t('txt_dash');
   return date.toLocaleString();
+}
+
+function isPermanentTrust(value: string | null | undefined): boolean {
+  if (!value) return false;
+  const date = new Date(value);
+  return !Number.isNaN(date.getTime()) && date.getUTCFullYear() >= 2099;
 }
 
 function mapDeviceTypeName(type: number): string {
@@ -135,7 +142,7 @@ export default function SecurityDevicesPage(props: SecurityDevicesPageProps) {
                   {device.trusted ? (
                     <div className="trusted-cell">
                       <Clock3 size={13} />
-                      <span>{formatDateTime(device.trustedUntil)}</span>
+                      <span>{isPermanentTrust(device.trustedUntil) ? t('txt_permanent_trust') : formatDateTime(device.trustedUntil)}</span>
                     </div>
                   ) : (
                     <span className="muted-inline">{t('txt_not_trusted')}</span>
@@ -151,6 +158,15 @@ export default function SecurityDevicesPage(props: SecurityDevicesPageProps) {
                     >
                       <ShieldOff size={14} className="btn-icon" />
                       {t('txt_untrust')}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-secondary small"
+                      disabled={!device.trusted || !device.trustedUntil || isPermanentTrust(device.trustedUntil)}
+                      onClick={() => props.onTrustPermanently(device)}
+                    >
+                      <ShieldCheck size={14} className="btn-icon" />
+                      {t('txt_trust_permanently')}
                     </button>
                     <button
                       type="button"

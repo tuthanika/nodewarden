@@ -1,5 +1,15 @@
 import type { Env, User } from '../types';
 
+// CONTRACT:
+// Backup settings contain provider credentials. They are stored as a v2 envelope:
+// - runtime: AES-GCM encrypted with a key derived from JWT_SECRET for the current
+//   server's scheduled backup runner.
+// - portable: AES-GCM encrypted with a random DEK; that DEK is RSA-wrapped for
+//   active admin public keys so settings can be repaired after restore/migration.
+//
+// New admin-entered provider secrets, such as mail API keys, should use this
+// pattern or a deliberately documented replacement. Do not store provider
+// secrets as plain config JSON.
 const RUNTIME_SALT = 'nodewarden.backup-settings.runtime.v2';
 const RUNTIME_INFO = 'runtime';
 const PORTABLE_ALGORITHM = 'RSA-OAEP';
@@ -153,6 +163,20 @@ export function parseBackupSettingsEnvelope(raw: string | null): BackupSettingsE
   } catch {
     return null;
   }
+}
+
+export function exportPortableBackupSettingsEnvelope(raw: string | null): string | null {
+  const envelope = parseBackupSettingsEnvelope(raw);
+  if (!envelope) return null;
+  return JSON.stringify({
+    version: 2,
+    portableOnly: true,
+    runtime: {
+      iv: '',
+      ciphertext: '',
+    },
+    portable: envelope.portable,
+  });
 }
 
 export async function encryptBackupSettingsEnvelope(

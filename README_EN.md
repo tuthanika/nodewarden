@@ -15,15 +15,14 @@
 </p>
 
 <p align="center">
-  <a href="./RELEASE_NOTES.md">Release Notes</a> |
-  <a href="https://github.com/shuaiplus/NodeWarden/issues/new/choose">Report an Issue</a> |
-  <a href="https://github.com/shuaiplus/NodeWarden/releases/latest">Latest Release</a><br />
   <a href="https://t.me/NodeWarden_News">Telegram Channel</a> |
-  <a href="https://t.me/NodeWarden_Official">Telegram Group</a><br />
-
+  <a href="https://t.me/NodeWarden_Official">Telegram Group</a>
 </p>
 
-中文说明：<a href="./README.md"><code>README.md</code></a>
+<p align="center">
+  <a href="./README.md">中文说明</a> |
+  <a href="./CONTRIBUTING.md">Contributing</a>
+</p>
 
 > **Disclaimer**
 >

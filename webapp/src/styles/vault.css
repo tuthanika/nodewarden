@@ -5,7 +5,8 @@
 
 .sidebar,
 .list-panel,
-.card {
+.card,
+.detail-col {
   @apply rounded-2xl border bg-panel shadow-soft;
   border-color: var(--line);
 }
@@ -378,6 +379,101 @@
   transition: transform 240ms var(--ease-out-soft), filter 240ms var(--ease-out-soft);
 }
 
+.card-list-icon-wrap {
+  @apply w-9;
+}
+
+.card-brand-icon {
+  @apply inline-grid h-6 w-9 shrink-0 place-items-center rounded border text-[7px] font-black uppercase leading-none;
+  letter-spacing: 0;
+  color: #1e3a8a;
+  background: linear-gradient(180deg, #ffffff 0%, #f4f7fb 100%);
+  border-color: rgba(96, 125, 169, 0.34);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+
+.card-brand-icon span {
+  @apply block max-w-full overflow-hidden text-ellipsis whitespace-nowrap px-0.5;
+}
+
+.card-brand-icon img {
+  @apply block h-full w-full object-contain;
+}
+
+.card-brand-icon svg {
+  @apply h-[18px] w-[18px];
+}
+
+.card-brand-icon:has(img) {
+  color: inherit;
+  background: #fff;
+}
+
+.card-brand-visa {
+  color: #1a4db3;
+}
+
+.card-brand-mastercard {
+  color: #111827;
+  background:
+    radial-gradient(circle at 38% 50%, rgba(235, 0, 27, 0.88) 0 24%, transparent 25%),
+    radial-gradient(circle at 62% 50%, rgba(247, 158, 27, 0.88) 0 24%, transparent 25%),
+    #fff;
+}
+
+.card-brand-american-express {
+  color: #fff;
+  background: #2e77bb;
+  border-color: rgba(46, 119, 187, 0.45);
+}
+
+.card-brand-discover {
+  color: #172554;
+  background:
+    radial-gradient(circle at 72% 50%, rgba(245, 130, 32, 0.9) 0 26%, transparent 27%),
+    #fff;
+}
+
+.card-brand-diners-club {
+  color: #0f5fa8;
+}
+
+.card-brand-jcb {
+  color: #0f766e;
+}
+
+.card-brand-maestro {
+  color: #1e40af;
+  background:
+    radial-gradient(circle at 38% 50%, rgba(0, 85, 164, 0.86) 0 24%, transparent 25%),
+    radial-gradient(circle at 62% 50%, rgba(237, 28, 36, 0.82) 0 24%, transparent 25%),
+    #fff;
+}
+
+.card-brand-unionpay {
+  color: #0f766e;
+}
+
+.card-brand-rupay {
+  color: #1e3a8a;
+}
+
+.card-brand-select-row {
+  @apply flex items-center gap-2;
+}
+
+.card-brand-select-row .card-brand-icon {
+  @apply h-8 w-11;
+}
+
+.card-brand-select {
+  @apply min-w-0 flex-1;
+}
+
+.card-brand-detail {
+  @apply inline-flex min-w-0 items-center gap-2;
+}
+
 .list-icon {
   @apply h-6 w-6 rounded-md;
   opacity: 0;
@@ -483,7 +579,7 @@
 }
 
 .detail-col {
-  @apply min-h-0 overflow-auto;
+  @apply min-h-0 overflow-auto p-2;
 }
 
 .mobile-panel-head {
@@ -627,6 +723,8 @@
 
 .kv-main > strong {
   @apply min-w-0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .totp-inline {
@@ -776,7 +874,7 @@
 
 .totp-code-row {
   @apply grid w-full min-w-0 max-w-none items-center gap-2.5 rounded-xl border p-3;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   border-color: #e2e8f0;
   background: #f8fafc;
   transition:
@@ -787,50 +885,8 @@
     opacity var(--dur-fast) var(--ease-smooth);
 }
 
-.totp-code-row.is-dragging {
-  @apply z-[2];
-  border-color: rgba(37, 99, 235, 0.3);
-  background: color-mix(in srgb, var(--panel) 88%, white 12%);
-  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.14);
-}
-
 .totp-code-info {
   @apply flex min-w-0 items-center gap-2.5;
-}
-
-.totp-drag-btn {
-  @apply relative h-[34px] w-6 min-w-6 cursor-grab self-center overflow-visible rounded-[10px] p-0 opacity-[0.82];
-  color: var(--muted);
-  touch-action: none;
-  -webkit-user-select: none;
-  user-select: none;
-  border-color: transparent;
-  background: transparent;
-  box-shadow: none;
-}
-
-.totp-drag-btn:hover {
-  color: var(--primary-strong);
-  border-color: transparent;
-  background: transparent;
-  box-shadow: none;
-  opacity: 1;
-}
-
-.totp-drag-btn:active {
-  cursor: grabbing;
-  border-color: transparent;
-  background: transparent;
-  box-shadow: none;
-}
-
-.totp-drag-btn::before {
-  content: '';
-  @apply absolute -inset-2.5 rounded-xl;
-}
-
-.totp-drag-btn .btn-icon {
-  @apply opacity-90;
 }
 
 .totp-code-main {
@@ -958,6 +1014,15 @@
 
 .custom-field-value > .input {
   @apply w-full;
+}
+
+.custom-field-textarea {
+  @apply min-h-20;
+}
+
+.custom-field-display {
+  @apply block max-w-full whitespace-pre-wrap break-words text-sm font-semibold;
+  overflow-wrap: anywhere;
 }
 
 .custom-field-check {

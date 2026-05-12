@@ -129,15 +129,20 @@ export default function AdminPage(props: AdminPageProps) {
         </table>
       </section>
 
-      <section className="card">
-        <div className="section-head">
+      <section className="card admin-invites-card">
+        <div className="section-head admin-invites-head">
           <h3>{t('txt_invites')}</h3>
-          <button type="button" className="btn btn-secondary" disabled={props.loading} onClick={props.onRefresh}>
-            <RefreshCw size={14} className="btn-icon" /> {t('txt_sync')}
-          </button>
+          <div className="actions admin-invites-head-actions">
+            <button type="button" className="btn btn-secondary small" disabled={props.loading} onClick={props.onRefresh}>
+              <RefreshCw size={14} className="btn-icon" /> {t('txt_sync')}
+            </button>
+            <button type="button" className="btn btn-danger small" onClick={() => void props.onDeleteAllInvites()}>
+              <Trash2 size={14} className="btn-icon" /> {t('txt_delete_all')}
+            </button>
+          </div>
         </div>
         <div className="invite-toolbar">
-          <div className="actions invite-create-group">
+          <div className="invite-create-group">
             <label className="field invite-hours-field">
               <span>{t('txt_invite_validity_hours')}</span>
               <input
@@ -154,11 +159,8 @@ export default function AdminPage(props: AdminPageProps) {
               {t('txt_create_timed_invite')}
             </button>
           </div>
-          <button type="button" className="btn btn-danger" onClick={() => void props.onDeleteAllInvites()}>
-            <Trash2 size={14} className="btn-icon" /> {t('txt_delete_all')}
-          </button>
         </div>
-        <table className="table">
+        <table className="table invite-table">
           <thead>
             <tr>
               <th>{t('txt_code')}</th>
@@ -207,7 +209,7 @@ export default function AdminPage(props: AdminPageProps) {
             )}
           </tbody>
         </table>
-        <div className="actions">
+        <div className="actions admin-pagination invite-pagination">
           <button type="button" className="btn btn-secondary small" disabled={safePage <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
             <ChevronLeft size={14} className="btn-icon" />
             {t('txt_prev')}

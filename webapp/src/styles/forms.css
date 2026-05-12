@@ -103,13 +103,14 @@ input[type='file'].input::file-selector-button:hover {
 }
 
 .eye-btn {
-  @apply absolute bottom-2.5 right-2.5 grid h-8 w-8 cursor-pointer place-items-center border-0 bg-transparent text-slate-700 transition;
+  @apply absolute right-2.5 top-1/2 grid h-8 w-8 cursor-pointer place-items-center border-0 bg-transparent text-slate-700 transition;
+  transform: translateY(-50%);
 }
 
 .password-toggle:hover,
 .eye-btn:hover {
   color: var(--primary);
-  transform: translateY(-1px) scale(1.04);
+  transform: translateY(-50%) scale(1.04);
 }
 
 .btn {

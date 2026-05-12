@@ -11,6 +11,7 @@ import {
   handleDeactivateDevice,
   handleRevokeAllTrustedDevices,
   handleRevokeTrustedDevice,
+  handleTrustDevicePermanently,
   handleDeleteAllDevices,
   handleDeleteDevice,
   handleUpdateDeviceName,
@@ -42,6 +43,12 @@ export async function handleAuthenticatedDeviceRoute(
   if (authorizedDeviceMatch && method === 'DELETE') {
     const deviceIdentifier = decodeURIComponent(authorizedDeviceMatch[1]);
     return handleRevokeTrustedDevice(request, env, userId, deviceIdentifier);
+  }
+
+  const permanentAuthorizedDeviceMatch = path.match(/^\/api\/devices\/authorized\/([^/]+)\/permanent$/i);
+  if (permanentAuthorizedDeviceMatch && method === 'POST') {
+    const deviceIdentifier = decodeURIComponent(permanentAuthorizedDeviceMatch[1]);
+    return handleTrustDevicePermanently(request, env, userId, deviceIdentifier);
   }
 
   const deleteDeviceMatch = path.match(/^\/api\/devices\/([^/]+)$/i);

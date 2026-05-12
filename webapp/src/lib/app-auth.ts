@@ -11,6 +11,7 @@ import {
   unlockVaultKey,
 } from '@/lib/api/auth';
 import { readInviteCodeFromUrl } from '@/lib/app-support';
+import { t, translateServerError } from '@/lib/i18n';
 import type { AppPhase, Profile, SessionState, TokenSuccess, WebBootstrapResponse } from '@/lib/types';
 
 export interface PendingTotp {
@@ -23,6 +24,7 @@ export type JwtUnsafeReason = 'missing' | 'default' | 'too_short';
 
 export interface BootstrapAppResult {
   defaultKdfIterations: number;
+  registrationInviteRequired?: boolean;
   jwtWarning: { reason: JwtUnsafeReason; minLength: number } | null;
   session: SessionState | null;
   profile: Profile | null;
@@ -32,6 +34,7 @@ export interface BootstrapAppResult {
 
 export interface InitialAppBootstrapState {
   defaultKdfIterations: number;
+  registrationInviteRequired?: boolean;
   jwtWarning: { reason: JwtUnsafeReason; minLength: number } | null;
   session: SessionState | null;
   phase: AppPhase;
@@ -96,8 +99,10 @@ function readWindowBootstrap(): WebBootstrapResponse {
   return raw && typeof raw === 'object' ? raw : {};
 }
 
-function normalizeBootstrapResponse(boot: WebBootstrapResponse): Pick<InitialAppBootstrapState, 'defaultKdfIterations' | 'jwtWarning'> {
+function normalizeBootstrapResponse(boot: WebBootstrapResponse): Pick<InitialAppBootstrapState, 'defaultKdfIterations' | 'registrationInviteRequired' | 'jwtWarning'> {
   const defaultKdfIterations = Number(boot.defaultKdfIterations || 600000);
+  const registrationInviteRequired =
+    typeof boot.registrationInviteRequired === 'boolean' ? boot.registrationInviteRequired : undefined;
   const jwtUnsafeReason = boot.jwtUnsafeReason || null;
   const jwtWarning = jwtUnsafeReason
     ? {
@@ -108,6 +113,7 @@ function normalizeBootstrapResponse(boot: WebBootstrapResponse): Pick<InitialApp
 
   return {
     defaultKdfIterations,
+    registrationInviteRequired,
     jwtWarning,
   };
 }
@@ -163,16 +169,22 @@ function buildTransientProfile(token: TokenSuccess, email: string, fallbackProfi
   };
 }
 
+function resolveUnauthenticatedPhase(registrationInviteRequired: boolean | undefined, fallback: AppPhase): AppPhase {
+  return registrationInviteRequired === false ? 'register' : fallback;
+}
+
 export function readInitialAppBootstrapState(): InitialAppBootstrapState {
-  const { defaultKdfIterations, jwtWarning } = normalizeBootstrapResponse(readWindowBootstrap());
+  const { defaultKdfIterations, registrationInviteRequired, jwtWarning } = normalizeBootstrapResponse(readWindowBootstrap());
   const session = loadSession();
   const hasInviteCode = !!readInviteCodeFromUrl();
+  const unauthenticatedPhase = hasInviteCode ? 'register' : 'login';
 
   return {
     defaultKdfIterations,
+    registrationInviteRequired,
     jwtWarning,
     session,
-    phase: jwtWarning ? 'login' : session ? 'locked' : hasInviteCode ? 'register' : 'login',
+    phase: jwtWarning ? 'login' : session ? 'locked' : resolveUnauthenticatedPhase(registrationInviteRequired, unauthenticatedPhase),
   };
 }
 
@@ -180,11 +192,13 @@ export async function bootstrapAppSession(initial: InitialAppBootstrapState = re
   const remoteBoot = await fetchBootstrapConfig();
   const normalizedBoot = normalizeBootstrapResponse(remoteBoot);
   const defaultKdfIterations = normalizedBoot.defaultKdfIterations || initial.defaultKdfIterations;
+  const registrationInviteRequired = normalizedBoot.registrationInviteRequired ?? initial.registrationInviteRequired;
   const jwtWarning = normalizedBoot.jwtWarning ?? initial.jwtWarning;
 
   if (jwtWarning) {
     return {
       defaultKdfIterations,
+      registrationInviteRequired,
       jwtWarning,
       session: null,
       profile: null,
@@ -196,10 +210,11 @@ export async function bootstrapAppSession(initial: InitialAppBootstrapState = re
   if (!loaded) {
     return {
       defaultKdfIterations,
+      registrationInviteRequired,
       jwtWarning: null,
       session: null,
       profile: null,
-      phase: initial.phase,
+      phase: resolveUnauthenticatedPhase(registrationInviteRequired, initial.phase),
     };
   }
 
@@ -207,6 +222,7 @@ export async function bootstrapAppSession(initial: InitialAppBootstrapState = re
   if (cachedProfile) {
     return {
       defaultKdfIterations,
+      registrationInviteRequired,
       jwtWarning: null,
       session: loaded,
       profile: cachedProfile,
@@ -217,6 +233,7 @@ export async function bootstrapAppSession(initial: InitialAppBootstrapState = re
 
   return {
     defaultKdfIterations,
+    registrationInviteRequired,
     jwtWarning: null,
     session: loaded,
     profile: null,
@@ -311,7 +328,7 @@ export async function performPasswordLogin(
 
   return {
     kind: 'error',
-    message: tokenError.error_description || tokenError.error || 'Login failed',
+    message: translateServerError(tokenError.error_description || tokenError.error, t('txt_login_failed')),
   };
 }
 
@@ -328,7 +345,7 @@ export async function performTotpLogin(
     return completeLogin(token, pendingTotp.email, pendingTotp.masterKey);
   }
   const tokenError = token as { error_description?: string; error?: string };
-  throw new Error(tokenError.error_description || tokenError.error || 'TOTP verify failed');
+  throw new Error(translateServerError(tokenError.error_description || tokenError.error, t('txt_totp_verify_failed')));
 }
 
 export async function performRecoverTwoFactorLogin(
@@ -404,7 +421,7 @@ export async function performUnlock(
 
   return {
     kind: 'error',
-    message: tokenError.error_description || tokenError.error || 'Unlock failed',
+    message: translateServerError(tokenError.error_description || tokenError.error, t('txt_unlock_failed')),
   };
 }
 

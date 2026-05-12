@@ -1,5 +1,5 @@
 import { bytesToBase64, decryptBw, encryptBw, hkdfExpand, pbkdf2 } from '../crypto';
-import { t } from '../i18n';
+import { t, translateServerError } from '../i18n';
 import type { AuthorizedDevice } from '../types';
 import type {
   Profile,
@@ -297,12 +297,12 @@ export async function refreshAccessToken(session: SessionState): Promise<Refresh
       return {
         ok: false,
         transient: isTransientRefreshStatus(resp.status),
-        error: json?.error_description || json?.error || 'Session refresh failed',
+        error: translateServerError(json?.error_description || json?.error, t('txt_session_refresh_failed')),
       };
     }
     const json = await parseJson<TokenSuccess>(resp);
     if (!json?.access_token) {
-      return { ok: false, transient: false, error: 'Session refresh failed' };
+      return { ok: false, transient: false, error: t('txt_session_refresh_failed') };
     }
     return { ok: true, token: json };
   } catch (error) {
@@ -400,11 +400,11 @@ export async function registerAccount(args: {
 
     if (!resp.ok) {
       const json = await parseJson<TokenError>(resp);
-      return { ok: false, message: json?.error_description || json?.error || 'Register failed' };
+      return { ok: false, message: translateServerError(json?.error_description || json?.error, t('txt_register_failed')) };
     }
     return { ok: true };
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : 'Register failed' };
+    return { ok: false, message: error instanceof Error ? translateServerError(error.message, error.message) : t('txt_register_failed') };
   }
 }
 
@@ -416,7 +416,7 @@ export async function getPasswordHint(email: string): Promise<{ masterPasswordHi
   });
   if (!resp.ok) {
     const body = await parseJson<TokenError>(resp);
-    throw new Error(body?.error_description || body?.error || 'Failed to load password hint');
+    throw new Error(translateServerError(body?.error_description || body?.error, t('txt_password_hint_load_failed')));
   }
   const body = (await parseJson<{ masterPasswordHint?: string | null }>(resp)) || {};
   return { masterPasswordHint: body.masterPasswordHint ?? null };
@@ -469,10 +469,10 @@ export function createAuthedFetch(getSession: () => SessionState | null, setSess
     const refreshed = await refreshAccessTokenOnce(refreshSource);
     if (!refreshed.ok) {
       if (refreshed.transient) {
-        throw new Error(refreshed.error || 'Session refresh temporarily unavailable');
+        throw new Error(refreshed.error || t('txt_session_refresh_failed'));
       }
       setSession(null);
-      throw new Error('Session expired');
+      throw new Error(t('txt_session_refresh_failed'));
     }
 
     const nextSession: SessionState = {
@@ -512,7 +512,7 @@ export async function updateProfile(
   });
   if (!resp.ok) {
     const body = await parseJson<TokenError>(resp);
-    throw new Error(body?.error_description || body?.error || 'Save profile failed');
+    throw new Error(translateServerError(body?.error_description || body?.error, t('txt_save_profile_failed')));
   }
   const body = await parseJson<Profile>(resp);
   if (!body) throw new Error('Invalid profile');
@@ -575,7 +575,7 @@ export async function setTotp(
   });
   if (!resp.ok) {
     const body = await parseJson<TokenError>(resp);
-    throw new Error(body?.error_description || body?.error || 'TOTP update failed');
+    throw new Error(translateServerError(body?.error_description || body?.error, t('txt_totp_update_failed')));
   }
 }
 
@@ -590,7 +590,7 @@ export async function verifyMasterPassword(
   });
   if (!resp.ok) {
     const body = await parseJson<TokenError>(resp);
-    throw new Error(body?.error_description || body?.error || 'Master password verify failed');
+    throw new Error(translateServerError(body?.error_description || body?.error, t('txt_master_password_verify_failed')));
   }
 }
 
@@ -625,7 +625,7 @@ export async function getTotpRecoveryCode(
   });
   if (!resp.ok) {
     const body = await parseJson<TokenError>(resp);
-    throw new Error(body?.error_description || body?.error || 'Failed to get recovery code');
+    throw new Error(translateServerError(body?.error_description || body?.error, t('txt_get_recovery_code_failed')));
   }
   const body = (await parseJson<{ code?: string }>(resp)) || {};
   return String(body.code || '');
@@ -647,7 +647,7 @@ export async function recoverTwoFactor(
   });
   if (!resp.ok) {
     const body = await parseJson<TokenError>(resp);
-    throw new Error(body?.error_description || body?.error || 'Recover 2FA failed');
+    throw new Error(translateServerError(body?.error_description || body?.error, t('txt_recover_2fa_failed')));
   }
   return (await parseJson<{ newRecoveryCode?: string }>(resp)) || {};
 }
@@ -665,6 +665,14 @@ export async function revokeAuthorizedDeviceTrust(
 ): Promise<void> {
   const resp = await authedFetch(`/api/devices/authorized/${encodeURIComponent(deviceIdentifier)}`, { method: 'DELETE' });
   if (!resp.ok) throw new Error(t('txt_revoke_device_trust_failed'));
+}
+
+export async function trustAuthorizedDevicePermanently(
+  authedFetch: AuthedFetch,
+  deviceIdentifier: string
+): Promise<void> {
+  const resp = await authedFetch(`/api/devices/authorized/${encodeURIComponent(deviceIdentifier)}/permanent`, { method: 'POST' });
+  if (!resp.ok) throw new Error(t('txt_trust_device_permanently_failed'));
 }
 
 export async function revokeAllAuthorizedDeviceTrust(authedFetch: AuthedFetch): Promise<void> {
@@ -708,7 +716,7 @@ export async function getApiKey(authedFetch: AuthedFetch, masterPasswordHash: st
   });
   if (!resp.ok) {
     const body = await parseJson<TokenError>(resp);
-    throw new Error(body?.error_description || body?.error || 'Failed to get API key');
+    throw new Error(translateServerError(body?.error_description || body?.error, t('txt_get_api_key_failed')));
   }
   const body = (await parseJson<{ apiKey?: string }>(resp)) || {};
   return String(body.apiKey || '');
@@ -722,7 +730,7 @@ export async function rotateApiKey(authedFetch: AuthedFetch, masterPasswordHash:
   });
   if (!resp.ok) {
     const body = await parseJson<TokenError>(resp);
-    throw new Error(body?.error_description || body?.error || 'Failed to rotate API key');
+    throw new Error(translateServerError(body?.error_description || body?.error, t('txt_rotate_api_key_failed')));
   }
   const body = (await parseJson<{ apiKey?: string }>(resp)) || {};
   return String(body.apiKey || '');

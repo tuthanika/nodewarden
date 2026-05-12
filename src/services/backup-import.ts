@@ -8,10 +8,21 @@ import {
   validateBackupPayloadContents,
 } from './backup-archive';
 
+// CONTRACT:
+// Restore is intentionally whitelist-based. Old backups may contain retired
+// fields, but only the columns listed here are imported. Keep this file in sync
+// with src/services/backup-archive.ts whenever backup contents change.
+//
+// WHEN CHANGING THIS:
+// - Update BackupTableName, BACKUP_TABLES, reset statements, prepared payloads,
+//   shadow-table count validation, insert column lists, and frontend import
+//   count types together.
+// - Do not import users.api_key, even if an older backup contains it.
 type SqlRow = Record<string, string | number | null>;
 type BackupTableName =
   | 'config'
   | 'users'
+  | 'domain_settings'
   | 'user_revisions'
   | 'folders'
   | 'ciphers'
@@ -20,6 +31,7 @@ type BackupTableName =
 const BACKUP_TABLES: BackupTableName[] = [
   'config',
   'users',
+  'domain_settings',
   'user_revisions',
   'folders',
   'ciphers',
@@ -35,6 +47,7 @@ export interface BackupImportResultBody {
   imported: {
     config: number;
     users: number;
+    domainSettings: number;
     userRevisions: number;
     folders: number;
     ciphers: number;
@@ -155,6 +168,7 @@ function buildResetImportTargetStatements(db: D1Database): D1PreparedStatement[]
     'DELETE FROM attachments',
     'DELETE FROM ciphers',
     'DELETE FROM folders',
+    'DELETE FROM domain_settings',
     'DELETE FROM user_revisions',
     'DELETE FROM users',
     'DELETE FROM config',
@@ -276,6 +290,7 @@ async function importPreparedBackupRows(db: D1Database, payload: BackupPayload['
       ...row,
       verify_devices: row.verify_devices ?? 1,
     })),
+    domain_settings: cloneRows(payload.domain_settings || []),
     user_revisions: cloneRows(payload.user_revisions || []),
     folders: cloneRows(payload.folders || []),
     ciphers: cloneRows(payload.ciphers || []).map((row) => ({
@@ -594,7 +609,7 @@ async function importBackupRows(db: D1Database, payload: BackupPayload['db'], us
     buildInsertStatements(
       db,
       tableName('users'),
-      ['id', 'email', 'name', 'master_password_hint', 'master_password_hash', 'key', 'private_key', 'public_key', 'kdf_type', 'kdf_iterations', 'kdf_memory', 'kdf_parallelism', 'security_stamp', 'role', 'status', 'verify_devices', 'totp_secret', 'totp_recovery_code', 'api_key', 'created_at', 'updated_at'],
+      ['id', 'email', 'name', 'master_password_hint', 'master_password_hash', 'key', 'private_key', 'public_key', 'kdf_type', 'kdf_iterations', 'kdf_memory', 'kdf_parallelism', 'security_stamp', 'role', 'status', 'verify_devices', 'totp_secret', 'totp_recovery_code', 'created_at', 'updated_at'],
       payload.users || []
     )
   );
@@ -602,6 +617,17 @@ async function importBackupRows(db: D1Database, payload: BackupPayload['db'], us
     db,
     tableName('user_revisions'),
     buildInsertStatements(db, tableName('user_revisions'), ['user_id', 'revision_date'], payload.user_revisions || [], true)
+  );
+  await runInsertBatch(
+    db,
+    tableName('domain_settings'),
+    buildInsertStatements(
+      db,
+      tableName('domain_settings'),
+      ['user_id', 'equivalent_domains', 'custom_equivalent_domains', 'excluded_global_equivalent_domains', 'updated_at'],
+      payload.domain_settings || [],
+      true
+    )
   );
   await runInsertBatch(
     db,
@@ -669,6 +695,7 @@ export async function importBackupArchiveBytes(
     await validateShadowTableCounts(env.DB, {
       config: (db.config || []).length,
       users: (db.users || []).length,
+      domain_settings: (db.domain_settings || []).length,
       user_revisions: (db.user_revisions || []).length,
       folders: (db.folders || []).length,
       ciphers: (db.ciphers || []).length,
@@ -690,6 +717,7 @@ export async function importBackupArchiveBytes(
     await validateShadowTableCounts(env.DB, {
       config: (db.config || []).length,
       users: (db.users || []).length,
+      domain_settings: (db.domain_settings || []).length,
       user_revisions: (db.user_revisions || []).length,
       folders: (db.folders || []).length,
       ciphers: (db.ciphers || []).length,
@@ -729,6 +757,7 @@ export async function importBackupArchiveBytes(
         imported: {
           config: (db.config || []).length,
           users: (db.users || []).length,
+          domainSettings: (db.domain_settings || []).length,
           userRevisions: (db.user_revisions || []).length,
           folders: (db.folders || []).length,
           ciphers: (db.ciphers || []).length,
@@ -804,6 +833,7 @@ export async function importRemoteBackupArchiveBytes(
     await validateShadowTableCounts(env.DB, {
       config: (db.config || []).length,
       users: (db.users || []).length,
+      domain_settings: (db.domain_settings || []).length,
       user_revisions: (db.user_revisions || []).length,
       folders: (db.folders || []).length,
       ciphers: (db.ciphers || []).length,
@@ -825,6 +855,7 @@ export async function importRemoteBackupArchiveBytes(
     await validateShadowTableCounts(env.DB, {
       config: (db.config || []).length,
       users: (db.users || []).length,
+      domain_settings: (db.domain_settings || []).length,
       user_revisions: (db.user_revisions || []).length,
       folders: (db.folders || []).length,
       ciphers: (db.ciphers || []).length,
@@ -870,6 +901,7 @@ export async function importRemoteBackupArchiveBytes(
         imported: {
           config: (db.config || []).length,
           users: (db.users || []).length,
+          domainSettings: (db.domain_settings || []).length,
           userRevisions: (db.user_revisions || []).length,
           folders: (db.folders || []).length,
           ciphers: (db.ciphers || []).length,

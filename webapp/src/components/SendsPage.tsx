@@ -554,7 +554,7 @@ export default function SendsPage(props: SendsPageProps) {
                 <button type="button" className="btn btn-secondary small" onClick={() => copyAccessUrl(selectedSend)}>
                   <Copy size={14} className="btn-icon" /> {t('txt_copy_link')}
                 </button>
-                <button type="button" className="btn btn-secondary small" onClick={() => { setDraft(draftFromSend(selectedSend)); setIsCreating(false); setIsEditing(true); }}>
+                <button type="button" className="btn btn-secondary small" onClick={() => { setDraft(draftFromSend(selectedSend)); setIsCreating(false); setIsEditing(true); setShowPassword(false); }}>
                   <Pencil size={14} className="btn-icon" /> {t('txt_edit')}
                 </button>
               </div>

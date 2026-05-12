@@ -92,7 +92,7 @@ const CipherListItem = memo(function CipherListItem(props: CipherListItemProps) 
         onInput={(e) => props.onToggleSelected(props.cipher.id, (e.currentTarget as HTMLInputElement).checked)}
       />
       <button type="button" className="row-main" onClick={() => props.onSelectCipher(props.cipher.id)}>
-        <div className="list-icon-wrap">
+        <div className={`list-icon-wrap ${Number(props.cipher.type || 1) === 3 ? 'card-list-icon-wrap' : ''}`}>
           <VaultListIcon cipher={props.cipher} />
         </div>
         <div className="list-text">

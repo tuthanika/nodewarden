@@ -281,8 +281,15 @@ export default function SettingsPage(props: SettingsPageProps) {
       </section>
 
       <section className="card settings-module">
-        <h3>{t('txt_totp')}</h3>
-        {totpLocked && <div className="status-ok">{t('txt_totp_is_enabled_for_this_account')}</div>}
+        <div className="settings-module-head">
+          <h3>{t('txt_totp')}</h3>
+          {totpLocked && (
+            <span className="totp-status-pill">
+              <ShieldCheck size={14} aria-hidden="true" />
+              {t('txt_enabled')}
+            </span>
+          )}
+        </div>
         <div className="totp-grid">
           <div className="totp-qr">
             <img src={qrDataUrl} alt="TOTP QR" />
@@ -338,8 +345,7 @@ export default function SettingsPage(props: SettingsPageProps) {
         </div>
       </section>
 
-      <section className="card settings-module">
-        <h3>{t('txt_recovery_code_and_api_key')}</h3>
+      <section className="settings-module sensitive-actions-module">
         <div className="sensitive-actions-grid">
           <div className="sensitive-action">
             <div>

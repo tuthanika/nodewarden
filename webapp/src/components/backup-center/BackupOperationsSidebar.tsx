@@ -41,42 +41,47 @@ export function BackupOperationsSidebar(props: BackupOperationsSidebarProps) {
         </button>
       </div>
 
-      <div className="backup-divider" />
+      <details className="backup-recommendations-disclosure">
+        <summary className="backup-recommendations-summary">
+          <span>
+            <strong>{t('txt_backup_recommend_title')}</strong>
+            <small>{t('txt_backup_recommend_group_webdav')} · {t('txt_backup_recommend_group_s3')}</small>
+          </span>
+          <span className="backup-recommendations-summary-icon" aria-hidden="true" />
+        </summary>
 
-      <div className="section-head">
-        <h3>{t('txt_backup_recommend_title')}</h3>
-      </div>
-      <div className="backup-recommendation-group">
-        <h4 className="backup-recommendation-group-title">{t('txt_backup_recommend_group_webdav')}</h4>
-        <div className="backup-recommendation-list">
-          {props.recommendedWebDavProviders.map((provider) => (
-            <button
-              key={provider.id}
-              type="button"
-              className={`backup-destination-item ${props.selectedProviderId === provider.id ? 'active' : ''}`}
-              onClick={() => props.onSelectProvider(provider.id)}
-            >
-              <span className="backup-recommendation-row">
-                <span className="backup-destination-name">{provider.name}</span>
-                <span className="backup-destination-meta">{provider.capacity}</span>
-              </span>
-              {hasLinkedStorages(provider) && provider.linkedStorages.length ? (
-                <span className="backup-recommendation-linked">
-                  {provider.linkedStorages.map((storage) => (
-                    <span key={`${provider.id}-${storage.name}`} className="backup-recommendation-linked-item">
-                      <span>{storage.name}</span>
-                      <span>{storage.capacity}</span>
+        <div className="backup-recommendations-body">
+          <div className="backup-recommendation-group">
+            <h4 className="backup-recommendation-group-title">{t('txt_backup_recommend_group_webdav')}</h4>
+            <div className="backup-recommendation-list">
+              {props.recommendedWebDavProviders.map((provider) => (
+                <button
+                  key={provider.id}
+                  type="button"
+                  className={`backup-destination-item ${props.selectedProviderId === provider.id ? 'active' : ''}`}
+                  onClick={() => props.onSelectProvider(provider.id)}
+                >
+                  <span className="backup-recommendation-row">
+                    <span className="backup-destination-name">{provider.name}</span>
+                    <span className="backup-destination-meta">{provider.capacity}</span>
+                  </span>
+                  {hasLinkedStorages(provider) && provider.linkedStorages.length ? (
+                    <span className="backup-recommendation-linked">
+                      {provider.linkedStorages.map((storage) => (
+                        <span key={`${provider.id}-${storage.name}`} className="backup-recommendation-linked-item">
+                          <span>{storage.name}</span>
+                          <span>{storage.capacity}</span>
+                        </span>
+                      ))}
                     </span>
-                  ))}
-                </span>
-              ) : null}
-            </button>
-          ))}
-        </div>
-      </div>
-      <div className="backup-recommendation-group">
-        <h4 className="backup-recommendation-group-title">{t('txt_backup_recommend_group_s3')}</h4>
-        {props.recommendedS3Providers.length ? (
+                  ) : null}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="backup-recommendation-group">
+            <h4 className="backup-recommendation-group-title">{t('txt_backup_recommend_group_s3')}</h4>
+            {props.recommendedS3Providers.length ? (
           <div className="backup-recommendation-list">
             {props.recommendedS3Providers.map((provider) => (
               <button
@@ -92,10 +97,12 @@ export function BackupOperationsSidebar(props: BackupOperationsSidebarProps) {
               </button>
             ))}
           </div>
-        ) : (
-          <div className="backup-browser-empty">{t('txt_backup_recommend_empty')}</div>
-        )}
-      </div>
+            ) : (
+              <div className="backup-browser-empty">{t('txt_backup_recommend_empty')}</div>
+            )}
+          </div>
+        </div>
+      </details>
     </aside>
   );
 }
