@@ -10,7 +10,7 @@ import {
   verifyAttachmentUploadToken,
   verifyFileDownloadToken,
 } from '../utils/jwt';
-import { cipherToResponse } from './ciphers';
+import { applyCipherEmbeddedAttachmentMetadata, cipherToResponse } from './ciphers';
 import { LIMITS } from '../config/limits';
 import { readActingDeviceIdentifier } from '../utils/device';
 import {
@@ -20,6 +20,7 @@ import {
   getBlobStorageMaxBytes,
   putBlobObject,
 } from '../services/blob-store';
+import { auditRequestMetadata, writeAuditEvent } from '../services/audit-events';
 
 function notifyVaultSyncForRequest(
   request: Request,
@@ -28,6 +29,27 @@ function notifyVaultSyncForRequest(
   revisionDate: string
 ): void {
   notifyUserVaultSync(env, userId, revisionDate, readActingDeviceIdentifier(request));
+}
+
+async function writeAttachmentAudit(
+  storage: StorageService,
+  request: Request,
+  userId: string,
+  action: string,
+  metadata: Record<string, unknown>
+): Promise<void> {
+  await writeAuditEvent(storage, {
+    actorUserId: userId,
+    action,
+    category: 'data',
+    level: action.includes('delete') ? 'security' : 'info',
+    targetType: 'attachment',
+    targetId: typeof metadata.id === 'string' ? metadata.id : null,
+    metadata: {
+      ...metadata,
+      ...auditRequestMetadata(request),
+    },
+  });
 }
 
 // Format file size to human readable
@@ -260,6 +282,7 @@ export async function handleGetAttachment(
   if (!attachment || attachment.cipherId !== cipherId) {
     return errorResponse('Attachment not found', 404);
   }
+  const responseAttachment = applyCipherEmbeddedAttachmentMetadata(cipher, [attachment])[0] || attachment;
 
   // Generate short-lived download token
   const token = await createFileDownloadToken(cipherId, attachmentId, env.JWT_SECRET);
@@ -270,12 +293,12 @@ export async function handleGetAttachment(
 
   return jsonResponse({
     object: 'attachment',
-    id: attachment.id,
+    id: responseAttachment.id,
     url: downloadUrl,
-    fileName: attachment.fileName,
-    key: attachment.key,
-    size: String(Number(attachment.size) || 0),
-    sizeName: attachment.sizeName,
+    fileName: responseAttachment.fileName,
+    key: responseAttachment.key,
+    size: String(Number(responseAttachment.size) || 0),
+    sizeName: responseAttachment.sizeName,
   });
 }
 
@@ -430,6 +453,11 @@ export async function handleDeleteAttachment(
   const revisionInfo = await storage.updateCipherRevisionDate(cipherId);
   if (revisionInfo) {
     notifyVaultSyncForRequest(request, env, revisionInfo.userId, revisionInfo.revisionDate);
+    await writeAttachmentAudit(storage, request, revisionInfo.userId, 'attachment.delete', {
+      id: attachmentId,
+      cipherId,
+      size: attachment.size,
+    });
   }
 
   // Get updated cipher for response

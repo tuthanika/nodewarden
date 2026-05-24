@@ -36,9 +36,14 @@ body.dialog-open {
 }
 
 /* --- custom scrollbar --- */
+* {
+  scrollbar-color: color-mix(in srgb, var(--muted) 34%, transparent) transparent;
+  scrollbar-width: thin;
+}
+
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 10px;
+  height: 10px;
 }
 
 ::-webkit-scrollbar-track {
@@ -46,12 +51,16 @@ body.dialog-open {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--muted) 30%, transparent);
+  min-height: 44px;
+  border: 3px solid transparent;
   border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 30%, transparent);
+  background-clip: content-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--muted) 50%, transparent);
+  background: color-mix(in srgb, var(--primary) 38%, var(--muted) 22%);
+  background-clip: content-box;
 }
 
 ::-webkit-scrollbar-corner {

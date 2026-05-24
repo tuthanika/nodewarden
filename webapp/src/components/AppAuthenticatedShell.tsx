@@ -1,4 +1,4 @@
-import { ArrowUpDown, Check, ChevronDown, Clock3, Cloud, Folder as FolderIcon, Globe2, KeyRound, Lock, LogOut, MonitorSmartphone, Send as SendIcon, Settings as SettingsIcon, ShieldUser, SlidersHorizontal, Users } from 'lucide-preact';
+import { ArrowUpDown, Check, ChevronDown, Clock3, Cloud, FileClock, Folder as FolderIcon, Globe2, KeyRound, Lock, LogOut, MonitorSmartphone, Send as SendIcon, Settings as SettingsIcon, ShieldUser, SlidersHorizontal, Users } from 'lucide-preact';
 import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { Link } from 'wouter';
@@ -48,11 +48,13 @@ function isAdminProfile(profile: Profile | null): boolean {
 
 export default function AppAuthenticatedShell(props: AppAuthenticatedShellProps) {
   const routeAnimationKey = props.isImportRoute ? props.importRoute : props.location;
+  const isDomainRulesRoute = props.location === '/settings/domain-rules';
+  const isLogRoute = props.location === '/logs';
   const isAdmin = isAdminProfile(props.profile);
   const vaultActive = props.location === '/vault' || props.location === '/vault/totp';
   const settingsActive = props.location === props.settingsAccountRoute || props.location === '/settings/domain-rules';
   const dataActive = props.location === '/backup' || props.isImportRoute;
-  const managementActive = props.location === '/admin' || props.location === '/security/devices';
+  const managementActive = props.location === '/admin' || props.location === '/security/devices' || props.location === '/logs';
   const [navLayoutMode, setNavLayoutMode] = useState<NavLayoutMode>(readNavLayoutMode);
   const [navLayoutPickerOpen, setNavLayoutPickerOpen] = useState(false);
   const navLayoutPickerRef = useRef<HTMLDivElement | null>(null);
@@ -173,6 +175,7 @@ export default function AppAuthenticatedShell(props: AppAuthenticatedShellProps)
       {isAdmin && renderSideLink('/backup', props.location === '/backup', <Cloud size={16} />, t('nav_backup_strategy'))}
       {renderSideLink(props.importRoute, props.isImportRoute, <ArrowUpDown size={16} />, t('nav_import_export'))}
       {isAdmin && renderSideLink('/admin', props.location === '/admin', <Users size={16} />, t('nav_admin_panel'))}
+      {isAdmin && renderSideLink('/logs', props.location === '/logs', <FileClock size={16} />, t('nav_log_center'))}
       {renderSideLink('/security/devices', props.location === '/security/devices', <MonitorSmartphone size={16} />, t('nav_device_management'))}
     </>
   );
@@ -217,6 +220,7 @@ export default function AppAuthenticatedShell(props: AppAuthenticatedShellProps)
         managementActive,
         <>
           {isAdmin && renderSubLink('/admin', props.location === '/admin', t('nav_admin_panel'))}
+          {isAdmin && renderSubLink('/logs', props.location === '/logs', t('nav_log_center'))}
           {renderSubLink('/security/devices', props.location === '/security/devices', t('nav_device_management'))}
         </>
       )}
@@ -302,7 +306,7 @@ export default function AppAuthenticatedShell(props: AppAuthenticatedShellProps)
             </div>
           </aside>
           <main className="content">
-            <div key={routeAnimationKey} className={`route-stage ${props.location === '/settings/domain-rules' ? 'route-stage-fixed' : ''}`}>
+            <div key={routeAnimationKey} className={`route-stage ${isDomainRulesRoute ? 'route-stage-fixed' : ''} ${isLogRoute ? 'route-stage-log-fixed' : ''}`}>
               <AppMainRoutes {...props.mainRoutesProps} />
             </div>
           </main>

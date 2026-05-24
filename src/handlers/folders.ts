@@ -5,6 +5,7 @@ import { jsonResponse, errorResponse } from '../utils/response';
 import { readActingDeviceIdentifier } from '../utils/device';
 import { generateUUID } from '../utils/uuid';
 import { parsePagination, encodeContinuationToken } from '../utils/pagination';
+import { auditRequestMetadata, writeAuditEvent } from '../services/audit-events';
 
 function notifyVaultSyncForRequest(
   request: Request,
@@ -13,6 +14,27 @@ function notifyVaultSyncForRequest(
   revisionDate: string
 ): void {
   notifyUserVaultSync(env, userId, revisionDate, readActingDeviceIdentifier(request));
+}
+
+async function writeFolderAudit(
+  storage: StorageService,
+  request: Request,
+  userId: string,
+  action: string,
+  metadata: Record<string, unknown>
+): Promise<void> {
+  await writeAuditEvent(storage, {
+    actorUserId: userId,
+    action,
+    category: 'data',
+    level: action.includes('delete') ? 'security' : 'info',
+    targetType: 'folder',
+    targetId: typeof metadata.id === 'string' ? metadata.id : null,
+    metadata: {
+      ...metadata,
+      ...auditRequestMetadata(request),
+    },
+  });
 }
 
 // Convert internal folder to API response format
@@ -134,6 +156,9 @@ export async function handleDeleteFolder(request: Request, env: Env, userId: str
   await storage.deleteFolder(id, userId);
   const revisionDate = await storage.updateRevisionDate(userId);
   notifyVaultSyncForRequest(request, env, userId, revisionDate);
+  await writeFolderAudit(storage, request, userId, 'folder.delete', {
+    id,
+  });
 
   return new Response(null, { status: 204 });
 }
@@ -157,6 +182,9 @@ export async function handleBulkDeleteFolders(request: Request, env: Env, userId
   const revisionDate = await storage.bulkDeleteFolders(ids, userId);
   if (revisionDate) {
     notifyVaultSyncForRequest(request, env, userId, revisionDate);
+    await writeFolderAudit(storage, request, userId, 'folder.delete.bulk', {
+      count: ids.length,
+    });
   }
 
   return new Response(null, { status: 204 });

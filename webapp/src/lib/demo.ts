@@ -932,6 +932,11 @@ export function createDemoMainRoutesProps(base: AppMainRoutesProps, notify: Noti
       notify('success', t('txt_item_updated'));
     },
     onDeleteVaultItem: async (cipher) => {
+      if (cipher.deletedDate || (cipher as { deletedAt?: string | null }).deletedAt) {
+        state.setCiphers((prev) => prev.filter((item) => item.id !== cipher.id));
+        notify('success', t('txt_item_deleted_permanently'));
+        return;
+      }
       const deletedDate = new Date().toISOString();
       state.setCiphers((prev) => prev.map((item) => (
         item.id === cipher.id ? { ...item, deletedDate, archivedDate: null, revisionDate: deletedDate } : item
@@ -964,6 +969,11 @@ export function createDemoMainRoutesProps(base: AppMainRoutesProps, notify: Noti
       const idSet = new Set(ids);
       state.setCiphers((prev) => prev.filter((item) => !idSet.has(item.id)));
       notify('success', t('txt_deleted_selected_items_permanently'));
+    },
+    onRestoreVaultItems: async (ids) => {
+      const idSet = new Set(ids);
+      state.setCiphers((prev) => prev.map((item) => (idSet.has(item.id) ? { ...item, deletedDate: null } : item)));
+      notify('success', t('txt_restored_selected_items'));
     },
     onBulkRestoreVaultItems: async (ids) => {
       const idSet = new Set(ids);
@@ -1136,6 +1146,15 @@ export function createDemoMainRoutesProps(base: AppMainRoutesProps, notify: Noti
         invite.code === code ? { ...invite, status: 'inactive' } : invite
       )));
       notify('success', t('txt_invite_revoked'));
+    },
+    onLoadAuditLogSettings: async () => ({ retentionDays: 90, maxEntries: null }),
+    onSaveAuditLogSettings: async (settings) => {
+      notify('success', t('txt_log_settings_saved'));
+      return settings;
+    },
+    onClearAuditLogs: async () => {
+      notify('success', t('txt_logs_cleared'));
+      return 0;
     },
     onExportBackup: async () => {
       notify('success', t('txt_backup_export_success'));

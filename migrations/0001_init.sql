@@ -154,6 +154,8 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   id TEXT PRIMARY KEY,
   actor_user_id TEXT,
   action TEXT NOT NULL,
+  category TEXT NOT NULL DEFAULT 'system',
+  level TEXT NOT NULL DEFAULT 'info',
   target_type TEXT,
   target_id TEXT,
   metadata TEXT,
@@ -162,6 +164,8 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 );
 CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_actor_created ON audit_logs(actor_user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_category_created ON audit_logs(category, created_at);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_level_created ON audit_logs(level, created_at);
 
 CREATE TABLE IF NOT EXISTS devices (
   user_id TEXT NOT NULL,

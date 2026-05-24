@@ -281,6 +281,11 @@ export interface VaultDraft {
 export interface ListResponse<T> {
   object: 'list';
   data: T[];
+  total?: number;
+  limit?: number;
+  offset?: number;
+  hasMore?: boolean;
+  continuationToken?: string | null;
 }
 
 export interface WebBootstrapResponse {
@@ -342,6 +347,37 @@ export interface AdminInvite {
   inviteLink?: string;
   status: string;
   expiresAt?: string;
+}
+
+export type AuditLogCategory = 'auth' | 'security' | 'device' | 'data' | 'system';
+export type AuditLogLevel = 'info' | 'warn' | 'error' | 'security';
+
+export interface AuditLogEntry {
+  id: string;
+  actorUserId: string | null;
+  actorEmail?: string | null;
+  action: string;
+  category: AuditLogCategory;
+  level: AuditLogLevel;
+  targetType: string | null;
+  targetId: string | null;
+  targetUserEmail?: string | null;
+  metadata: string | null;
+  createdAt: string;
+  object?: 'auditLog';
+}
+
+export interface AuditLogSettings {
+  retentionDays: number | null;
+  maxEntries: number | null;
+}
+
+export interface AuditLogListResult {
+  logs: AuditLogEntry[];
+  total: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
 }
 
 export interface AuthorizedDevice {

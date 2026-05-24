@@ -41,6 +41,7 @@ import {
   encryptFolderImportName,
   getAttachmentDownloadInfo,
   importCiphers,
+  permanentDeleteCipher,
   type CiphersImportPayload,
   type ImportedCipherMapEntry,
   updateCipher,
@@ -490,6 +491,18 @@ export default function useVaultSendActions(options: UseVaultSendActionsOptions)
 
       async deleteVaultItem(cipher: Cipher) {
         const previousCipher = { ...cipher };
+        if (cipher.deletedDate || (cipher as { deletedAt?: string | null }).deletedAt) {
+          try {
+            await permanentDeleteCipher(authedFetch, cipher.id);
+            patchCipherBatch([cipher.id], () => null);
+            syncVaultCoreInBackground({ includeFolders: true });
+            onNotify('success', t('txt_item_deleted_permanently'));
+          } catch (error) {
+            onNotify('error', error instanceof Error ? error.message : t('txt_permanent_delete_item_failed'));
+            throw error;
+          }
+          return;
+        }
         const deletedDate = new Date().toISOString();
         patchCipherBatch([cipher.id], (current) => ({ ...current, deletedDate, archivedDate: null, revisionDate: deletedDate }));
         try {

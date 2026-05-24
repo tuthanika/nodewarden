@@ -108,7 +108,16 @@ export default function SecurityDevicesPage(props: SecurityDevicesPageProps) {
             </button>
           </div>
         )}
-        <table className="table">
+        <table className="table authorized-devices-table">
+          <colgroup>
+            <col className="authorized-devices-col-device" />
+            <col className="authorized-devices-col-type" />
+            <col className="authorized-devices-col-status" />
+            <col className="authorized-devices-col-date" />
+            <col className="authorized-devices-col-date" />
+            <col className="authorized-devices-col-trust" />
+            <col className="authorized-devices-col-actions" />
+          </colgroup>
           <thead>
             <tr>
               <th>{t('txt_device')}</th>
@@ -149,7 +158,7 @@ export default function SecurityDevicesPage(props: SecurityDevicesPageProps) {
                   )}
                 </td>
                 <td data-label={t('txt_actions')}>
-                  <div className="actions">
+                  <div className="actions authorized-devices-actions">
                     <button
                       type="button"
                       className="btn btn-secondary small"

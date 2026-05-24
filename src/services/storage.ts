@@ -18,12 +18,17 @@ import {
   saveUser as saveStoredUser,
 } from './storage-user-repo';
 import {
+  type AuditLogListOptions,
   createAuditLog as createStoredAuditLog,
+  clearAuditLogs as clearStoredAuditLogs,
   createInvite as createStoredInvite,
   deleteAllInvites as deleteStoredInvites,
   getInvite as findStoredInvite,
+  listAuditLogs as listStoredAuditLogs,
   listInvites as listStoredInvites,
   markInviteUsed as markStoredInviteUsed,
+  pruneAuditLogs as pruneStoredAuditLogs,
+  pruneAuditLogsToMax as pruneStoredAuditLogsToMax,
   revokeInvite as revokeStoredInvite,
 } from './storage-admin-repo';
 import {
@@ -117,7 +122,7 @@ const STORAGE_SCHEMA_VERSION_KEY = 'schema.version';
 // Bump this whenever src/services/storage-schema.ts or migrations/0001_init.sql
 // changes. Existing D1 installs only rerun ensureStorageSchema() when this value
 // differs from config.schema.version.
-const STORAGE_SCHEMA_VERSION = '2026-05-05-domain-rules-v2';
+const STORAGE_SCHEMA_VERSION = '2026-05-14-lightweight-audit-logs';
 
 // D1-backed storage.
 // Contract:
@@ -277,6 +282,22 @@ export class StorageService {
 
   async createAuditLog(log: AuditLog): Promise<void> {
     await createStoredAuditLog(this.db, log);
+  }
+
+  async listAuditLogs(options: AuditLogListOptions): Promise<{ logs: AuditLog[]; total: number; hasMore: boolean }> {
+    return listStoredAuditLogs(this.db, options);
+  }
+
+  async pruneAuditLogs(beforeIso: string): Promise<number> {
+    return pruneStoredAuditLogs(this.db, beforeIso);
+  }
+
+  async pruneAuditLogsToMax(maxEntries: number): Promise<number> {
+    return pruneStoredAuditLogsToMax(this.db, maxEntries);
+  }
+
+  async clearAuditLogs(): Promise<number> {
+    return clearStoredAuditLogs(this.db);
   }
 
   // --- Domain rules ---
@@ -464,7 +485,6 @@ export class StorageService {
       this.db,
       this.refreshTokenKey.bind(this),
       this.maybeCleanupExpiredRefreshTokens.bind(this),
-      this.saveRefreshToken.bind(this),
       this.deleteRefreshToken.bind(this),
       token
     );

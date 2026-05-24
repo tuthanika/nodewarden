@@ -115,7 +115,7 @@ function buildConfigResponse(origin: string) {
     _icon_service_url: buildIconServiceTemplate(origin),
     _icon_service_csp: buildIconServiceCsp(origin),
     featureStates: {
-      'cipher-key-encryption': true,
+      'cipher-key-encryption': LIMITS.compatibility.cipherKeyEncryptionFeatureEnabled,
       'duo-redirect': true,
       'email-verification': true,
       'pm-19051-send-email-verification': false,
@@ -144,6 +144,7 @@ function normalizeIconHost(rawHost: string): string | null {
 }
 
 const ICON_UPSTREAM_TIMEOUT_MS = 2500;
+const ICON_MAX_BUFFER_BYTES = 256 * 1024;
 const BITWARDEN_DEFAULT_GLOBE_ICON_BYTES = 500;
 const BITWARDEN_DEFAULT_GLOBE_ICON_SHA256 = 'aaa64871332ad5b7d28fe8874efb19c2d9cc2f1e6de75d52b080b438225a0783';
 
@@ -177,6 +178,55 @@ async function fetchIconSource(source: { url: string; headers?: HeadersInit }): 
 async function sha256Hex(bytes: ArrayBuffer): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', bytes);
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function getPositiveContentLength(headers: Headers): number | null {
+  const raw = headers.get('Content-Length');
+  if (!raw) return null;
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+async function readIconBytes(response: Response, maxBytes: number): Promise<ArrayBuffer | null> {
+  if (!response.body) return null;
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  let timedOut = false;
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    void reader.cancel().catch(() => undefined);
+  }, ICON_UPSTREAM_TIMEOUT_MS);
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+
+      totalBytes += value.byteLength;
+      if (totalBytes > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        return null;
+      }
+      chunks.push(value);
+    }
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  if (timedOut || totalBytes === 0) return null;
+
+  const output = new ArrayBuffer(totalBytes);
+  const bytes = new Uint8Array(output);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return output;
 }
 
 function iconResponse(body: BodyInit | null, contentType: string | null): Response {
@@ -218,18 +268,18 @@ async function handleWebsiteIcon(host: string, fallbackMode: 'default' | 'not-fo
       const contentType = String(resp.headers.get('Content-Type') || '').toLowerCase();
       if (!contentType.startsWith('image/')) continue;
 
-      if (!source.rejectImage) {
-        return iconResponse(resp.body, resp.headers.get('Content-Type'));
-      }
+      const contentLength = getPositiveContentLength(resp.headers);
+      if (contentLength !== null && contentLength > ICON_MAX_BUFFER_BYTES) continue;
 
-      const contentLength = Number(resp.headers.get('Content-Length') || '');
-      if (Number.isFinite(contentLength) && contentLength > 0 && contentLength !== source.rejectImage.byteLength) {
-        return iconResponse(resp.body, resp.headers.get('Content-Type'));
+      const bytes = await readIconBytes(resp, ICON_MAX_BUFFER_BYTES);
+      if (!bytes) continue;
+      if (
+        source.rejectImage &&
+        bytes.byteLength === source.rejectImage.byteLength &&
+        (await sha256Hex(bytes)) === source.rejectImage.sha256
+      ) {
+        continue;
       }
-
-      const bytes = await resp.arrayBuffer();
-      if (bytes.byteLength === 0) continue;
-      if (bytes.byteLength === source.rejectImage.byteLength && (await sha256Hex(bytes)) === source.rejectImage.sha256) continue;
 
       return iconResponse(bytes, resp.headers.get('Content-Type'));
     } catch {
@@ -286,6 +336,8 @@ export async function handlePublicRoute(
 
   const iconMatch = path.match(/^\/icons\/([^/]+)\/icon\.png$/i);
   if (iconMatch && method === 'GET') {
+    const blocked = await enforcePublicRateLimit('public-icon', LIMITS.rateLimit.publicIconRequestsPerMinute);
+    if (blocked) return blocked;
     const fallbackMode = new URL(request.url).searchParams.get('fallback') === '404' ? 'not-found' : 'default';
     return handleWebsiteIcon(iconMatch[1], fallbackMode);
   }

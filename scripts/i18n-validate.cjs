@@ -22,6 +22,17 @@ const intentionallyEnglishKeys = new Set([
   'txt_dash',
   'txt_text_3',
 ]);
+const intentionallyEnglishPrefixes = [
+  'txt_log_action_',
+  'txt_log_meta_',
+  'txt_log_reason_',
+  'txt_log_target_type_',
+  'txt_log_trigger_',
+];
+
+function isIntentionallyEnglishKey(key) {
+  return intentionallyEnglishKeys.has(key) || intentionallyEnglishPrefixes.some((prefix) => key.startsWith(prefix));
+}
 
 for (const [locale, table] of Object.entries(locales)) {
   const keys = Object.keys(table).sort();
@@ -40,7 +51,7 @@ for (const [locale, table] of Object.entries(locales)) {
   }
 
   if (locale !== 'en') {
-    const sameAsEnglish = baseKeys.filter((key) => table[key] === base[key] && !intentionallyEnglishKeys.has(key));
+    const sameAsEnglish = baseKeys.filter((key) => table[key] === base[key] && !isIntentionallyEnglishKey(key));
     if (sameAsEnglish.length > 40) {
       errors.push({
         locale,

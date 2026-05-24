@@ -38,7 +38,7 @@
 | 附件上传 / 下载 | ✅ | ✅ | Cloudflare R2 或 KV |
 | Send | ✅ | ✅ | 支持文本与文件 Send |
 | 导入 / 导出 | ✅ | ✅ | 支持 Bitwarden JSON / CSV / **ZIP 导入（包括附件）** |
-| **云端备份中心** | ❌ | ✅ | **支持 WebDAV / E3 定时备份** |
+| **云端备份中心** | ❌ | ✅ | **支持 WebDAV / S3 定时备份** |
 | 密码提示（网页端） | ⚠️ 有限 | ✅ | **无需发送邮件** |
 | TOTP / Steam TOTP | ✅ | ✅ | 含 `steam://` 支持 |
 | 多用户 | ✅ | ✅ | 支持邀请码注册 |
@@ -58,16 +58,21 @@
 
 ---
 
-## 网页部署
+## 可视化快速部署
 
-1. Fork `NodeWarden` 仓库到自己的 GitHub 账号
-2. 进入  [Cloudflare Workers 创建页面](https://dash.cloudflare.com/?to=/:account/workers-and-pages/create)
-3. 选择 `Continue with GitHub`
-4. 选择你刚刚 Fork 的仓库
-5. 保持默认配置继续部署
-6. 如果你打算用 KV 模式，把部署命令改成 `npm run deploy:kv`
-7. 等部署完成后，打开生成的 Workers 域名
-8. 根据页面提示设置`JWT_SECRET` ，不建议临时乱填。这个值直接关系到令牌签发安全，正式环境至少使用 32 个字符以上的随机字符串。
+1. Fork NodeWarden 仓库到自己的 GitHub 账号
+2. 进入 [Cloudflare Workers & Pages](https://dash.cloudflare.com/?to=/:account/workers-and-pages/create)
+3. 选择 Continue with GitHub 并选择你的仓库
+4. 构建命令填 `npm run build`，部署命令填 `npm run deploy`
+- 如果你打算用 KV 模式，把部署命令改成 `npm run deploy:kv`
+5. 等部署完成后，打开生成的 Workers 域名
+
+- Workers 默认域名在部分网络环境不可直连。如需自定义域名，到 [Workers 设置](https://dash.cloudflare.com/?to=/:account/workers/services/view/nodewarden/production/settings)里添加。
+
+- 页面提示缺少 `JWT_SECRET` 时，到 Workers 设置里添加 Secret。正式环境至少使用 32 个字符以上的随机字符串，不要使用临时值或示例值。
+
+- 这套流程里，用户实际做的是把代码交给 Cloudflare 构建并部署。代码里的 `wrangler.toml` 或 `wrangler.kv.toml` 决定绑定名，Worker 第一次处理请求时会自动初始化 D1 schema，不需要用户上传 SQL。
+
 
 > [!TIP] 
 > 默认R2与可选KV的区别：

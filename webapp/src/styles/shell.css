@@ -316,6 +316,12 @@
   overflow: hidden;
 }
 
+.route-stage-log-fixed {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  overflow: hidden;
+}
+
 .mobile-sidebar-mask {
   @apply pointer-events-none invisible fixed inset-0 opacity-0;
   background: rgba(15, 23, 42, 0.36);

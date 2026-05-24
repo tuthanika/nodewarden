@@ -19,7 +19,7 @@ interface CiphersImportRequest {
     sshKey?: any | null;
     key?: string | null;
     login?: {
-      uris?: Array<{ uri: string | null; match?: number | null }> | null;
+      uris?: Array<{ uri: string | null; uriChecksum?: string | null; match?: number | null }> | null;
       username?: string | null;
       password?: string | null;
       totp?: string | null;
@@ -195,7 +195,7 @@ export async function handleCiphersImport(request: Request, env: Env, userId: st
         uris: login.uris?.map((u: any) => ({
           ...u,
           uri: u.uri ?? null,
-          uriChecksum: null,
+          uriChecksum: u.uriChecksum ?? null,
           match: u.match ?? null,
         })) || null,
         totp: login.totp ?? null,

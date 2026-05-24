@@ -14,6 +14,7 @@ import {
   formatAttachmentSize,
   formatHistoryTime,
   formatTotp,
+  isCipherDeleted,
   maskSecret,
   openUri,
   parseFieldType,
@@ -36,6 +37,7 @@ interface VaultDetailViewProps {
   onDownloadAttachment: (cipher: Cipher, attachmentId: string) => void;
   onStartEdit: () => void;
   onDelete: (cipher: Cipher) => void;
+  onRestore: (cipher: Cipher) => void | Promise<void>;
   onArchive: (cipher: Cipher) => void | Promise<void>;
   onUnarchive: (cipher: Cipher) => void | Promise<void>;
 }
@@ -84,6 +86,7 @@ export default function VaultDetailView(props: VaultDetailViewProps) {
   const [showSshPrivateKey, setShowSshPrivateKey] = useState(false);
   const [passwordHistoryOpen, setPasswordHistoryOpen] = useState(false);
   const isArchived = !!(props.selectedCipher.archivedDate || (props.selectedCipher as { archivedAt?: string | null }).archivedAt);
+  const isDeleted = isCipherDeleted(props.selectedCipher);
   const passwordHistoryEntries = useMemo(
     () =>
       (props.selectedCipher.passwordHistory || [])
@@ -446,21 +449,29 @@ export default function VaultDetailView(props: VaultDetailViewProps) {
 
           <div className="detail-actions">
             <div className="actions">
-              <button type="button" className="btn btn-secondary" onClick={props.onStartEdit}>
-                <Pencil size={14} className="btn-icon" /> {t('txt_edit')}
-              </button>
-              {isArchived ? (
-                <button type="button" className="btn btn-secondary" onClick={() => void props.onUnarchive(props.selectedCipher)}>
-                  <RotateCcw size={14} className="btn-icon" /> {t('txt_unarchive')}
+              {isDeleted ? (
+                <button type="button" className="btn btn-secondary" onClick={() => void props.onRestore(props.selectedCipher)}>
+                  <RotateCcw size={14} className="btn-icon" /> {t('txt_restore')}
                 </button>
               ) : (
-                <button type="button" className="btn btn-secondary" onClick={() => void props.onArchive(props.selectedCipher)}>
-                  <Archive size={14} className="btn-icon" /> {t('txt_archive')}
-                </button>
+                <>
+                  <button type="button" className="btn btn-secondary" onClick={props.onStartEdit}>
+                    <Pencil size={14} className="btn-icon" /> {t('txt_edit')}
+                  </button>
+                  {isArchived ? (
+                    <button type="button" className="btn btn-secondary" onClick={() => void props.onUnarchive(props.selectedCipher)}>
+                      <RotateCcw size={14} className="btn-icon" /> {t('txt_unarchive')}
+                    </button>
+                  ) : (
+                    <button type="button" className="btn btn-secondary" onClick={() => void props.onArchive(props.selectedCipher)}>
+                      <Archive size={14} className="btn-icon" /> {t('txt_archive')}
+                    </button>
+                  )}
+                </>
               )}
             </div>
             <button type="button" className="btn btn-danger" onClick={() => props.onDelete(props.selectedCipher)}>
-              <Trash2 size={14} className="btn-icon" /> {t('txt_delete')}
+              <Trash2 size={14} className="btn-icon" /> {isDeleted ? t('txt_delete_permanently') : t('txt_delete')}
             </button>
           </div>
         </>

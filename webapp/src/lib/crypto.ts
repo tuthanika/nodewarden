@@ -22,6 +22,12 @@ export function toBufferSource(bytes: Uint8Array): ArrayBuffer {
   return new Uint8Array(bytes).buffer;
 }
 
+export async function sha256Base64(value: string): Promise<string> {
+  const bytes = new TextEncoder().encode(value);
+  const hash = await crypto.subtle.digest('SHA-256', toBufferSource(bytes));
+  return bytesToBase64(new Uint8Array(hash));
+}
+
 const hmacSha256KeyCache = new WeakMap<Uint8Array, Promise<CryptoKey>>();
 const aesCbcEncryptKeyCache = new WeakMap<Uint8Array, Promise<CryptoKey>>();
 const aesCbcDecryptKeyCache = new WeakMap<Uint8Array, Promise<CryptoKey>>();

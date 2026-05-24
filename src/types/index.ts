@@ -10,7 +10,6 @@ export interface Env {
   // Optional fallback for attachment/send file storage (no credit card required).
   ATTACHMENTS_KV?: KVNamespace;
   JWT_SECRET: string;
-  TOTP_SECRET?: string;
 }
 
 export type UserRole = 'admin' | 'user';
@@ -96,9 +95,13 @@ export interface Invite {
 export interface AuditLog {
   id: string;
   actorUserId: string | null;
+  actorEmail?: string | null;
   action: string;
+  category: 'auth' | 'security' | 'device' | 'data' | 'system';
+  level: 'info' | 'warn' | 'error' | 'security';
   targetType: string | null;
   targetId: string | null;
+  targetUserEmail?: string | null;
   metadata: string | null;
   createdAt: string;
 }

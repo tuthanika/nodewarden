@@ -14,6 +14,7 @@ import {
   buildAccountKeys,
   buildUserDecryptionOptions,
 } from '../utils/user-decryption';
+import { auditRequestMetadata, safeWriteAuditEvent } from '../services/audit-events';
 
 const TWO_FACTOR_REMEMBER_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const TWO_FACTOR_PROVIDER_AUTHENTICATOR = 0;
@@ -30,6 +31,17 @@ function resolveTotpSecret(userSecret: string | null): string | null {
     return userSecret;
   }
   return null;
+}
+
+async function resolveDeviceSession(
+  storage: StorageService,
+  userId: string,
+  deviceInfo: ReturnType<typeof readAuthRequestDeviceInfo>
+): Promise<{ identifier: string; sessionStamp: string } | null> {
+  if (!deviceInfo.deviceIdentifier) return null;
+  const existingDevice = await storage.getDevice(userId, deviceInfo.deviceIdentifier);
+  const sessionStamp = String(existingDevice?.sessionStamp || '').trim() || generateUUID();
+  return { identifier: deviceInfo.deviceIdentifier, sessionStamp };
 }
 
 function shouldUseWebSession(request: Request): boolean {
@@ -215,7 +227,7 @@ export async function handleToken(request: Request, env: Env): Promise<Response>
     const twoFactorToken = body.twoFactorToken;
     const twoFactorProvider = body.twoFactorProvider;
     const twoFactorRemember = body.twoFactorRemember;
-    const loginIdentifier = `${clientIdentifier}:${email}`;
+    const loginIdentifier = clientIdentifier;
     const deviceInfo = readAuthRequestDeviceInfo(body, request);
 
     if (!email || !passwordHash) {
@@ -240,11 +252,37 @@ export async function handleToken(request: Request, env: Env): Promise<Response>
     }
     if (user.status !== 'active') {
       await rateLimit.recordFailedLogin(loginIdentifier);
+      await safeWriteAuditEvent(env, {
+        actorUserId: user.id,
+        action: 'auth.login.failed.user_inactive',
+        category: 'auth',
+        level: 'warn',
+        targetType: 'user',
+        targetId: user.id,
+        metadata: {
+          grantType,
+          deviceIdentifier: deviceInfo.deviceIdentifier,
+          ...auditRequestMetadata(request),
+        },
+      });
       return identityErrorResponse('Account is disabled', 'invalid_grant', 400);
     }
 
     const valid = await auth.verifyPassword(passwordHash, user.masterPasswordHash, user.email);
     if (!valid) {
+      await safeWriteAuditEvent(env, {
+        actorUserId: user.id,
+        action: 'auth.login.failed.bad_password',
+        category: 'auth',
+        level: 'warn',
+        targetType: 'user',
+        targetId: user.id,
+        metadata: {
+          grantType,
+          deviceIdentifier: deviceInfo.deviceIdentifier,
+          ...auditRequestMetadata(request),
+        },
+      });
       return recordFailedLoginAndBuildResponse(
         rateLimit,
         loginIdentifier,
@@ -320,10 +358,7 @@ export async function handleToken(request: Request, env: Env): Promise<Response>
     }
 
     // Persist device only after successful password + (optional) 2FA verification.
-    const deviceSession =
-      deviceInfo.deviceIdentifier
-        ? { identifier: deviceInfo.deviceIdentifier, sessionStamp: generateUUID() }
-        : null;
+    const deviceSession = await resolveDeviceSession(storage, user.id, deviceInfo);
     if (deviceSession) {
       await storage.upsertDevice(
         user.id,
@@ -341,6 +376,21 @@ export async function handleToken(request: Request, env: Env): Promise<Response>
     const refreshToken = await auth.generateRefreshToken(user.id, deviceSession);
     const accountKeys = buildAccountKeys(user);
     const userDecryptionOptions = buildUserDecryptionOptions(user);
+    await safeWriteAuditEvent(env, {
+      actorUserId: user.id,
+      action: 'auth.login.success',
+      category: 'auth',
+      level: 'info',
+      targetType: 'user',
+      targetId: user.id,
+      metadata: {
+        grantType,
+        webSession: shouldUseWebSession(request),
+        deviceIdentifier: deviceSession?.identifier ?? deviceInfo.deviceIdentifier,
+        deviceType: deviceInfo.deviceType,
+        ...auditRequestMetadata(request),
+      },
+    });
 
     const response: TokenResponse = {
       access_token: accessToken,
@@ -380,7 +430,7 @@ export async function handleToken(request: Request, env: Env): Promise<Response>
     const scope = body.scope;
     const deviceInfo = readAuthRequestDeviceInfo(body, request);
 
-    const loginIdentifier = `${clientIdentifier}:${clientId}`;
+    const loginIdentifier = clientIdentifier;
     const parmValid = checkClientCredentialsParam(clientId, clientSecret, scope);
     if (!parmValid) {
       return identityErrorResponse('Parameter error', 'invalid_request', 400);
@@ -404,19 +454,42 @@ export async function handleToken(request: Request, env: Env): Promise<Response>
     }
     if (user.status !== 'active') {
       await rateLimit.recordFailedLogin(loginIdentifier);
+      await safeWriteAuditEvent(env, {
+        actorUserId: user.id,
+        action: 'auth.login.failed.user_inactive',
+        category: 'auth',
+        level: 'warn',
+        targetType: 'user',
+        targetId: user.id,
+        metadata: {
+          grantType,
+          deviceIdentifier: deviceInfo.deviceIdentifier,
+          ...auditRequestMetadata(request),
+        },
+      });
       return identityErrorResponse('Account is disabled', 'invalid_grant', 400);
     }
 
     if (!user.apiKey || !constantTimeEquals(clientSecret, user.apiKey)) {
       await rateLimit.recordFailedLogin(loginIdentifier);
+      await safeWriteAuditEvent(env, {
+        actorUserId: user.id,
+        action: 'auth.login.failed.bad_api_key',
+        category: 'auth',
+        level: 'warn',
+        targetType: 'user',
+        targetId: user.id,
+        metadata: {
+          grantType,
+          deviceIdentifier: deviceInfo.deviceIdentifier,
+          ...auditRequestMetadata(request),
+        },
+      });
       return identityErrorResponse('ClientId or clientSecret is incorrect. Try again', 'invalid_grant', 400);
     }
 
     // Persist device only after successful client credential verification.
-    const deviceSession =
-      deviceInfo.deviceIdentifier
-        ? { identifier: deviceInfo.deviceIdentifier, sessionStamp: generateUUID() }
-        : null;
+    const deviceSession = await resolveDeviceSession(storage, user.id, deviceInfo);
     if (deviceSession) {
       await storage.upsertDevice(
         user.id,
@@ -434,6 +507,21 @@ export async function handleToken(request: Request, env: Env): Promise<Response>
     const refreshToken = await auth.generateRefreshToken(user.id, deviceSession);
     const accountKeys = buildAccountKeys(user);
     const userDecryptionOptions = buildUserDecryptionOptions(user);
+    await safeWriteAuditEvent(env, {
+      actorUserId: user.id,
+      action: 'auth.login.success',
+      category: 'auth',
+      level: 'info',
+      targetType: 'user',
+      targetId: user.id,
+      metadata: {
+        grantType,
+        webSession: shouldUseWebSession(request),
+        deviceIdentifier: deviceSession?.identifier ?? deviceInfo.deviceIdentifier,
+        deviceType: deviceInfo.deviceType,
+        ...auditRequestMetadata(request),
+      },
+    });
 
     const response: TokenResponse = {
       access_token: accessToken,
@@ -538,8 +626,22 @@ export async function handleToken(request: Request, env: Env): Promise<Response>
       return identityErrorResponse('Refresh token is required', 'invalid_request', 400);
     }
 
-    const result = await auth.refreshAccessToken(refreshToken);
-    if (!result) {
+    const result = await auth.refreshAccessTokenDetailed(refreshToken);
+    if (!result.ok) {
+      await safeWriteAuditEvent(env, {
+        actorUserId: result.userId ?? null,
+        action: `auth.refresh.failed.${result.reason}`,
+        category: 'auth',
+        level: 'warn',
+        targetType: result.deviceIdentifier ? 'device' : 'refreshToken',
+        targetId: result.deviceIdentifier ?? null,
+        metadata: {
+          grantType,
+          reason: result.reason,
+          webSession: shouldUseWebSession(request),
+          ...auditRequestMetadata(request),
+        },
+      });
       const invalidResponse = identityErrorResponse('Invalid refresh token', 'invalid_grant', 400);
       return shouldUseWebSession(request)
         ? withWebRefreshCookie(request, invalidResponse, null)

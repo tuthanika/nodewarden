@@ -18,8 +18,6 @@
 .dialog-card,
 .card,
 .list-panel,
-.sidebar-block,
-.settings-subcard,
 .backup-operations-sidebar,
 .backup-destination-sidebar,
 .backup-detail-panel,
@@ -110,7 +108,6 @@
 :root[data-theme='dark'] .dialog-card,
 :root[data-theme='dark'] .card,
 :root[data-theme='dark'] .list-panel,
-:root[data-theme='dark'] .sidebar-block,
 :root[data-theme='dark'] .settings-subcard,
 :root[data-theme='dark'] .backup-operations-sidebar,
 :root[data-theme='dark'] .backup-destination-sidebar,
@@ -423,7 +420,6 @@ h4 {
 .dialog-card,
 .card,
 .list-panel,
-.sidebar-block,
 .settings-subcard,
 .backup-operations-sidebar,
 .backup-destination-sidebar,
@@ -659,6 +655,40 @@ h4 {
   padding: 14px;
 }
 
+.route-stage,
+.sidebar,
+.list-panel,
+.detail-col,
+.log-list,
+.card.log-detail-panel,
+.domain-rules-table,
+.route-stage-fixed {
+  scrollbar-gutter: stable;
+}
+
+.route-stage,
+.sidebar {
+  margin-right: -4px;
+  padding-right: 4px;
+}
+
+.list-panel,
+.detail-col {
+  margin-right: -4px;
+  padding-right: 12px;
+}
+
+.log-list,
+.domain-rules-table {
+  margin-right: -4px;
+  padding-right: calc(0.125rem + 4px);
+}
+
+.card.log-detail-panel {
+  margin-right: -4px;
+  padding-right: 18px;
+}
+
 .card h4,
 .settings-module h3,
 .section-head h3,
@@ -798,7 +828,6 @@ h4 {
 :root[data-theme='dark'] .dialog-card,
 :root[data-theme='dark'] .card,
 :root[data-theme='dark'] .list-panel,
-:root[data-theme='dark'] .sidebar-block,
 :root[data-theme='dark'] .settings-subcard,
 :root[data-theme='dark'] .backup-operations-sidebar,
 :root[data-theme='dark'] .backup-destination-sidebar,
@@ -892,6 +921,32 @@ h4 {
 
   .vault-grid {
     gap: 8px;
+  }
+
+  .route-stage,
+  .sidebar,
+  .list-panel,
+  .detail-col,
+  .log-list,
+  .card.log-detail-panel,
+  .domain-rules-table,
+  .route-stage-fixed {
+    margin-right: 0;
+    scrollbar-gutter: auto;
+  }
+
+  .route-stage,
+  .sidebar {
+    padding-right: 0;
+  }
+
+  .log-list,
+  .domain-rules-table {
+    padding-right: 0.125rem;
+  }
+
+  .card.log-detail-panel {
+    padding-right: 14px;
   }
 
   .settings-modules-grid {
@@ -1098,7 +1153,6 @@ input[type='file'].input::file-selector-button {
   padding: 12px;
   border: 1px solid var(--line-soft);
   border-radius: var(--radius-lg);
-  background: var(--panel-soft);
 }
 
 .invite-create-group {
@@ -1131,7 +1185,6 @@ input[type='file'].input::file-selector-button {
 .invite-table th {
   height: 42px;
   padding: 9px 10px;
-  background: var(--panel-soft);
   font-size: 13px;
   font-weight: 800;
 }

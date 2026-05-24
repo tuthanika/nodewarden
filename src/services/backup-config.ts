@@ -409,13 +409,6 @@ export async function loadBackupSettings(storage: StorageService, env: Env, fall
 
 export async function saveBackupSettings(storage: StorageService, env: Env, settings: BackupSettings): Promise<void> {
   const users = await storage.getAllUsers();
-  const hasPortableAdmins = users.some(
-    (user) => user.role === 'admin' && user.status === 'active' && typeof user.publicKey === 'string' && user.publicKey.trim().length > 0
-  );
-  if (!hasPortableAdmins) {
-    await storage.setConfigValue(BACKUP_SETTINGS_CONFIG_KEY, serializeBackupSettings(settings));
-    return;
-  }
   const encrypted = await encryptBackupSettingsEnvelope(serializeBackupSettings(settings), env, users);
   await storage.setConfigValue(BACKUP_SETTINGS_CONFIG_KEY, encrypted);
 }
@@ -442,12 +435,6 @@ export async function normalizeImportedBackupSettingsValue(
     try {
       const decrypted = await decryptBackupSettingsRuntime(raw, env);
       const settings = parseBackupSettings(decrypted, fallbackTimezone);
-      const hasPortableAdmins = users.some(
-        (user) => user.role === 'admin' && user.status === 'active' && typeof user.publicKey === 'string' && user.publicKey.trim().length > 0
-      );
-      if (!hasPortableAdmins) {
-        return serializeBackupSettings(settings);
-      }
       return encryptBackupSettingsEnvelope(serializeBackupSettings(settings), env, users);
     } catch {
       // Keep imported portable recovery data intact until an admin signs in and repairs it.
@@ -455,12 +442,6 @@ export async function normalizeImportedBackupSettingsValue(
     }
   }
   const settings = parseBackupSettings(raw, fallbackTimezone);
-  const hasPortableAdmins = users.some(
-    (user) => user.role === 'admin' && user.status === 'active' && typeof user.publicKey === 'string' && user.publicKey.trim().length > 0
-  );
-  if (!hasPortableAdmins) {
-    return serializeBackupSettings(settings);
-  }
   return encryptBackupSettingsEnvelope(serializeBackupSettings(settings), env, users);
 }
 

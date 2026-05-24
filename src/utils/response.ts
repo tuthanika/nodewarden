@@ -38,17 +38,19 @@ function isWildcardCorsPath(path: string): boolean {
 function getCorsPolicy(request: Request): { allowOrigin: string | null; allowCredentials: boolean } {
   const url = new URL(request.url);
   const origin = request.headers.get('Origin');
-  if (isWildcardCorsPath(url.pathname)) {
-    return { allowOrigin: '*', allowCredentials: false };
-  }
   if (!origin) {
-    return { allowOrigin: null, allowCredentials: false };
+    return isWildcardCorsPath(url.pathname)
+      ? { allowOrigin: '*', allowCredentials: false }
+      : { allowOrigin: null, allowCredentials: false };
   }
   if (origin === url.origin) {
     return { allowOrigin: origin, allowCredentials: true };
   }
   if (isExtensionOrigin(origin)) {
     return { allowOrigin: origin, allowCredentials: true };
+  }
+  if (isWildcardCorsPath(url.pathname)) {
+    return { allowOrigin: '*', allowCredentials: false };
   }
   return { allowOrigin: null, allowCredentials: false };
 }

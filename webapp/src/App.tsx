@@ -22,9 +22,10 @@ import {
   saveSession,
   stripProfileSecrets,
 } from '@/lib/api/auth';
-import { listAdminInvites, listAdminUsers } from '@/lib/api/admin';
+import { clearAuditLogs, getAuditLogSettings, listAdminInvites, listAdminUsers, listAuditLogs, saveAuditLogSettings, type AuditLogFilters } from '@/lib/api/admin';
 import { getDomainRules, saveDomainRules } from '@/lib/api/domains';
 import { getSends } from '@/lib/api/send';
+import { repairCipherKeyMismatches, repairCipherUriChecksums } from '@/lib/api/vault';
 import { getCachedVaultCoreSnapshot, loadVaultCoreSyncSnapshot } from '@/lib/api/vault-sync';
 import { silentlyRepairBackupSettingsIfNeeded } from '@/lib/backup-settings-repair';
 import {
@@ -69,7 +70,7 @@ import {
   createDemoMainRoutesProps,
 } from '@/lib/demo';
 import type { AdminBackupSettings } from '@/lib/api/backup';
-import type { AdminInvite, AdminUser, AppPhase, AuthorizedDevice, Cipher, CustomEquivalentDomain, DomainRules, Folder as VaultFolder, Profile, Send, SessionState } from '@/lib/types';
+import type { AdminInvite, AdminUser, AppPhase, AuditLogSettings, AuthorizedDevice, Cipher, CustomEquivalentDomain, DomainRules, Folder as VaultFolder, Profile, Send, SessionState } from '@/lib/types';
 import type { VaultCoreSnapshot } from '@/lib/vault-cache';
 
 function isBackupProgressDetail(value: unknown): value is BackupProgressDetail {
@@ -96,6 +97,7 @@ const APP_ROUTE_PATHS = [
   '/vault/totp',
   '/sends',
   '/admin',
+  '/logs',
   '/security/devices',
   '/backup',
   '/settings',
@@ -144,7 +146,9 @@ function resolveSystemTheme(): 'light' | 'dark' {
 
 function readLockTimeoutMinutes(): LockTimeoutMinutes {
   if (typeof window === 'undefined') return 15;
-  const value = Number(window.localStorage.getItem(LOCK_TIMEOUT_STORAGE_KEY));
+  const stored = window.localStorage.getItem(LOCK_TIMEOUT_STORAGE_KEY);
+  if (stored === null || stored.trim() === '') return 15;
+  const value = Number(stored);
   return LOCK_TIMEOUT_VALUES.has(value as LockTimeoutMinutes) ? (value as LockTimeoutMinutes) : 15;
 }
 
@@ -228,6 +232,7 @@ export default function App() {
   const silentRefreshVaultRef = useRef<() => Promise<void>>(async () => {});
   const refreshAuthorizedDevicesRef = useRef<() => Promise<void>>(async () => {});
   const repairAttemptRef = useRef<string>('');
+  const uriChecksumRepairAttemptRef = useRef<string>('');
   const pendingVaultCoreQueryRefreshRef = useRef<Promise<{ data?: VaultCoreSnapshot } | unknown> | null>(null);
   const pendingVaultCoreRefreshRef = useRef<Promise<unknown> | null>(null);
   const notificationRefreshTimerRef = useRef<number | null>(null);
@@ -1037,6 +1042,7 @@ export default function App() {
   useEffect(() => {
     if (session?.accessToken) return;
     repairAttemptRef.current = '';
+    uriChecksumRepairAttemptRef.current = '';
   }, [session?.accessToken]);
 
   useEffect(() => {
@@ -1077,6 +1083,20 @@ export default function App() {
         setDecryptedFolders(result.folders);
         setDecryptedCiphers(result.ciphers);
         setVaultInitialDecryptDone(true);
+        const repairKey = `${session.accessToken}:${encryptedCiphers.map((cipher) => `${cipher.id}:${cipher.revisionDate || ''}`).join(',')}`;
+        if (uriChecksumRepairAttemptRef.current !== repairKey) {
+          uriChecksumRepairAttemptRef.current = repairKey;
+          void Promise.all([
+            repairCipherKeyMismatches(authedFetch, session, result.ciphers),
+            repairCipherUriChecksums(authedFetch, session, result.ciphers),
+          ])
+            .then(([keyMismatchCount, uriChecksumCount]) => {
+              if (keyMismatchCount + uriChecksumCount > 0) void refetchVaultCoreData();
+            })
+            .catch(() => {
+              // Best-effort compatibility repair must not interrupt normal vault loading.
+            });
+        }
       } catch (error) {
         if (!active) return;
         const message = error instanceof Error ? error.message : t('txt_decrypt_failed_2');
@@ -1398,6 +1418,7 @@ export default function App() {
     if (location === '/vault/totp') return t('txt_verification_code');
     if (location === '/sends') return t('nav_sends');
     if (location === '/admin') return t('nav_admin_panel');
+    if (location === '/logs') return t('nav_log_center');
     if (location === '/security/devices') return t('nav_device_management');
     if (location === SETTINGS_DOMAIN_RULES_ROUTE) return t('nav_domain_rules');
     if (location === '/backup') return t('nav_backup_strategy');
@@ -1424,7 +1445,7 @@ export default function App() {
   }, [phase, isImportHashRoute, location, navigate]);
 
   useEffect(() => {
-    if (phase === 'app' && !isAdminProfile(profile) && location === '/backup' && !profileQuery.isFetching) {
+    if (phase === 'app' && !isAdminProfile(profile) && (location === '/backup' || location === '/logs') && !profileQuery.isFetching) {
       navigate('/vault');
     }
   }, [phase, profile?.role, profileQuery.isFetching, location, navigate]);
@@ -1475,6 +1496,7 @@ export default function App() {
     onDeleteVaultItem: vaultSendActions.deleteVaultItem,
     onArchiveVaultItem: vaultSendActions.archiveVaultItem,
     onUnarchiveVaultItem: vaultSendActions.unarchiveVaultItem,
+    onRestoreVaultItems: vaultSendActions.bulkRestoreVaultItems,
     onBulkDeleteVaultItems: vaultSendActions.bulkDeleteVaultItems,
     onBulkPermanentDeleteVaultItems: vaultSendActions.bulkPermanentDeleteVaultItems,
     onBulkRestoreVaultItems: vaultSendActions.bulkRestoreVaultItems,
@@ -1527,6 +1549,10 @@ export default function App() {
     onToggleUserStatus: adminActions.toggleUserStatus,
     onDeleteUser: adminActions.deleteUser,
     onRevokeInvite: adminActions.revokeInvite,
+    onLoadAuditLogs: (filters: AuditLogFilters) => listAuditLogs(authedFetch, filters),
+    onLoadAuditLogSettings: () => getAuditLogSettings(authedFetch),
+    onSaveAuditLogSettings: (settings: AuditLogSettings) => saveAuditLogSettings(authedFetch, settings),
+    onClearAuditLogs: () => clearAuditLogs(authedFetch),
     onExportBackup: backupActions.exportBackup,
     onImportBackup: backupActions.importBackup,
     onImportBackupAllowingChecksumMismatch: backupActions.importBackupAllowingChecksumMismatch,

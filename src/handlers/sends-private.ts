@@ -29,6 +29,28 @@ import {
   setSendPassword,
   validateDeletionDate,
 } from './sends-shared';
+import { auditRequestMetadata, writeAuditEvent } from '../services/audit-events';
+
+async function writeSendAudit(
+  storage: StorageService,
+  request: Request,
+  userId: string,
+  action: string,
+  metadata: Record<string, unknown>
+): Promise<void> {
+  await writeAuditEvent(storage, {
+    actorUserId: userId,
+    action,
+    category: 'data',
+    level: action.includes('delete') ? 'security' : 'info',
+    targetType: 'send',
+    targetId: typeof metadata.id === 'string' ? metadata.id : null,
+    metadata: {
+      ...metadata,
+      ...auditRequestMetadata(request),
+    },
+  });
+}
 
 async function processSendFileUpload(
   request: Request,
@@ -602,7 +624,6 @@ export async function handleUpdateSend(request: Request, env: Env, userId: strin
 }
 
 export async function handleDeleteSend(request: Request, env: Env, userId: string, sendId: string): Promise<Response> {
-  void request;
   const storage = new StorageService(env.DB);
   const send = await storage.getSend(sendId);
   if (!send || send.userId !== userId) {
@@ -620,6 +641,10 @@ export async function handleDeleteSend(request: Request, env: Env, userId: strin
   await storage.deleteSend(sendId, userId);
   const revisionDate = await storage.updateRevisionDate(userId);
   notifyVaultSyncForRequest(request, env, userId, revisionDate);
+  await writeSendAudit(storage, request, userId, 'send.delete', {
+    id: sendId,
+    type: send.type,
+  });
 
   return new Response(null, { status: 200 });
 }
@@ -651,13 +676,16 @@ export async function handleBulkDeleteSends(request: Request, env: Env, userId: 
   const revisionDate = await storage.bulkDeleteSends(body.ids, userId);
   if (revisionDate) {
     notifyVaultSyncForRequest(request, env, userId, revisionDate);
+    await writeSendAudit(storage, request, userId, 'send.delete.bulk', {
+      count: sends.length,
+      requestedCount: body.ids.length,
+    });
   }
 
   return new Response(null, { status: 200 });
 }
 
 export async function handleRemoveSendPassword(request: Request, env: Env, userId: string, sendId: string): Promise<Response> {
-  void request;
   const storage = new StorageService(env.DB);
   const send = await storage.getSend(sendId);
   if (!send || send.userId !== userId) {
@@ -669,12 +697,15 @@ export async function handleRemoveSendPassword(request: Request, env: Env, userI
   await storage.saveSend(send);
   const revisionDate = await storage.updateRevisionDate(userId);
   notifyVaultSyncForRequest(request, env, userId, revisionDate);
+  await writeSendAudit(storage, request, userId, 'send.password.remove', {
+    id: send.id,
+    type: send.type,
+  });
 
   return jsonResponse(sendToResponse(send));
 }
 
 export async function handleRemoveSendAuth(request: Request, env: Env, userId: string, sendId: string): Promise<Response> {
-  void request;
   const storage = new StorageService(env.DB);
   const send = await storage.getSend(sendId);
   if (!send || send.userId !== userId) {
@@ -687,6 +718,10 @@ export async function handleRemoveSendAuth(request: Request, env: Env, userId: s
   await storage.saveSend(send);
   const revisionDate = await storage.updateRevisionDate(userId);
   notifyVaultSyncForRequest(request, env, userId, revisionDate);
+  await writeSendAudit(storage, request, userId, 'send.auth.remove', {
+    id: send.id,
+    type: send.type,
+  });
 
   return jsonResponse(sendToResponse(send));
 }
