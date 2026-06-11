@@ -2,11 +2,13 @@ import { bytesToBase64, decryptBw, encryptBw, hkdfExpand, pbkdf2 } from '../cryp
 import { t, translateServerError } from '../i18n';
 import type { AuthorizedDevice } from '../types';
 import type {
+  AccountPasskeyCredential,
   Profile,
   SessionState,
   TokenError,
   TokenSuccess,
 } from '../types';
+import type { AccountPasskeyAssertion, AccountPasskeyPrfKeySet } from '../account-passkeys';
 import { parseJson, type AuthedFetch, type SessionSetter } from './shared';
 
 const SESSION_KEY = 'nodewarden.web.session.v4';
@@ -93,6 +95,12 @@ export function loadSession(): SessionState | null {
       return {
         email: parsed.email,
         authMode: 'web-cookie',
+      };
+    }
+    if (parsed.authMode === 'token' && parsed.email && !parsed.accessToken && !parsed.refreshToken) {
+      return {
+        email: parsed.email,
+        authMode: 'token',
       };
     }
     if (!parsed.accessToken || !parsed.refreshToken || !parsed.email) return null;
@@ -233,6 +241,7 @@ export async function loginWithPassword(
     totpCode?: string;
     rememberDevice?: boolean;
     useRememberToken?: boolean;
+    signal?: AbortSignal;
   }
 ): Promise<TokenSuccess | TokenError> {
   const body = new URLSearchParams();
@@ -262,6 +271,7 @@ export async function loginWithPassword(
       [WEB_SESSION_HEADER]: '1',
     },
     body: body.toString(),
+    signal: options?.signal,
   });
   const json = (await parseJson<TokenSuccess & TokenError>(resp)) || {};
   if (resp.ok) {
@@ -269,6 +279,40 @@ export async function loginWithPassword(
   } else if (rememberedToken) {
     clearRememberTwoFactorToken();
   }
+  if (!resp.ok) return json;
+  return json;
+}
+
+export async function getAccountPasskeyAssertionOptions(): Promise<{ options: unknown; token: string }> {
+  const resp = await fetch('/identity/accounts/webauthn/assertion-options');
+  if (!resp.ok) {
+    const json = await parseJson<TokenError>(resp);
+    throw new Error(translateServerError(json?.error_description || json?.error, t('txt_login_failed')));
+  }
+  const body = (await parseJson<{ options?: unknown; token?: string }>(resp)) || {};
+  if (!body.options || !body.token) throw new Error('Invalid passkey assertion options');
+  return { options: body.options, token: body.token };
+}
+
+export async function loginWithAccountPasskeyAssertion(assertion: AccountPasskeyAssertion): Promise<TokenSuccess | TokenError> {
+  const body = new URLSearchParams();
+  body.set('grant_type', 'webauthn');
+  body.set('token', assertion.token);
+  body.set('deviceResponse', JSON.stringify(assertion.deviceResponse));
+  body.set('scope', 'api offline_access');
+  body.set('deviceIdentifier', getOrCreateDeviceIdentifier());
+  body.set('deviceName', guessDeviceName());
+  body.set('deviceType', '14');
+
+  const resp = await fetch('/identity/connect/token', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      [WEB_SESSION_HEADER]: '1',
+    },
+    body: body.toString(),
+  });
+  const json = (await parseJson<TokenSuccess & TokenError>(resp)) || {};
   if (!resp.ok) return json;
   return json;
 }
@@ -450,9 +494,10 @@ export function createAuthedFetch(getSession: () => SessionState | null, setSess
     };
 
     const session = getSession();
-    if (!session?.accessToken) throw new Error('Unauthorized');
+    if (!session?.accessToken) throw new Error(t('txt_offline_vault_readonly'));
     const headers = new Headers(init.headers || {});
     headers.set('Authorization', `Bearer ${session.accessToken}`);
+    headers.set('X-NodeWarden-Web', '1');
 
     let resp = await retryableRequest(headers);
     if (resp.status !== 401 || (!session.refreshToken && session.authMode !== 'web-cookie')) return resp;
@@ -461,6 +506,7 @@ export function createAuthedFetch(getSession: () => SessionState | null, setSess
     if (latest?.accessToken && latest.accessToken !== session.accessToken) {
       const latestHeaders = new Headers(init.headers || {});
       latestHeaders.set('Authorization', `Bearer ${latest.accessToken}`);
+      latestHeaders.set('X-NodeWarden-Web', '1');
       resp = await retryableRequest(latestHeaders);
       if (resp.status !== 401) return resp;
     }
@@ -486,6 +532,7 @@ export function createAuthedFetch(getSession: () => SessionState | null, setSess
 
     const retryHeaders = new Headers(init.headers || {});
     retryHeaders.set('Authorization', `Bearer ${nextSession.accessToken}`);
+    retryHeaders.set('X-NodeWarden-Web', '1');
     resp = await retryableRequest(retryHeaders);
     return resp;
   };
@@ -591,6 +638,135 @@ export async function verifyMasterPassword(
   if (!resp.ok) {
     const body = await parseJson<TokenError>(resp);
     throw new Error(translateServerError(body?.error_description || body?.error, t('txt_master_password_verify_failed')));
+  }
+}
+
+function normalizeAccountPasskeyCredential(raw: any): AccountPasskeyCredential {
+  return {
+    id: String(raw?.id || raw?.Id || ''),
+    name: String(raw?.name || raw?.Name || ''),
+    prfStatus: Number(raw?.prfStatus ?? raw?.PrfStatus ?? 2) as 0 | 1 | 2,
+    encryptedPublicKey: raw?.encryptedPublicKey ?? raw?.EncryptedPublicKey ?? null,
+    encryptedUserKey: raw?.encryptedUserKey ?? raw?.EncryptedUserKey ?? null,
+    creationDate: raw?.creationDate ?? raw?.CreationDate,
+    revisionDate: raw?.revisionDate ?? raw?.RevisionDate,
+  };
+}
+
+export async function listAccountPasskeys(authedFetch: AuthedFetch): Promise<AccountPasskeyCredential[]> {
+  const resp = await authedFetch('/api/webauthn');
+  if (!resp.ok) throw new Error('Failed to load account passkeys');
+  const body = (await parseJson<{ data?: unknown[]; Data?: unknown[] }>(resp)) || {};
+  const rows = Array.isArray(body.data) ? body.data : Array.isArray(body.Data) ? body.Data : [];
+  return rows.map(normalizeAccountPasskeyCredential).filter((item) => item.id);
+}
+
+export async function getAccountPasskeyAttestationOptions(
+  authedFetch: AuthedFetch,
+  masterPasswordHash: string
+): Promise<{ options: unknown; token: string }> {
+  const resp = await authedFetch('/api/webauthn/attestation-options', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ masterPasswordHash }),
+  });
+  if (!resp.ok) {
+    const body = await parseJson<TokenError>(resp);
+    throw new Error(translateServerError(body?.error_description || body?.error, t('txt_master_password_verify_failed')));
+  }
+  const body = (await parseJson<{ options?: unknown; token?: string }>(resp)) || {};
+  if (!body.options || !body.token) throw new Error('Invalid passkey creation options');
+  return { options: body.options, token: body.token };
+}
+
+export async function getAccountPasskeyUpdateAssertionOptions(
+  authedFetch: AuthedFetch,
+  masterPasswordHash: string,
+  credentialId?: string
+): Promise<{ options: unknown; token: string }> {
+  const resp = await authedFetch('/api/webauthn/assertion-options', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ masterPasswordHash, credentialId }),
+  });
+  if (!resp.ok) {
+    const body = await parseJson<TokenError>(resp);
+    throw new Error(translateServerError(body?.error_description || body?.error, t('txt_master_password_verify_failed')));
+  }
+  const body = (await parseJson<{ options?: unknown; token?: string }>(resp)) || {};
+  if (!body.options || !body.token) throw new Error('Invalid passkey assertion options');
+  return { options: body.options, token: body.token };
+}
+
+export async function saveAccountPasskey(
+  authedFetch: AuthedFetch,
+  payload: {
+    name: string;
+    token: string;
+    deviceResponse: unknown;
+    supportsPrf: boolean;
+    keySet?: AccountPasskeyPrfKeySet | null;
+  }
+): Promise<AccountPasskeyCredential> {
+  const resp = await authedFetch('/api/webauthn', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name: payload.name,
+      token: payload.token,
+      deviceResponse: payload.deviceResponse,
+      supportsPrf: payload.supportsPrf,
+      encryptedUserKey: payload.keySet?.encryptedUserKey,
+      encryptedPublicKey: payload.keySet?.encryptedPublicKey,
+      encryptedPrivateKey: payload.keySet?.encryptedPrivateKey,
+    }),
+  });
+  if (!resp.ok) {
+    const body = await parseJson<TokenError>(resp);
+    throw new Error(translateServerError(body?.error_description || body?.error, t('txt_save_profile_failed')));
+  }
+  const body = await parseJson<unknown>(resp);
+  return normalizeAccountPasskeyCredential(body);
+}
+
+export async function enableAccountPasskeyDirectUnlock(
+  authedFetch: AuthedFetch,
+  payload: {
+    token: string;
+    deviceResponse: unknown;
+    keySet: AccountPasskeyPrfKeySet;
+  }
+): Promise<void> {
+  const resp = await authedFetch('/api/webauthn', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      token: payload.token,
+      deviceResponse: payload.deviceResponse,
+      encryptedUserKey: payload.keySet.encryptedUserKey,
+      encryptedPublicKey: payload.keySet.encryptedPublicKey,
+      encryptedPrivateKey: payload.keySet.encryptedPrivateKey,
+    }),
+  });
+  if (!resp.ok) {
+    const body = await parseJson<TokenError>(resp);
+    throw new Error(translateServerError(body?.error_description || body?.error, t('txt_save_profile_failed')));
+  }
+}
+
+export async function deleteAccountPasskey(
+  authedFetch: AuthedFetch,
+  id: string,
+  masterPasswordHash: string
+): Promise<void> {
+  const resp = await authedFetch(`/api/webauthn/${encodeURIComponent(id)}/delete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ masterPasswordHash }),
+  });
+  if (!resp.ok) {
+    const body = await parseJson<TokenError>(resp);
+    throw new Error(translateServerError(body?.error_description || body?.error, t('txt_delete_item_failed')));
   }
 }
 

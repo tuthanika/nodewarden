@@ -1,4 +1,5 @@
 import type { Send } from './types';
+import { getCurrentNetworkStatus } from './network-status';
 import type { DecryptSendsArgs, DecryptVaultCoreArgs, DecryptVaultCoreResult } from './vault-decrypt';
 
 type WorkerSuccess<T> = { id: number; ok: true; result: T };
@@ -12,6 +13,7 @@ const pending = new Map<number, { resolve: (value: any) => void; reject: (error:
 function getWorker(): Worker | null {
   if (typeof Worker === 'undefined') return null;
   if (worker) return worker;
+  if (getCurrentNetworkStatus() === 'offline') return null;
   worker = new Worker(new URL('../workers/vault-decrypt.worker.ts', import.meta.url), { type: 'module' });
   worker.addEventListener('message', (event: MessageEvent<WorkerResponse<unknown>>) => {
     const message = event.data;

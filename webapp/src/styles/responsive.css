@@ -54,6 +54,10 @@
     @apply text-2xl;
   }
 
+  .standalone-title-row {
+    padding-inline: 68px;
+  }
+
   .standalone-footer {
     @apply text-xs leading-[1.4];
   }
@@ -126,6 +130,14 @@
   .topbar-actions > .btn:not(.mobile-sidebar-toggle):not(.mobile-lock-btn),
   .topbar-actions > .theme-switch-wrap {
     @apply hidden;
+  }
+
+  .topbar-actions > .network-status-badge {
+    @apply h-8 px-2 text-[0];
+  }
+
+  .topbar-actions > .network-status-badge svg {
+    @apply m-0;
   }
 
   .mobile-sidebar-toggle,
@@ -898,6 +910,8 @@
   }
 
   .settings-module select.input {
+    padding-top: 0;
+    padding-bottom: 0;
     padding-right: 30px;
     background-position:
       calc(100% - 15px) calc(50% - 3px),
@@ -917,6 +931,21 @@
 
   .settings-module .actions {
     gap: 7px;
+  }
+
+  .account-passkey-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .account-passkey-status {
+    justify-self: flex-start;
+  }
+
+  .account-passkey-actions,
+  .account-passkey-actions .btn {
+    width: 100%;
   }
 
   .settings-module .totp-grid {

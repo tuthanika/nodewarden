@@ -9,6 +9,7 @@ import {
 } from './handlers/sends';
 import { handleKnownDevice } from './handlers/devices';
 import { handleToken, handlePrelogin, handleRevocation } from './handlers/identity';
+import { handleGetAccountPasskeyAssertionOptions } from './handlers/account-passkeys';
 import {
   handleRegister,
   handleGetPasswordHint,
@@ -420,6 +421,12 @@ export async function handlePublicRoute(
     const blocked = await enforcePublicRateLimit('public-sensitive', LIMITS.rateLimit.sensitivePublicRequestsPerMinute);
     if (blocked) return blocked;
     return handlePrelogin(request, env);
+  }
+
+  if (path === '/identity/accounts/webauthn/assertion-options' && method === 'GET') {
+    const blocked = await enforcePublicRateLimit('public-sensitive', LIMITS.rateLimit.sensitivePublicRequestsPerMinute);
+    if (blocked) return blocked;
+    return handleGetAccountPasskeyAssertionOptions(request, env);
   }
 
   if ((path === '/identity/accounts/recover-2fa' || path === '/api/accounts/recover-2fa') && method === 'POST') {

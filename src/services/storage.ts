@@ -1,4 +1,4 @@
-import { User, Cipher, Folder, Attachment, Device, Invite, AuditLog, Send, TrustedDeviceTokenSummary, RefreshTokenRecord, CustomEquivalentDomain } from '../types';
+import { User, Cipher, Folder, Attachment, Device, Invite, AuditLog, Send, TrustedDeviceTokenSummary, RefreshTokenRecord, CustomEquivalentDomain, AccountPasskeyChallenge, AccountPasskeyChallengeScope, AccountPasskeyCredential } from '../types';
 import { LIMITS } from '../config/limits';
 import { ensureStorageSchema } from './storage-schema';
 import {
@@ -115,6 +115,18 @@ import {
   getUserDomainSettings as getStoredUserDomainSettings,
   saveUserDomainSettings as saveStoredUserDomainSettings,
 } from './storage-domain-rules-repo';
+import {
+  consumeAccountPasskeyChallenge as consumeStoredAccountPasskeyChallenge,
+  countAccountPasskeyCredentialsByUserId as countStoredAccountPasskeyCredentialsByUserId,
+  deleteAccountPasskeyCredential as deleteStoredAccountPasskeyCredential,
+  getAccountPasskeyCredentialByCredentialId as findStoredAccountPasskeyCredentialByCredentialId,
+  getAccountPasskeyCredentialById as findStoredAccountPasskeyCredentialById,
+  listAccountPasskeyCredentialsByUserId as listStoredAccountPasskeyCredentialsByUserId,
+  saveAccountPasskeyChallenge as saveStoredAccountPasskeyChallenge,
+  saveAccountPasskeyCredential as saveStoredAccountPasskeyCredential,
+  updateAccountPasskeyCounter as updateStoredAccountPasskeyCounter,
+  updateAccountPasskeyEncryption as updateStoredAccountPasskeyEncryption,
+} from './storage-account-passkey-repo';
 
 const TWO_FACTOR_REMEMBER_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const STORAGE_SCHEMA_VERSION_KEY = 'schema.version';
@@ -122,7 +134,8 @@ const STORAGE_SCHEMA_VERSION_KEY = 'schema.version';
 // Bump this whenever src/services/storage-schema.ts or migrations/0001_init.sql
 // changes. Existing D1 installs only rerun ensureStorageSchema() when this value
 // differs from config.schema.version.
-const STORAGE_SCHEMA_VERSION = '2026-05-14-lightweight-audit-logs';
+const STORAGE_SCHEMA_VERSION = '2026-06-09-account-passkeys';
+const REQUIRED_ACCOUNT_PASSKEY_TABLES = ['webauthn_credentials', 'webauthn_challenges'] as const;
 
 // D1-backed storage.
 // Contract:
@@ -151,6 +164,16 @@ export class StorageService {
    */
   private safeBind(stmt: D1PreparedStatement, ...values: any[]): D1PreparedStatement {
     return stmt.bind(...values.map(v => v === undefined ? null : v));
+  }
+
+  private async hasAccountPasskeyTables(): Promise<boolean> {
+    const placeholders = REQUIRED_ACCOUNT_PASSKEY_TABLES.map(() => '?').join(', ');
+    const result = await this.db
+      .prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name IN (${placeholders})`)
+      .bind(...REQUIRED_ACCOUNT_PASSKEY_TABLES)
+      .all<{ name: string }>();
+    const found = new Set((result.results || []).map((row) => row.name));
+    return REQUIRED_ACCOUNT_PASSKEY_TABLES.every((table) => found.has(table));
   }
 
   private sqlChunkSize(fixedBindCount: number): number {
@@ -196,7 +219,10 @@ export class StorageService {
 
     await this.db.prepare('CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT NOT NULL)').run();
     const schemaVersion = await getStoredConfigValue(this.db, STORAGE_SCHEMA_VERSION_KEY);
-    if (schemaVersion !== STORAGE_SCHEMA_VERSION) {
+    const schemaMissingRequiredTables = schemaVersion === STORAGE_SCHEMA_VERSION
+      ? !(await this.hasAccountPasskeyTables())
+      : true;
+    if (schemaVersion !== STORAGE_SCHEMA_VERSION || schemaMissingRequiredTables) {
       await ensureStorageSchema(this.db);
       await saveConfigValue(this.db, STORAGE_SCHEMA_VERSION_KEY, STORAGE_SCHEMA_VERSION);
     }
@@ -321,6 +347,73 @@ export class StorageService {
       new Date().toISOString()
     );
     await this.updateRevisionDate(userId);
+  }
+
+  // --- Account passkeys / WebAuthn login credentials ---
+
+  async saveAccountPasskeyCredential(credential: AccountPasskeyCredential): Promise<void> {
+    await saveStoredAccountPasskeyCredential(this.db, this.safeBind.bind(this), credential);
+  }
+
+  async getAccountPasskeyCredentialsByUserId(userId: string): Promise<AccountPasskeyCredential[]> {
+    return listStoredAccountPasskeyCredentialsByUserId(this.db, userId);
+  }
+
+  async getAccountPasskeyCredentialById(userId: string, id: string): Promise<AccountPasskeyCredential | null> {
+    return findStoredAccountPasskeyCredentialById(this.db, userId, id);
+  }
+
+  async getAccountPasskeyCredentialByCredentialId(credentialId: string): Promise<AccountPasskeyCredential | null> {
+    return findStoredAccountPasskeyCredentialByCredentialId(this.db, credentialId);
+  }
+
+  async countAccountPasskeyCredentialsByUserId(userId: string): Promise<number> {
+    return countStoredAccountPasskeyCredentialsByUserId(this.db, userId);
+  }
+
+  async updateAccountPasskeyCounter(
+    userId: string,
+    credentialId: string,
+    counter: number,
+    updatedAt: string = new Date().toISOString()
+  ): Promise<void> {
+    await updateStoredAccountPasskeyCounter(this.db, userId, credentialId, counter, updatedAt);
+  }
+
+  async updateAccountPasskeyEncryption(
+    userId: string,
+    credentialId: string,
+    encryptedUserKey: string,
+    encryptedPublicKey: string,
+    encryptedPrivateKey: string,
+    updatedAt: string = new Date().toISOString()
+  ): Promise<boolean> {
+    return updateStoredAccountPasskeyEncryption(
+      this.db,
+      userId,
+      credentialId,
+      encryptedUserKey,
+      encryptedPublicKey,
+      encryptedPrivateKey,
+      updatedAt
+    );
+  }
+
+  async deleteAccountPasskeyCredential(userId: string, id: string): Promise<boolean> {
+    return deleteStoredAccountPasskeyCredential(this.db, userId, id);
+  }
+
+  async saveAccountPasskeyChallenge(challenge: AccountPasskeyChallenge): Promise<void> {
+    await saveStoredAccountPasskeyChallenge(this.db, challenge);
+  }
+
+  async consumeAccountPasskeyChallenge(
+    challengeHash: string,
+    scope: AccountPasskeyChallengeScope,
+    userId: string | null,
+    nowMs: number = Date.now()
+  ): Promise<AccountPasskeyChallenge | null> {
+    return consumeStoredAccountPasskeyChallenge(this.db, challengeHash, scope, userId, nowMs);
   }
 
   // --- Ciphers ---

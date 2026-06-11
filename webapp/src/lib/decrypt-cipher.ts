@@ -1,4 +1,5 @@
 import { decryptStr, decryptBw } from './crypto';
+import { looksLikeCipherString } from './app-support';
 import type { Cipher } from './types';
 
 async function decryptCipherField(
@@ -22,7 +23,7 @@ async function decryptCipherField(
       // Preserve the old raw fallback for fields that are genuinely unreadable.
     }
   }
-  return value;
+  return looksLikeCipherString(value) ? '' : value;
 }
 
 export async function decryptSingleCipher(

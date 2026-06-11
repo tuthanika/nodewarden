@@ -9,6 +9,7 @@ import {
   subscribeWebsiteIconStatus,
 } from '@/lib/website-icon-cache';
 import { demoBrandIconUrl } from '@/lib/demo-brand-icons';
+import { getCurrentNetworkStatus, subscribeNetworkStatus } from '@/lib/network-status';
 import { firstCipherUri, hostFromUri, websiteIconUrl } from '@/lib/website-utils';
 
 const ICON_LOAD_ROOT_MARGIN = '180px 0px';
@@ -26,7 +27,10 @@ export default function WebsiteIcon(props: WebsiteIconProps) {
   const [shouldLoad, setShouldLoad] = useState(() => (host ? getWebsiteIconStatus(host) === 'loaded' : true));
   const [status, setStatus] = useState(() => (host ? getWebsiteIconStatus(host) : 'idle'));
   const [imageUrl, setImageUrl] = useState(() => (host ? getWebsiteIconImageUrl(host) : ''));
+  const [networkStatus, setNetworkStatus] = useState(getCurrentNetworkStatus);
   const demoIconUrl = SHOULD_LOAD_DEMO_BRAND_ICONS && host ? demoBrandIconUrl(host) : '';
+
+  useEffect(() => subscribeNetworkStatus(setNetworkStatus), []);
 
   useEffect(() => {
     if (!host) {
@@ -77,9 +81,10 @@ export default function WebsiteIcon(props: WebsiteIconProps) {
   useEffect(() => {
     if (SHOULD_LOAD_DEMO_BRAND_ICONS) return;
     if (demoIconUrl) return;
+    if (networkStatus !== 'online') return;
     if (!host || !src || !shouldLoad || status !== 'idle') return;
     beginWebsiteIconLoad(host, src);
-  }, [demoIconUrl, host, src, shouldLoad, status]);
+  }, [demoIconUrl, host, networkStatus, src, shouldLoad, status]);
 
   if (demoIconUrl) {
     return (

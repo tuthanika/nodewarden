@@ -451,7 +451,7 @@
 }
 
 .auth-card h1 {
-  @apply m-0 mb-1 text-center;
+  @apply m-0;
 }
 
 .standalone-eyebrow {
@@ -486,7 +486,17 @@
 }
 
 .standalone-title {
-  @apply m-0 mb-1 text-left text-3xl font-bold leading-tight tracking-normal;
+  @apply m-0 text-center text-3xl font-bold leading-tight tracking-normal;
+}
+
+.standalone-title-row {
+  @apply relative mb-1 flex min-h-9 items-center justify-center;
+  padding-inline: 84px;
+}
+
+.standalone-title-row > .network-status-badge {
+  @apply absolute right-0 top-1/2;
+  transform: translateY(-50%);
 }
 
 .standalone-muted {

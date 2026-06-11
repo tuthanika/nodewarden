@@ -3,6 +3,7 @@ import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { Link } from 'wouter';
 import AppMainRoutes from '@/components/AppMainRoutes';
+import NetworkStatusBadge from '@/components/NetworkStatusBadge';
 import ThemeSwitch from '@/components/ThemeSwitch';
 import type { AppMainRoutesProps } from '@/components/AppMainRoutes';
 import { t } from '@/lib/i18n';
@@ -237,6 +238,7 @@ export default function AppAuthenticatedShell(props: AppAuthenticatedShellProps)
             <span className="mobile-page-title">{props.currentPageTitle}</span>
           </div>
           <div className="topbar-actions">
+            <NetworkStatusBadge />
             <div className="user-chip">
               <ShieldUser size={16} />
               <span>{props.profile?.email}</span>

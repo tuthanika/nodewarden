@@ -2,6 +2,7 @@
 export interface Env {
   DB: D1Database;
   NOTIFICATIONS_HUB: DurableObjectNamespace;
+  BACKUP_TRANSFER_RUNNER: DurableObjectNamespace;
   ASSETS?: {
     fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
   };
@@ -10,6 +11,9 @@ export interface Env {
   // Optional fallback for attachment/send file storage (no credit card required).
   ATTACHMENTS_KV?: KVNamespace;
   JWT_SECRET: string;
+  WEBAUTHN_RP_ID?: string;
+  WEBAUTHN_RP_NAME?: string;
+  WEBAUTHN_ALLOWED_ORIGINS?: string;
 }
 
 export type UserRole = 'admin' | 'user';
@@ -233,6 +237,37 @@ export interface Device {
   updatedAt: string;
 }
 
+export type AccountPasskeyPrfStatus = 0 | 1 | 2;
+
+export interface AccountPasskeyCredential {
+  id: string;
+  userId: string;
+  name: string;
+  publicKey: string;
+  credentialId: string;
+  counter: number;
+  type: string | null;
+  aaGuid: string | null;
+  transports: string[] | null;
+  encryptedUserKey: string | null;
+  encryptedPublicKey: string | null;
+  encryptedPrivateKey: string | null;
+  supportsPrf: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type AccountPasskeyChallengeScope = 'Authentication' | 'CreateCredential' | 'UpdateKeySet';
+
+export interface AccountPasskeyChallenge {
+  challengeHash: string;
+  scope: AccountPasskeyChallengeScope;
+  userId: string | null;
+  expiresAt: number;
+  usedAt: number | null;
+  createdAt: number;
+}
+
 export interface DevicePendingAuthRequest {
   id: string;
   creationDate: string;
@@ -371,6 +406,14 @@ export interface MasterPasswordUnlock {
   Object: string;
 }
 
+export interface WebAuthnPrfDecryptionOption {
+  EncryptedPrivateKey: string;
+  EncryptedUserKey: string;
+  CredentialId: string;
+  Transports: string[];
+  Object?: string;
+}
+
 export interface UserDecryptionOptions {
   HasMasterPassword: boolean;
   Object: string;
@@ -378,6 +421,7 @@ export interface UserDecryptionOptions {
   MasterPasswordUnlock: MasterPasswordUnlock;
   TrustedDeviceOption: null;
   KeyConnectorOption: null;
+  WebAuthnPrfOption?: WebAuthnPrfDecryptionOption | null;
 }
 
 // API Response types
@@ -497,7 +541,8 @@ export interface SyncResponse {
     MasterPasswordUnlock: MasterPasswordUnlock | null;
     TrustedDeviceOption?: null;
     KeyConnectorOption?: null;
-    WebAuthnPrfOption?: null;
+    WebAuthnPrfOption?: WebAuthnPrfDecryptionOption | null;
+    WebAuthnPrfOptions?: WebAuthnPrfDecryptionOption[];
     Object?: string;
   } | null;
   // PascalCase for desktop/browser clients

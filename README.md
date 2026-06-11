@@ -34,16 +34,19 @@
 | 能力 | Bitwarden | NodeWarden | 说明 |
 |---|---|---|---|
 | 网页密码库 | ✅ | ✅ | **原创Web Vault界面** |
+| **PWA 支持** | ⚠️ 基础 | ✅ | **可安装、离线使用、App快捷方式** |
+| **Web Vault 离线查看** | ❌ | ✅ | **网页端支持离线查看保险库** |
+| **Passkey 登录** | ✅ | ✅ | **支持WebAuthn/FIDO2无密码登录** |
 | 全量同步 `/api/sync` | ✅ | ✅ | 已针对官方客户端做兼容优化 |
 | 附件上传 / 下载 | ✅ | ✅ | Cloudflare R2 或 KV |
 | Send | ✅ | ✅ | 支持文本与文件 Send |
 | 导入 / 导出 | ✅ | ✅ | 支持 Bitwarden JSON / CSV / **ZIP 导入（包括附件）** |
-| **云端备份中心** | ❌ | ✅ | **支持 WebDAV / S3 定时备份** |
+| **云端备份中心** | ❌ | ✅ | **支持 WebDAV / S3 定时备份（OneDrive/Google Drive等）** |
 | 密码提示（网页端） | ⚠️ 有限 | ✅ | **无需发送邮件** |
 | TOTP / Steam TOTP | ✅ | ✅ | 含 `steam://` 支持 |
 | 多用户 | ✅ | ✅ | 支持邀请码注册 |
 | 组织 / 集合 / 成员权限 | ✅ | ❌ | 未实现 |
-| 登录 2FA | ✅ | ⚠️ 部分支持 | 当前仅支持用户级 TOTP |
+| 登录 2FA | ✅ | ⚠️ 部分支持 | 支持TOTP和Passkey（作为第二因素） |
 | SSO / SCIM / 企业目录 | ✅ | ❌ | 未实现 |
 
 ---
@@ -110,10 +113,27 @@ npm run dev:kv
 
 ---
 
-## 云端备份说明
+## 主要特性
 
-- 远程备份支持 **WebDAV** 与 **E3**
-- 勾选“包含附件”后：
+### PWA 渐进式 Web 应用
+
+- ✅ **可安装到桌面** - 像原生应用一样运行
+- ✅ **离线使用** - Service Worker 缓存，离线也能查看密码
+- ✅ **App 快捷方式** - 快速启动保险库、TOTP代码
+- ✅ **后台解密** - Web Worker 处理解密，不阻塞UI
+
+### Passkey 无密码登录
+
+- ✅ **WebAuthn/FIDO2 支持** - 使用指纹、Face ID等登录
+- ✅ **PRF 密钥解锁** - Passkey 可直接解锁保险库
+- ✅ **官方客户端兼容** - Chromium系浏览器扩展可用Passkey登录
+- ✅ **多设备同步** - 支持iCloud、Google Password Manager等
+
+### 云端备份说明
+
+- 远程备份支持 **WebDAV** 与 **S3**
+- 支持 **OneDrive**（通过Koofr）、**Google Drive**（通过Koofr）、**Cloudflare R2**、**Backblaze B2** 等
+- 勾选”包含附件”后：
   - ZIP 内仍只包含 `db.json` 与 `manifest.json`
   - 真实附件单独存放在 `attachments/`
   - 后续备份会按稳定 blob 名复用已有附件，不会每次全量重传

@@ -8,7 +8,7 @@ import type { AdminBackupImportResponse, AdminBackupRunResponse, AdminBackupSett
 import type { AuditLogFilters } from '@/lib/api/admin';
 import type { CiphersImportPayload } from '@/lib/api/vault';
 import { t } from '@/lib/i18n';
-import type { AdminInvite, AdminUser, AuditLogListResult, AuditLogSettings, AuthorizedDevice, Cipher, CustomEquivalentDomain, DomainRules, Folder as VaultFolder, Profile, Send, SendDraft, SessionState, VaultDraft } from '@/lib/types';
+import type { AccountPasskeyCredential, AdminInvite, AdminUser, AuditLogListResult, AuditLogSettings, AuthorizedDevice, Cipher, CustomEquivalentDomain, DomainRules, Folder as VaultFolder, Profile, Send, SendDraft, SessionState, VaultDraft } from '@/lib/types';
 import type { ExportRequest } from '@/lib/export-formats';
 
 const VaultPage = lazy(() => import('@/components/VaultPage'));
@@ -112,6 +112,10 @@ export interface AppMainRoutesProps {
   onGetRecoveryCode: (masterPassword: string) => Promise<string>;
   onGetApiKey: (masterPassword: string) => Promise<string>;
   onRotateApiKey: (masterPassword: string) => Promise<string>;
+  onListAccountPasskeys: () => Promise<AccountPasskeyCredential[]>;
+  onCreateAccountPasskey: (name: string, masterPassword: string, directUnlock: boolean) => Promise<AccountPasskeyCredential | null>;
+  onEnableAccountPasskeyDirectUnlock: (id: string, masterPassword: string) => Promise<void>;
+  onDeleteAccountPasskey: (id: string, masterPassword: string) => Promise<void>;
   onLockTimeoutChange: (minutes: 0 | 1 | 5 | 15 | 30) => void;
   onSessionTimeoutActionChange: (action: 'lock' | 'logout') => void;
   onRefreshAuthorizedDevices: () => Promise<void>;
@@ -261,6 +265,10 @@ export default function AppMainRoutes(props: AppMainRoutesProps) {
                 onGetRecoveryCode={props.onGetRecoveryCode}
                 onGetApiKey={props.onGetApiKey}
                 onRotateApiKey={props.onRotateApiKey}
+                onListAccountPasskeys={props.onListAccountPasskeys}
+                onCreateAccountPasskey={props.onCreateAccountPasskey}
+                onEnableAccountPasskeyDirectUnlock={props.onEnableAccountPasskeyDirectUnlock}
+                onDeleteAccountPasskey={props.onDeleteAccountPasskey}
                 onLockTimeoutChange={props.onLockTimeoutChange}
                 onSessionTimeoutActionChange={props.onSessionTimeoutActionChange}
                 onNotify={props.onNotify}

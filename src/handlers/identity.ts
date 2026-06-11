@@ -15,6 +15,10 @@ import {
   buildUserDecryptionOptions,
 } from '../utils/user-decryption';
 import { auditRequestMetadata, safeWriteAuditEvent } from '../services/audit-events';
+import {
+  assertAccountPasskeyCredential,
+  buildAccountPasskeyTokenUserDecryptionOption,
+} from './account-passkeys';
 
 const TWO_FACTOR_REMEMBER_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const TWO_FACTOR_PROVIDER_AUTHENTICATOR = 0;
@@ -398,6 +402,126 @@ export async function handleToken(request: Request, env: Env): Promise<Response>
       token_type: 'Bearer',
       ...(shouldUseWebSession(request) ? { web_session: true } : { refresh_token: refreshToken }),
       ...(trustedTwoFactorTokenToReturn ? { TwoFactorToken: trustedTwoFactorTokenToReturn } : {}),
+      Key: user.key,
+      PrivateKey: user.privateKey,
+      AccountKeys: accountKeys,
+      accountKeys: accountKeys,
+      Kdf: user.kdfType,
+      KdfIterations: user.kdfIterations,
+      KdfMemory: user.kdfMemory,
+      KdfParallelism: user.kdfParallelism,
+      ForcePasswordReset: false,
+      ResetMasterPassword: false,
+      MasterPasswordPolicy: {
+        Object: 'masterPasswordPolicy',
+      },
+      ApiUseKeyConnector: false,
+      scope: 'api offline_access',
+      unofficialServer: true,
+      UserDecryptionOptions: userDecryptionOptions,
+      userDecryptionOptions: userDecryptionOptions,
+    };
+
+    const baseResponse = jsonResponse(response);
+    return shouldUseWebSession(request)
+      ? withWebRefreshCookie(request, baseResponse, refreshToken)
+      : baseResponse;
+
+  } else if (grantType === 'webauthn') {
+    const loginIdentifier = clientIdentifier;
+    const loginCheck = await rateLimit.checkLoginAttempt(loginIdentifier);
+    if (!loginCheck.allowed) {
+      return identityErrorResponse(
+        `Too many failed login attempts. Try again in ${Math.ceil(loginCheck.retryAfterSeconds! / 60)} minutes.`,
+        'TooManyRequests',
+        429
+      );
+    }
+
+    const token = String(body.token || '').trim();
+    let deviceResponse: unknown = body.deviceResponse;
+    if (typeof deviceResponse === 'string') {
+      try {
+        deviceResponse = JSON.parse(deviceResponse);
+      } catch {
+        return identityErrorResponse('Invalid passkey response', 'invalid_request', 400);
+      }
+    }
+    if (!token || !deviceResponse) {
+      return identityErrorResponse('Passkey token and deviceResponse are required', 'invalid_request', 400);
+    }
+
+    let asserted: Awaited<ReturnType<typeof assertAccountPasskeyCredential>>;
+    try {
+      asserted = await assertAccountPasskeyCredential(request, env, storage, {
+        token,
+        deviceResponse,
+        scope: 'Authentication',
+      });
+    } catch (error) {
+      await rateLimit.recordFailedLogin(loginIdentifier);
+      await safeWriteAuditEvent(env, {
+        actorUserId: null,
+        action: 'auth.passkey.login.failed',
+        category: 'auth',
+        level: 'warn',
+        targetType: 'accountPasskey',
+        targetId: null,
+        metadata: {
+          grantType,
+          reason: error instanceof Error ? error.message : 'assertion_failed',
+          ...auditRequestMetadata(request),
+        },
+      });
+      return identityErrorResponse('Passkey is invalid. Try again', 'invalid_grant', 400);
+    }
+
+    const { user, credential } = asserted;
+    if (user.status !== 'active') {
+      await rateLimit.recordFailedLogin(loginIdentifier);
+      return identityErrorResponse('Account is disabled', 'invalid_grant', 400);
+    }
+
+    const deviceInfo = readAuthRequestDeviceInfo(body, request);
+    const deviceSession = await resolveDeviceSession(storage, user.id, deviceInfo);
+    if (deviceSession) {
+      await storage.upsertDevice(
+        user.id,
+        deviceSession.identifier,
+        deviceInfo.deviceName,
+        deviceInfo.deviceType,
+        deviceSession.sessionStamp
+      );
+    }
+
+    await rateLimit.clearLoginAttempts(loginIdentifier);
+
+    const accessToken = await auth.generateAccessToken(user, deviceSession);
+    const refreshToken = await auth.generateRefreshToken(user.id, deviceSession);
+    const accountKeys = buildAccountKeys(user);
+    const webAuthnPrfOption = buildAccountPasskeyTokenUserDecryptionOption(credential);
+    const userDecryptionOptions = buildUserDecryptionOptions(user, webAuthnPrfOption);
+    await safeWriteAuditEvent(env, {
+      actorUserId: user.id,
+      action: 'auth.passkey.login.success',
+      category: 'auth',
+      level: 'info',
+      targetType: 'accountPasskey',
+      targetId: credential.id,
+      metadata: {
+        grantType,
+        webSession: shouldUseWebSession(request),
+        deviceIdentifier: deviceSession?.identifier ?? deviceInfo.deviceIdentifier,
+        deviceType: deviceInfo.deviceType,
+        ...auditRequestMetadata(request),
+      },
+    });
+
+    const response: TokenResponse = {
+      access_token: accessToken,
+      expires_in: LIMITS.auth.accessTokenTtlSeconds,
+      token_type: 'Bearer',
+      ...(shouldUseWebSession(request) ? { web_session: true } : { refresh_token: refreshToken }),
       Key: user.key,
       PrivateKey: user.privateKey,
       AccountKeys: accountKeys,

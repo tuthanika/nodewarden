@@ -716,6 +716,8 @@ const folderName = useCallback((id: string | null | undefined): string => {
       setAttachmentQueue([]);
       setRemovedAttachmentIds({});
       if (isMobileLayout) setMobilePanel('detail');
+    } catch {
+      // The action layer already shows the user-facing error toast.
     } finally {
       setBusy(false);
     }
@@ -729,6 +731,8 @@ const folderName = useCallback((id: string | null | undefined): string => {
       setPendingDelete(null);
       cancelEdit();
       if (isMobileLayout) setMobilePanel('list');
+    } catch {
+      // The action layer already shows the user-facing error toast.
     } finally {
       setBusy(false);
     }
@@ -741,6 +745,8 @@ const folderName = useCallback((id: string | null | undefined): string => {
       if (isMobileLayout && selectedCipherId === cipher.id) {
         setMobilePanel('list');
       }
+    } catch {
+      // The action layer already shows the user-facing error toast.
     } finally {
       setBusy(false);
     }
@@ -760,6 +766,8 @@ const folderName = useCallback((id: string | null | undefined): string => {
       }
       setSelectedMap({});
       setBulkDeleteOpen(false);
+    } catch {
+      // The action layer already shows the user-facing error toast.
     } finally {
       setBusy(false);
     }
@@ -776,6 +784,8 @@ const folderName = useCallback((id: string | null | undefined): string => {
       await props.onBulkMove(ids, folderId);
       setSelectedMap({});
       setMoveOpen(false);
+    } catch {
+      // The action layer already shows the user-facing error toast.
     } finally {
       setBusy(false);
     }
@@ -785,6 +795,8 @@ const folderName = useCallback((id: string | null | undefined): string => {
     setBusy(true);
     try {
       await props.onRefresh();
+    } catch {
+      // The action layer already shows the user-facing error toast.
     } finally {
       setBusy(false);
     }
@@ -819,6 +831,8 @@ const folderName = useCallback((id: string | null | undefined): string => {
       await props.onCreateFolder(newFolderName);
       setCreateFolderOpen(false);
       setNewFolderName('');
+    } catch {
+      // The action layer already shows the user-facing error toast.
     } finally {
       setBusy(false);
     }
@@ -833,6 +847,8 @@ const folderName = useCallback((id: string | null | undefined): string => {
         setSidebarFilter({ kind: 'all' });
       }
       setPendingDeleteFolder(null);
+    } catch {
+      // The action layer already shows the user-facing error toast.
     } finally {
       setBusy(false);
     }
@@ -850,6 +866,8 @@ const folderName = useCallback((id: string | null | undefined): string => {
       await props.onRenameFolder(pendingRenameFolder.id, nextName);
       setPendingRenameFolder(null);
       setRenameFolderName('');
+    } catch {
+      // The action layer already shows the user-facing error toast.
     } finally {
       setBusy(false);
     }
@@ -864,6 +882,8 @@ const folderName = useCallback((id: string | null | undefined): string => {
     try {
       await props.onBulkRestore(ids);
       setSelectedMap({});
+    } catch {
+      // The action layer already shows the user-facing error toast.
     } finally {
       setBusy(false);
     }
@@ -878,6 +898,8 @@ const folderName = useCallback((id: string | null | undefined): string => {
       if (isMobileLayout && selectedCipherId === pendingArchive.id) {
         setMobilePanel('list');
       }
+    } catch {
+      // The action layer already shows the user-facing error toast.
     } finally {
       setBusy(false);
     }
@@ -892,6 +914,8 @@ const folderName = useCallback((id: string | null | undefined): string => {
         delete next[cipher.id];
         return next;
       });
+    } catch {
+      // The action layer already shows the user-facing error toast.
     } finally {
       setBusy(false);
     }
@@ -907,6 +931,8 @@ const folderName = useCallback((id: string | null | undefined): string => {
       await props.onBulkArchive(ids);
       setSelectedMap({});
       setBulkArchiveOpen(false);
+    } catch {
+      // The action layer already shows the user-facing error toast.
     } finally {
       setBusy(false);
     }
@@ -921,6 +947,8 @@ const folderName = useCallback((id: string | null | undefined): string => {
     try {
       await props.onBulkUnarchive(ids);
       setSelectedMap({});
+    } catch {
+      // The action layer already shows the user-facing error toast.
     } finally {
       setBusy(false);
     }
@@ -935,6 +963,8 @@ const folderName = useCallback((id: string | null | undefined): string => {
         setSidebarFilter({ kind: 'all' });
       }
       setDeleteAllFoldersOpen(false);
+    } catch {
+      // The action layer already shows the user-facing error toast.
     } finally {
       setBusy(false);
     }

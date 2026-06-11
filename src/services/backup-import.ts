@@ -24,6 +24,7 @@ type BackupTableName =
   | 'users'
   | 'domain_settings'
   | 'user_revisions'
+  | 'webauthn_credentials'
   | 'folders'
   | 'ciphers'
   | 'attachments';
@@ -33,6 +34,7 @@ const BACKUP_TABLES: BackupTableName[] = [
   'users',
   'domain_settings',
   'user_revisions',
+  'webauthn_credentials',
   'folders',
   'ciphers',
   'attachments',
@@ -49,6 +51,7 @@ export interface BackupImportResultBody {
     users: number;
     domainSettings: number;
     userRevisions: number;
+    webauthnCredentials: number;
     folders: number;
     ciphers: number;
     attachments: number;
@@ -168,6 +171,7 @@ function buildResetImportTargetStatements(db: D1Database): D1PreparedStatement[]
     'DELETE FROM attachments',
     'DELETE FROM ciphers',
     'DELETE FROM folders',
+    'DELETE FROM webauthn_credentials',
     'DELETE FROM domain_settings',
     'DELETE FROM user_revisions',
     'DELETE FROM users',
@@ -292,6 +296,7 @@ async function importPreparedBackupRows(db: D1Database, payload: BackupPayload['
     })),
     domain_settings: cloneRows(payload.domain_settings || []),
     user_revisions: cloneRows(payload.user_revisions || []),
+    webauthn_credentials: cloneRows(payload.webauthn_credentials || []),
     folders: cloneRows(payload.folders || []),
     ciphers: cloneRows(payload.ciphers || []).map((row) => ({
       ...row,
@@ -631,6 +636,16 @@ async function importBackupRows(db: D1Database, payload: BackupPayload['db'], us
   );
   await runInsertBatch(
     db,
+    tableName('webauthn_credentials'),
+    buildInsertStatements(
+      db,
+      tableName('webauthn_credentials'),
+      ['id', 'user_id', 'name', 'public_key', 'credential_id', 'counter', 'type', 'aa_guid', 'transports', 'encrypted_user_key', 'encrypted_public_key', 'encrypted_private_key', 'supports_prf', 'created_at', 'updated_at'],
+      payload.webauthn_credentials || []
+    )
+  );
+  await runInsertBatch(
+    db,
     tableName('folders'),
     buildInsertStatements(db, tableName('folders'), ['id', 'user_id', 'name', 'created_at', 'updated_at'], payload.folders || [])
   );
@@ -697,6 +712,7 @@ export async function importBackupArchiveBytes(
       users: (db.users || []).length,
       domain_settings: (db.domain_settings || []).length,
       user_revisions: (db.user_revisions || []).length,
+      webauthn_credentials: (db.webauthn_credentials || []).length,
       folders: (db.folders || []).length,
       ciphers: (db.ciphers || []).length,
       attachments: (db.attachments || []).length,
@@ -719,6 +735,7 @@ export async function importBackupArchiveBytes(
       users: (db.users || []).length,
       domain_settings: (db.domain_settings || []).length,
       user_revisions: (db.user_revisions || []).length,
+      webauthn_credentials: (db.webauthn_credentials || []).length,
       folders: (db.folders || []).length,
       ciphers: (db.ciphers || []).length,
       attachments: restored.restoredAttachments.length,
@@ -759,6 +776,7 @@ export async function importBackupArchiveBytes(
           users: (db.users || []).length,
           domainSettings: (db.domain_settings || []).length,
           userRevisions: (db.user_revisions || []).length,
+          webauthnCredentials: (db.webauthn_credentials || []).length,
           folders: (db.folders || []).length,
           ciphers: (db.ciphers || []).length,
           attachments: restored.restoredAttachments.length,
@@ -835,6 +853,7 @@ export async function importRemoteBackupArchiveBytes(
       users: (db.users || []).length,
       domain_settings: (db.domain_settings || []).length,
       user_revisions: (db.user_revisions || []).length,
+      webauthn_credentials: (db.webauthn_credentials || []).length,
       folders: (db.folders || []).length,
       ciphers: (db.ciphers || []).length,
       attachments: (db.attachments || []).length,
@@ -857,6 +876,7 @@ export async function importRemoteBackupArchiveBytes(
       users: (db.users || []).length,
       domain_settings: (db.domain_settings || []).length,
       user_revisions: (db.user_revisions || []).length,
+      webauthn_credentials: (db.webauthn_credentials || []).length,
       folders: (db.folders || []).length,
       ciphers: (db.ciphers || []).length,
       attachments: restored.restoredAttachments.length,
@@ -903,6 +923,7 @@ export async function importRemoteBackupArchiveBytes(
           users: (db.users || []).length,
           domainSettings: (db.domain_settings || []).length,
           userRevisions: (db.user_revisions || []).length,
+          webauthnCredentials: (db.webauthn_credentials || []).length,
           folders: (db.folders || []).length,
           ciphers: (db.ciphers || []).length,
           attachments: restored.restoredAttachments.length,

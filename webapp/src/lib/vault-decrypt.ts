@@ -1,5 +1,5 @@
 import { base64ToBytes, decryptBw, decryptStr } from './crypto';
-import { deriveSendKeyParts } from './app-support';
+import { deriveSendKeyParts, looksLikeCipherString } from './app-support';
 import type { Cipher, Folder, Send } from './types';
 
 export interface DecryptVaultCoreArgs {
@@ -38,7 +38,7 @@ async function decryptField(
   try {
     return await decryptStr(value, enc, mac);
   } catch {
-    return value;
+    return looksLikeCipherString(value) ? '' : value;
   }
 }
 
@@ -63,7 +63,7 @@ async function decryptCipherField(
       // Preserve the old raw fallback for fields that are genuinely unreadable.
     }
   }
-  return value;
+  return looksLikeCipherString(value) ? '' : value;
 }
 
 async function decryptFieldWithSource(
@@ -88,7 +88,7 @@ async function decryptFieldWithSource(
       // Keep plain fallback.
     }
   }
-  return { text: raw, source: 'plain' };
+  return { text: looksLikeCipherString(raw) ? '' : raw, source: 'plain' };
 }
 
 export async function decryptVaultCore(args: DecryptVaultCoreArgs): Promise<DecryptVaultCoreResult> {

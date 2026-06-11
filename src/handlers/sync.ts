@@ -1,7 +1,7 @@
 import { Env, SyncResponse, CipherResponse, FolderResponse, ProfileResponse } from '../types';
 import { StorageService } from '../services/storage';
 import { errorResponse } from '../utils/response';
-import { cipherToResponse, isCipherResponseSyncCompatible } from './ciphers';
+import { cipherToResponse, isCipherResponseSyncCompatible, shouldPreserveRepairableCipherUris } from './ciphers';
 import { sendToResponse } from './sends';
 import { LIMITS } from '../config/limits';
 import {
@@ -10,16 +10,25 @@ import {
   buildUserDecryptionOptions,
 } from '../utils/user-decryption';
 import { buildDomainsResponse } from '../services/domain-rules';
+import { buildWebAuthnPrfOption } from '../utils/account-passkeys';
 
 // CONTRACT:
 // /api/sync reuses cipherToResponse() as the single cipher response shaper.
 // Filtering invalid cipher responses here protects clients from stored rows that
 // would otherwise make official apps fail after an HTTP 200 sync.
 // Keep this aligned with src/handlers/ciphers.ts when adding new vault fields.
-function buildSyncCacheRequest(request: Request, userId: string, revisionDate: string, excludeDomains: boolean, excludeSends: boolean): Request {
+function buildSyncCacheRequest(
+  request: Request,
+  userId: string,
+  revisionDate: string,
+  accountPasskeyCacheTag: string,
+  excludeDomains: boolean,
+  excludeSends: boolean,
+  preserveRepairableUris: boolean
+): Request {
   const url = new URL(request.url);
   const cacheUrl = new URL(
-    `/__nodewarden/cache/sync/${encodeURIComponent(userId)}/${encodeURIComponent(revisionDate)}/${excludeDomains ? '1' : '0'}/${excludeSends ? '1' : '0'}`,
+    `/__nodewarden/cache/sync/${encodeURIComponent(userId)}/${encodeURIComponent(revisionDate)}/${encodeURIComponent(accountPasskeyCacheTag)}/${excludeDomains ? '1' : '0'}/${excludeSends ? '1' : '0'}/${preserveRepairableUris ? '1' : '0'}`,
     url.origin
   );
   return new Request(cacheUrl.toString(), { method: 'GET' });
@@ -43,14 +52,26 @@ export async function handleSync(request: Request, env: Env, userId: string): Pr
   const excludeDomains = excludeDomainsParam !== null && /^(1|true|yes)$/i.test(excludeDomainsParam);
   const excludeSendsParam = url.searchParams.get('excludeSends');
   const excludeSends = excludeSendsParam !== null && /^(1|true|yes)$/i.test(excludeSendsParam);
+  const preserveRepairableUris = shouldPreserveRepairableCipherUris(request);
 
   const user = await storage.getUserById(userId);
   if (!user) {
     return errorResponse('User not found', 404);
   }
 
-  const revisionDate = await storage.getRevisionDate(userId);
-  const cacheRequest = buildSyncCacheRequest(request, userId, revisionDate, excludeDomains, excludeSends);
+  const [revisionDate, accountPasskeys] = await Promise.all([
+    storage.getRevisionDate(userId),
+    storage.getAccountPasskeyCredentialsByUserId(userId),
+  ]);
+  const accountPasskeyCacheTag = accountPasskeys
+    .map((credential) => [
+      credential.id,
+      credential.updatedAt,
+      credential.supportsPrf ? '1' : '0',
+      credential.encryptedUserKey && credential.encryptedPublicKey && credential.encryptedPrivateKey ? '1' : '0',
+    ].join(':'))
+    .join(',');
+  const cacheRequest = buildSyncCacheRequest(request, userId, revisionDate, accountPasskeyCacheTag, excludeDomains, excludeSends, preserveRepairableUris);
   const cachedResponse = await readSyncCache(cacheRequest);
   if (cachedResponse) {
     return cachedResponse;
@@ -64,7 +85,10 @@ export async function handleSync(request: Request, env: Env, userId: string): Pr
     excludeDomains ? Promise.resolve(null) : storage.getUserDomainSettings(userId),
   ]);
   const accountKeys = buildAccountKeys(user);
-  const userDecryptionOptions = buildUserDecryptionOptions(user);
+  const webAuthnPrfOptions = accountPasskeys
+    .map(buildWebAuthnPrfOption)
+    .filter((option): option is NonNullable<typeof option> => !!option);
+  const userDecryptionOptions = buildUserDecryptionOptions(user, webAuthnPrfOptions[0] || null);
 
   const profile: ProfileResponse = {
     id: user.id,
@@ -93,7 +117,7 @@ export async function handleSync(request: Request, env: Env, userId: string): Pr
 
   const cipherResponses: CipherResponse[] = [];
   for (const cipher of ciphers) {
-    const response = cipherToResponse(cipher, attachmentsByCipher.get(cipher.id) || []);
+    const response = cipherToResponse(cipher, attachmentsByCipher.get(cipher.id) || [], { preserveRepairableUris });
     if (isCipherResponseSyncCompatible(response)) {
       cipherResponses.push(response);
     }
@@ -130,6 +154,8 @@ export async function handleSync(request: Request, env: Env, userId: string): Pr
       MasterPasswordUnlock: userDecryptionOptions.MasterPasswordUnlock,
       TrustedDeviceOption: null,
       KeyConnectorOption: null,
+      WebAuthnPrfOption: webAuthnPrfOptions[0] || null,
+      WebAuthnPrfOptions: webAuthnPrfOptions,
       Object: 'userDecryption',
     },
     UserDecryptionOptions: userDecryptionOptions,

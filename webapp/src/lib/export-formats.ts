@@ -189,12 +189,15 @@ function mapCipherEncrypted(cipher: Cipher): Record<string, unknown> {
   const login = cipher.login;
   out.login = login
     ? {
+        ...cloneValue(login),
         username: login.username ?? null,
         password: login.password ?? null,
         totp: login.totp ?? null,
         uris: Array.isArray(login.uris)
           ? login.uris.map((uri) => ({
+              ...cloneValue(uri),
               uri: uri?.uri ?? null,
+              uriChecksum: uri?.uriChecksum ?? null,
               match: (uri as { match?: unknown })?.match ?? null,
             }))
           : [],

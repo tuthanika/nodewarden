@@ -62,6 +62,15 @@ const localeLoaders: Record<Locale, () => Promise<{ default: MessageTable }>> = 
   es: () => import('./i18n/locales/es'),
 };
 
+function localeToHtmlLang(value: Locale): string {
+  return value;
+}
+
+function syncDocumentLanguage(): void {
+  if (typeof document === 'undefined') return;
+  document.documentElement.lang = localeToHtmlLang(locale);
+}
+
 async function loadLocaleMessages(next: Locale): Promise<MessageTable> {
   const cached = loadedMessages.get(next);
   if (cached) return cached;
@@ -84,6 +93,8 @@ export async function initI18n(): Promise<void> {
     console.error('Failed to load locale, falling back to English:', error);
     locale = 'en';
     activeMessages = await loadFallbackMessages();
+  } finally {
+    syncDocumentLanguage();
   }
 }
 
@@ -143,6 +154,7 @@ export async function setLocale(next: Locale): Promise<void> {
   }
   locale = next;
   activeMessages = nextMessages;
+  syncDocumentLanguage();
   try {
     localStorage.setItem(LOCALE_STORAGE_KEY, next);
   } catch {

@@ -819,13 +819,15 @@ async function repairCipherLoginUris(
       continue;
     }
 
-    let clearUri = String(entry.decUri || '').trim();
-    if (!clearUri || looksLikeCipherString(clearUri)) {
-      try {
-        clearUri = (await decryptStr(rawUri, enc, mac)).trim();
-      } catch {
-        uris.push({ ...encryptedEntry });
-        continue;
+    let clearUri = '';
+    let rawUriUsesCurrentKey = false;
+    try {
+      clearUri = (await decryptStr(rawUri, enc, mac)).trim();
+      rawUriUsesCurrentKey = !!clearUri;
+    } catch {
+      const fallbackUri = String(entry.decUri || '').trim();
+      if (fallbackUri && !looksLikeCipherString(fallbackUri)) {
+        clearUri = fallbackUri;
       }
     }
 
@@ -845,15 +847,20 @@ async function repairCipherLoginUris(
       }
     }
 
-    if (currentChecksumOk) {
+    if (currentChecksumOk && rawUriUsesCurrentKey) {
       uris.push({ ...encryptedEntry });
       continue;
     }
 
+    const repairedUri = rawUriUsesCurrentKey ? rawUri : await encryptTextValue(clearUri, enc, mac);
+    const repairedChecksum = currentChecksumOk
+      ? rawChecksum
+      : await encryptTextValue(expectedChecksum, enc, mac);
+
     uris.push({
       ...encryptedEntry,
-      uri: rawUri,
-      uriChecksum: await encryptTextValue(expectedChecksum, enc, mac),
+      uri: repairedUri || rawUri,
+      uriChecksum: repairedChecksum,
       match: typeof entry.match === 'number' && Number.isFinite(entry.match) ? entry.match : null,
     });
     changed = true;
@@ -889,15 +896,22 @@ export async function repairCipherUriChecksums(
   let repaired = 0;
 
   for (const cipher of ciphers) {
-    if (!cipher?.id || cipher.type !== 1 || !looksLikeCipherString(cipher.key) || !cipher.login || !Array.isArray(cipher.login.uris)) continue;
-    let itemKey: Uint8Array;
-    try {
-      itemKey = await decryptBw(String(cipher.key).trim(), userEnc, userMac);
-    } catch {
-      continue;
+    if (!cipher?.id || cipher.type !== 1 || !cipher.login || !Array.isArray(cipher.login.uris)) continue;
+    let keys: { enc: Uint8Array; mac: Uint8Array; key: string | null } = {
+      enc: userEnc,
+      mac: userMac,
+      key: null,
+    };
+    if (looksLikeCipherString(cipher.key)) {
+      let itemKey: Uint8Array;
+      try {
+        itemKey = await decryptBw(String(cipher.key).trim(), userEnc, userMac);
+      } catch {
+        continue;
+      }
+      if (itemKey.length < 64) continue;
+      keys = { enc: itemKey.slice(0, 32), mac: itemKey.slice(32, 64), key: String(cipher.key).trim() };
     }
-    if (itemKey.length < 64) continue;
-    const keys = { enc: itemKey.slice(0, 32), mac: itemKey.slice(32, 64), key: String(cipher.key).trim() };
     const repair = await repairCipherLoginUris(cipher, keys.enc, keys.mac);
     if (!repair.changed) continue;
 
@@ -912,9 +926,10 @@ export async function repairCipherUriChecksums(
       fields: Array.isArray(cipher.fields)
         ? cipher.fields.map(({ decName: _decName, decValue: _decValue, ...field }) => field)
         : null,
-      key: keys.key,
       lastKnownRevisionDate: cipher.revisionDate ?? null,
+      preserveRevisionDate: true,
     };
+    if (keys.key) payload.key = keys.key;
 
     const resp = await authedFetch(`/api/ciphers/${encodeURIComponent(cipher.id)}`, {
       method: 'PUT',
@@ -1077,7 +1092,9 @@ export async function repairCipherKeyMismatches(
     if (!cipher?.id || !looksLikeCipherString(cipher.key)) continue;
     if (!(await hasItemKeyFieldMismatch(cipher, userEnc, userMac))) continue;
     if (hasUnresolvedEncryptedFields(cipher)) continue;
-    await updateCipher(authedFetch, session, cipher, draftFromDecryptedCipher(cipher));
+    await updateCipher(authedFetch, session, cipher, draftFromDecryptedCipher(cipher), {
+      preserveRevisionDate: true,
+    });
     repaired += 1;
   }
 
@@ -1211,9 +1228,13 @@ export async function updateCipher(
   authedFetch: AuthedFetch,
   session: SessionState,
   cipher: Cipher,
-  draft: VaultDraft
+  draft: VaultDraft,
+  extraPayload?: Record<string, unknown>
 ): Promise<Cipher> {
   const payload = await buildCipherPayload(session, draft, cipher);
+  if (extraPayload) {
+    Object.assign(payload, extraPayload);
+  }
 
   const resp = await authedFetch(`/api/ciphers/${encodeURIComponent(cipher.id)}`, {
     method: 'PUT',

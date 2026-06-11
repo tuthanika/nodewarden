@@ -1062,6 +1062,68 @@
   color: var(--success);
 }
 
+.account-passkey-mode-field {
+  @apply min-w-0;
+}
+
+.account-passkey-toggle {
+  @apply flex min-h-[44px] items-center gap-2 rounded-lg border px-3 text-sm font-extrabold;
+  border-color: var(--line);
+  background: color-mix(in srgb, var(--panel) 92%, var(--panel-2));
+  color: var(--text);
+}
+
+.account-passkey-toggle input {
+  @apply h-4 w-4 shrink-0;
+  accent-color: var(--primary);
+}
+
+.account-passkeys-list {
+  @apply mt-3 grid gap-2;
+}
+
+.account-passkey-row {
+  @apply grid min-w-0 items-center gap-3 rounded-lg border p-3;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  border-color: var(--line);
+  background: var(--panel);
+}
+
+.account-passkey-main {
+  @apply grid min-w-0 gap-1;
+}
+
+.account-passkey-main strong,
+.account-passkey-main small {
+  @apply min-w-0 overflow-hidden text-ellipsis whitespace-nowrap;
+}
+
+.account-passkey-main small {
+  color: var(--muted);
+}
+
+.account-passkey-status {
+  @apply inline-flex min-h-7 shrink-0 items-center rounded-full px-2.5 text-xs font-extrabold;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.account-passkey-status-0 {
+  border-color: color-mix(in srgb, var(--success) 28%, var(--line));
+  background: color-mix(in srgb, var(--success) 9%, var(--panel));
+  color: var(--success);
+}
+
+.account-passkey-status-1 {
+  border-color: color-mix(in srgb, var(--primary) 30%, var(--line));
+  background: color-mix(in srgb, var(--primary) 9%, var(--panel));
+  color: var(--primary-strong);
+}
+
+.account-passkey-actions {
+  @apply justify-end;
+}
+
 .settings-module-placeholder {
   @apply flex min-h-[150px] flex-col items-center justify-center gap-3 text-base font-extrabold;
   color: var(--muted);

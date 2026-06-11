@@ -66,6 +66,7 @@ const ALLOWED_METADATA_KEYS = new Set([
   'skippedReason',
   'replaceExisting',
   'provider',
+  'prfStatus',
   'fileName',
   'fileBytes',
   'bytes',

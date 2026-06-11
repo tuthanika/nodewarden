@@ -1,5 +1,6 @@
 import { Env } from './types';
 import { NotificationsHub } from './durable/notifications-hub';
+import { BackupTransferRunner } from './durable/backup-transfer-runner';
 import { handleRequest } from './router';
 import { StorageService } from './services/storage';
 import { applyCors, jsonResponse } from './utils/response';
@@ -127,3 +128,4 @@ export default {
 };
 
 export { NotificationsHub };
+export { BackupTransferRunner };

@@ -67,6 +67,7 @@ export interface BackupPayload {
     folders: SqlRow[];
     ciphers: SqlRow[];
     attachments: SqlRow[];
+    webauthn_credentials?: SqlRow[];
   };
 }
 
@@ -300,6 +301,7 @@ export function validateBackupPayloadContents(
   const folderRows = ensureRowArray(payload.db.folders, 'folders');
   const cipherRows = ensureRowArray(payload.db.ciphers, 'ciphers');
   const attachmentRows = ensureRowArray(payload.db.attachments, 'attachments');
+  const accountPasskeyRows = ensureRowArray(payload.db.webauthn_credentials || [], 'webauthn_credentials');
   const externalAttachmentKeys = new Set<string>(
     options.allowExternalAttachmentBlobs
       ? (payload.manifest.attachmentBlobs || []).map((item) => `attachments/${String(item.cipherId || '').trim()}/${String(item.attachmentId || '').trim()}.bin`)
@@ -372,6 +374,22 @@ export function validateBackupPayloadContents(
       throw new Error(`Backup archive is missing required file: attachments/${cipherId}/${id}.bin`);
     }
   }
+
+  const accountPasskeyIds = new Set<string>();
+  const accountPasskeyCredentialIds = new Set<string>();
+  for (const row of accountPasskeyRows) {
+    const id = String(row.id || '').trim();
+    const userId = String(row.user_id || '').trim();
+    const credentialId = String(row.credential_id || '').trim();
+    const publicKey = String(row.public_key || '').trim();
+    if (!id || !userIds.has(userId) || !credentialId || !publicKey) {
+      throw new Error('Backup archive contains an invalid account passkey row');
+    }
+    if (accountPasskeyIds.has(id)) throw new Error(`Backup archive contains duplicate account passkey id: ${id}`);
+    if (accountPasskeyCredentialIds.has(credentialId)) throw new Error(`Backup archive contains duplicate account passkey credential id: ${credentialId}`);
+    accountPasskeyIds.add(id);
+    accountPasskeyCredentialIds.add(credentialId);
+  }
 }
 
 export async function buildBackupArchive(
@@ -390,7 +408,7 @@ export async function buildBackupArchive(
     includeAttachments,
   });
   const encoder = new TextEncoder();
-  const [configRows, userRows, domainSettingsRows, revisionRows, folderRows, cipherRows, attachmentRows] = await Promise.all([
+  const [configRows, userRows, domainSettingsRows, revisionRows, folderRows, cipherRows, attachmentRows, accountPasskeyRows] = await Promise.all([
     queryRows(env.DB, 'SELECT key, value FROM config ORDER BY key ASC'),
     queryRows(env.DB, 'SELECT id, email, name, master_password_hint, master_password_hash, key, private_key, public_key, kdf_type, kdf_iterations, kdf_memory, kdf_parallelism, security_stamp, role, status, verify_devices, totp_secret, totp_recovery_code, created_at, updated_at FROM users ORDER BY created_at ASC'),
     queryRows(env.DB, 'SELECT user_id, equivalent_domains, custom_equivalent_domains, excluded_global_equivalent_domains, updated_at FROM domain_settings ORDER BY user_id ASC'),
@@ -398,6 +416,7 @@ export async function buildBackupArchive(
     queryRows(env.DB, 'SELECT id, user_id, name, created_at, updated_at FROM folders ORDER BY created_at ASC'),
     queryRows(env.DB, 'SELECT id, user_id, type, folder_id, name, notes, favorite, data, reprompt, key, created_at, updated_at, archived_at, deleted_at FROM ciphers ORDER BY created_at ASC'),
     queryRows(env.DB, 'SELECT id, cipher_id, file_name, size, size_name, key FROM attachments ORDER BY cipher_id ASC, id ASC'),
+    queryRows(env.DB, 'SELECT id, user_id, name, public_key, credential_id, counter, type, aa_guid, transports, encrypted_user_key, encrypted_public_key, encrypted_private_key, supports_prf, created_at, updated_at FROM webauthn_credentials ORDER BY created_at ASC'),
   ]);
   const exportedConfigRows = sanitizeConfigRowsForExport(configRows);
   const exportedAttachmentRows = includeAttachments ? attachmentRows : [];
@@ -425,6 +444,7 @@ export async function buildBackupArchive(
       folders: folderRows.length,
       ciphers: cipherRows.length,
       attachments: exportedAttachmentRows.length,
+      webauthn_credentials: accountPasskeyRows.length,
     },
     includes: {
       attachments: includeAttachments,
@@ -447,6 +467,7 @@ export async function buildBackupArchive(
       folders: folderRows,
       ciphers: cipherRows,
       attachments: exportedAttachmentRows,
+      webauthn_credentials: accountPasskeyRows,
     }, null, BACKUP_JSON_INDENT)),
   };
 

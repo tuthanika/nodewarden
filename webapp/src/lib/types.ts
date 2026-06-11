@@ -328,6 +328,37 @@ export interface TokenError {
   TwoFactorProviders?: unknown;
 }
 
+export interface AccountPasskeyCredential {
+  id: string;
+  name: string;
+  prfStatus: 0 | 1 | 2;
+  encryptedPublicKey?: string | null;
+  encryptedUserKey?: string | null;
+  creationDate?: string;
+  revisionDate?: string;
+}
+
+export interface AccountPasskeyAssertionOptionsResponse {
+  options: PublicKeyCredentialRequestOptions;
+  token: string;
+}
+
+export interface AccountPasskeyCreationOptionsResponse {
+  options: PublicKeyCredentialCreationOptions;
+  token: string;
+}
+
+export interface AccountPasskeyPrfOption {
+  EncryptedPrivateKey?: string;
+  EncryptedUserKey?: string;
+  CredentialId?: string;
+  Transports?: string[];
+  encryptedPrivateKey?: string;
+  encryptedUserKey?: string;
+  credentialId?: string;
+  transports?: string[];
+}
+
 export interface ToastMessage {
   id: string;
   type: 'success' | 'error' | 'warning';

@@ -1,23 +1,45 @@
 import {
   createAuthedFetch,
   deriveLoginHashLocally,
+  getAccountPasskeyAssertionOptions,
   getProfile,
   loadProfileSnapshot,
   loadSession,
+  loginWithAccountPasskeyAssertion,
   loginWithPassword,
   refreshAccessToken,
   recoverTwoFactor,
   registerAccount,
   unlockVaultKey,
 } from '@/lib/api/auth';
+import {
+  assertAccountPasskey,
+  unlockVaultKeyWithAccountPasskeyPrf,
+} from '@/lib/account-passkeys';
 import { readInviteCodeFromUrl } from '@/lib/app-support';
 import { t, translateServerError } from '@/lib/i18n';
-import type { AppPhase, Profile, SessionState, TokenSuccess, WebBootstrapResponse } from '@/lib/types';
+import {
+  getOfflineUnlockKdfIterations,
+  hasOfflineUnlockRecord,
+  kdfIterationsFromLogin,
+  loadOfflineProfileSnapshot,
+  saveOfflineUnlockRecord,
+  unlockOfflineVaultWithMasterKey,
+} from '@/lib/offline-auth';
+import { probeNodeWardenService } from '@/lib/network-status';
+import type { AccountPasskeyPrfOption, AppPhase, Profile, SessionState, TokenSuccess, WebBootstrapResponse } from '@/lib/types';
 
 export interface PendingTotp {
   email: string;
   passwordHash: string;
   masterKey: Uint8Array;
+  kdfIterations: number;
+}
+
+export interface PendingPasskeyPassword {
+  token: TokenSuccess;
+  email: string;
+  kdfIterations: number;
 }
 
 export type JwtUnsafeReason = 'missing' | 'default' | 'too_short';
@@ -51,6 +73,11 @@ export type PasswordLoginResult =
   | { kind: 'totp'; pendingTotp: PendingTotp }
   | { kind: 'error'; message: string };
 
+export type PasskeyLoginResult =
+  | { kind: 'success'; login: CompletedLogin }
+  | { kind: 'password'; pendingPasskeyPassword: PendingPasskeyPassword }
+  | { kind: 'error'; message: string };
+
 export interface RecoverTwoFactorResult {
   login: CompletedLogin | null;
   newRecoveryCode: string | null;
@@ -82,6 +109,7 @@ async function maybeRefreshSession(session: SessionState): Promise<SessionState 
 
   const refreshed = await refreshAccessToken(session);
   if (!refreshed.ok) {
+    if (refreshed.transient) return session;
     return session.accessToken && exp !== null && exp > nowSeconds ? session : null;
   }
 
@@ -91,6 +119,10 @@ async function maybeRefreshSession(session: SessionState): Promise<SessionState 
     refreshToken: refreshed.token.refresh_token || session.refreshToken,
     authMode: refreshed.token.web_session ? 'web-cookie' : (session.authMode || 'token'),
   };
+}
+
+function browserReportsOffline(): boolean {
+  return typeof navigator !== 'undefined' && navigator.onLine === false;
 }
 
 function readWindowBootstrap(): WebBootstrapResponse {
@@ -246,8 +278,26 @@ export async function hydrateLockedSession(
   session: SessionState,
   fallbackProfile: Profile | null = null
 ): Promise<{ session: SessionState | null; profile: Profile | null }> {
+  const hasOfflineUnlock = hasOfflineUnlockRecord(session.email);
+  let serviceReachable = true;
+  if (hasOfflineUnlock) {
+    serviceReachable = await probeNodeWardenService();
+    if (!serviceReachable) {
+      return {
+        session,
+        profile: fallbackProfile || loadOfflineProfileSnapshot(session.email),
+      };
+    }
+  }
+
   const refreshedSession = await maybeRefreshSession(session);
   if (!refreshedSession?.accessToken) {
+    if (hasOfflineUnlock && !serviceReachable) {
+      return {
+        session,
+        profile: fallbackProfile || loadOfflineProfileSnapshot(session.email),
+      };
+    }
     return { session: null, profile: null };
   }
   try {
@@ -272,7 +322,8 @@ export async function hydrateLockedSession(
 export async function completeLogin(
   token: TokenSuccess,
   email: string,
-  masterKey: Uint8Array
+  masterKey: Uint8Array,
+  fallbackKdfIterations: number
 ): Promise<CompletedLogin> {
   const normalizedEmail = email.trim().toLowerCase();
   const fallbackProfile = loadProfileSnapshot(normalizedEmail);
@@ -291,6 +342,49 @@ export async function completeLogin(
     throw new Error('Missing profile key');
   }
   const keys = await unlockVaultKey(profile.key, masterKey);
+  saveOfflineUnlockRecord({
+    email: normalizedEmail,
+    profile,
+    profileKey: profile.key,
+    kdfIterations: kdfIterationsFromLogin(token, fallbackKdfIterations),
+  });
+  return {
+    session: { ...baseSession, ...keys },
+    profile,
+    profilePromise: getProfile(tempFetch),
+  };
+}
+
+function readPasskeyPrfOption(token: TokenSuccess): AccountPasskeyPrfOption | null {
+  const options = (token.UserDecryptionOptions || token.userDecryptionOptions || null) as any;
+  return options?.WebAuthnPrfOption || options?.webAuthnPrfOption || null;
+}
+
+async function completeLoginWithVaultKeys(
+  token: TokenSuccess,
+  email: string,
+  keys: { symEncKey: string; symMacKey: string },
+  fallbackKdfIterations: number
+): Promise<CompletedLogin> {
+  const normalizedEmail = email.trim().toLowerCase();
+  const fallbackProfile = loadProfileSnapshot(normalizedEmail);
+  const baseSession: SessionState = {
+    accessToken: token.access_token,
+    refreshToken: token.refresh_token,
+    email: normalizedEmail,
+    authMode: token.web_session ? 'web-cookie' : 'token',
+  };
+  const tempFetch = createAuthedFetch(
+    () => baseSession,
+    () => {}
+  );
+  const profile = buildTransientProfile(token, normalizedEmail, fallbackProfile);
+  saveOfflineUnlockRecord({
+    email: normalizedEmail,
+    profile,
+    profileKey: profile.key,
+    kdfIterations: kdfIterationsFromLogin(token, fallbackKdfIterations),
+  });
   return {
     session: { ...baseSession, ...keys },
     profile,
@@ -310,7 +404,7 @@ export async function performPasswordLogin(
   if ('access_token' in token && token.access_token) {
     return {
       kind: 'success',
-      login: await completeLogin(token, normalizedEmail, derived.masterKey),
+      login: await completeLogin(token, normalizedEmail, derived.masterKey, derived.kdfIterations),
     };
   }
 
@@ -322,6 +416,7 @@ export async function performPasswordLogin(
         email: normalizedEmail,
         passwordHash: derived.hash,
         masterKey: derived.masterKey,
+        kdfIterations: derived.kdfIterations,
       },
     };
   }
@@ -330,6 +425,62 @@ export async function performPasswordLogin(
     kind: 'error',
     message: translateServerError(tokenError.error_description || tokenError.error, t('txt_login_failed')),
   };
+}
+
+export async function performPasskeyLogin(fallbackIterations: number, expectedEmail?: string): Promise<PasskeyLoginResult> {
+  try {
+    const options = await getAccountPasskeyAssertionOptions();
+    const assertion = await assertAccountPasskey(options);
+    const token = await loginWithAccountPasskeyAssertion(assertion);
+
+    if (!('access_token' in token) || !token.access_token) {
+      const tokenError = token as { error_description?: string; error?: string };
+      return {
+        kind: 'error',
+        message: translateServerError(tokenError.error_description || tokenError.error, t('txt_login_failed')),
+      };
+    }
+
+    const email = (decodeAccessTokenClaims(token.access_token).email || '').trim().toLowerCase();
+    if (!email) {
+      return { kind: 'error', message: t('txt_login_failed') };
+    }
+    const normalizedExpectedEmail = String(expectedEmail || '').trim().toLowerCase();
+    if (normalizedExpectedEmail && email !== normalizedExpectedEmail) {
+      return { kind: 'error', message: t('txt_passkey_not_for_locked_account') };
+    }
+
+    const prfOption = readPasskeyPrfOption(token);
+    if (prfOption && assertion.prfKey) {
+      const keys = await unlockVaultKeyWithAccountPasskeyPrf(assertion.prfKey, prfOption);
+      return {
+        kind: 'success',
+        login: await completeLoginWithVaultKeys(token, email, keys, fallbackIterations),
+      };
+    }
+
+    return {
+      kind: 'password',
+      pendingPasskeyPassword: {
+        token,
+        email,
+        kdfIterations: kdfIterationsFromLogin(token, fallbackIterations),
+      },
+    };
+  } catch (error) {
+    return {
+      kind: 'error',
+      message: error instanceof Error ? translateServerError(error.message, error.message) : t('txt_login_failed'),
+    };
+  }
+}
+
+export async function completePasskeyPasswordLogin(
+  pending: PendingPasskeyPassword,
+  password: string
+): Promise<CompletedLogin> {
+  const derived = await deriveLoginHashLocally(pending.email, password, pending.kdfIterations);
+  return completeLogin(pending.token, pending.email, derived.masterKey, pending.kdfIterations);
 }
 
 export async function performTotpLogin(
@@ -342,7 +493,7 @@ export async function performTotpLogin(
     rememberDevice,
   });
   if ('access_token' in token && token.access_token) {
-    return completeLogin(token, pendingTotp.email, pendingTotp.masterKey);
+    return completeLogin(token, pendingTotp.email, pendingTotp.masterKey, pendingTotp.kdfIterations);
   }
   const tokenError = token as { error_description?: string; error?: string };
   throw new Error(translateServerError(tokenError.error_description || tokenError.error, t('txt_totp_verify_failed')));
@@ -361,7 +512,7 @@ export async function performRecoverTwoFactorLogin(
 
   if ('access_token' in token && token.access_token) {
     return {
-      login: await completeLogin(token, normalizedEmail, derived.masterKey),
+      login: await completeLogin(token, normalizedEmail, derived.masterKey, derived.kdfIterations),
       newRecoveryCode: recovered.newRecoveryCode || null,
     };
   }
@@ -397,13 +548,58 @@ export async function performUnlock(
   fallbackIterations: number
 ): Promise<PasswordLoginResult> {
   const normalizedEmail = (profile?.email || session.email).trim().toLowerCase();
-  const derived = await deriveLoginHashLocally(normalizedEmail, password, fallbackIterations);
-  const token = await loginWithPassword(normalizedEmail, derived.hash, { useRememberToken: true });
+  const offlineIterations = getOfflineUnlockKdfIterations(normalizedEmail);
+  const hasOfflineUnlock = !!offlineIterations;
+  const kdfIterations = offlineIterations || fallbackIterations;
+  const derived = await deriveLoginHashLocally(normalizedEmail, password, kdfIterations);
+  const unlockOffline = async (): Promise<PasswordLoginResult> => {
+    try {
+      const offline = await unlockOfflineVaultWithMasterKey(session, profile, derived.masterKey);
+      return {
+        kind: 'success',
+        login: {
+          session: offline.session,
+          profile: offline.profile,
+          profilePromise: Promise.resolve(offline.profile),
+        },
+      };
+    } catch {
+      return {
+        kind: 'error',
+        message: t('txt_unlock_failed_master_password_is_incorrect'),
+      };
+    }
+  };
+
+  if (hasOfflineUnlock) {
+    if (browserReportsOffline()) {
+      return unlockOffline();
+    }
+    const serviceReachable = await probeNodeWardenService();
+    if (!serviceReachable) {
+      return unlockOffline();
+    }
+  }
+
+  let token: TokenSuccess | { TwoFactorProviders?: unknown; error_description?: string; error?: string };
+  try {
+    token = await loginWithPassword(normalizedEmail, derived.hash, {
+      useRememberToken: true,
+    });
+  } catch {
+    if (hasOfflineUnlock && (browserReportsOffline() || !(await probeNodeWardenService()))) {
+      return unlockOffline();
+    }
+    return {
+      kind: 'error',
+      message: t('txt_unlock_failed_master_password_is_incorrect'),
+    };
+  }
 
   if ('access_token' in token && token.access_token) {
     return {
       kind: 'success',
-      login: await completeLogin(token, normalizedEmail, derived.masterKey),
+      login: await completeLogin(token, normalizedEmail, derived.masterKey, derived.kdfIterations),
     };
   }
 
@@ -415,6 +611,7 @@ export async function performUnlock(
         email: normalizedEmail,
         passwordHash: derived.hash,
         masterKey: derived.masterKey,
+        kdfIterations: derived.kdfIterations,
       },
     };
   }
