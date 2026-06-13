@@ -1172,7 +1172,22 @@ const en: Record<string, string> = {
   "txt_target": "Target",
   "txt_time": "Time",
   "txt_time_range": "Time range",
-  "txt_remove_domain": "Remove domain"
+  "txt_remove_domain": "Remove domain",
+  "txt_approve_device_login": "Approve device login",
+  "txt_auth_request_approve_message": "Unlock Bitwarden on your device or approve from the web app. Before approving, make sure the fingerprint phrase matches the one below.",
+  "txt_approve": "Approve",
+  "txt_approving": "Approving...",
+  "txt_deny": "Deny",
+  "txt_later": "Later",
+  "txt_pending_device_logins": "Pending device logins",
+  "txt_no_pending_device_logins": "No pending device logins",
+  "txt_fingerprint_phrase": "Fingerprint phrase",
+  "txt_auth_requests_load_failed": "Failed to load device login requests",
+  "txt_auth_request_update_failed": "Failed to update device login request",
+  "txt_auth_request_approved": "Device login approved",
+  "txt_auth_request_denied": "Device login denied",
+  "txt_auth_request_missing_public_key": "Device login request is missing a public key",
+  "txt_ip_address": "IP address"
 };
 
 export default en;

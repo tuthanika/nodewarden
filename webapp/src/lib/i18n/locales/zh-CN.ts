@@ -1172,7 +1172,22 @@ const zhCN: Record<string, string> = {
   "txt_target": "目标",
   "txt_time": "时间",
   "txt_time_range": "时间范围",
-  "txt_remove_domain": "移除域名"
+  "txt_remove_domain": "移除域名",
+  "txt_approve_device_login": "批准设备登录",
+  "txt_auth_request_approve_message": "解锁您设备上的 Bitwarden，或通过网页 App 批准。批准前，请确保指纹短语与下面的相匹配。",
+  "txt_approve": "批准",
+  "txt_approving": "正在批准...",
+  "txt_deny": "拒绝",
+  "txt_later": "稍后",
+  "txt_pending_device_logins": "待处理设备登录",
+  "txt_no_pending_device_logins": "没有待处理设备登录",
+  "txt_fingerprint_phrase": "指纹短语",
+  "txt_auth_requests_load_failed": "加载设备登录请求失败",
+  "txt_auth_request_update_failed": "更新设备登录请求失败",
+  "txt_auth_request_approved": "已批准设备登录",
+  "txt_auth_request_denied": "已拒绝设备登录",
+  "txt_auth_request_missing_public_key": "设备登录请求缺少公钥",
+  "txt_ip_address": "IP 地址"
 };
 
 export default zhCN;

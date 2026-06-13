@@ -15,9 +15,14 @@ import {
   handleGetPasswordHint,
   handleRecoverTwoFactor,
 } from './handlers/accounts';
+import {
+  handleCreateAuthRequest,
+  handleGetAuthRequestResponse,
+} from './handlers/auth-requests';
 import { handlePublicDownloadAttachment } from './handlers/attachments';
 import { handlePublicUploadAttachment } from './handlers/attachments';
 import {
+  handleAnonymousNotificationsHub,
   handleNotificationsHub,
   handleNotificationsNegotiate,
 } from './handlers/notifications';
@@ -390,6 +395,19 @@ export async function handlePublicRoute(
     return handleDownloadSendFile(request, env, sendDownloadMatch[1], sendDownloadMatch[2]);
   }
 
+  if ((path === '/api/auth-requests' || path === '/api/auth-requests/') && method === 'POST') {
+    const blocked = await enforcePublicRateLimit('public-sensitive', LIMITS.rateLimit.sensitivePublicRequestsPerMinute);
+    if (blocked) return blocked;
+    return handleCreateAuthRequest(request, env);
+  }
+
+  const authRequestResponseMatch = path.match(/^\/api\/auth-requests\/([a-f0-9-]+)\/response$/i);
+  if (authRequestResponseMatch && method === 'GET') {
+    const blocked = await enforcePublicRateLimit('public-sensitive', LIMITS.rateLimit.sensitivePublicRequestsPerMinute);
+    if (blocked) return blocked;
+    return handleGetAuthRequestResponse(request, env, authRequestResponseMatch[1]);
+  }
+
   if (path === '/identity/connect/token' && method === 'POST') {
     return handleToken(request, env);
   }
@@ -476,6 +494,10 @@ export async function handlePublicRoute(
 
   if (path === '/notifications/hub' && method === 'GET') {
     return handleNotificationsHub(request, env);
+  }
+
+  if (path === '/notifications/anonymous-hub' && method === 'GET') {
+    return handleAnonymousNotificationsHub(request, env);
   }
   return null;
 }

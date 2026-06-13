@@ -1,4 +1,4 @@
-import { User, Cipher, Folder, Attachment, Device, Invite, AuditLog, Send, TrustedDeviceTokenSummary, RefreshTokenRecord, CustomEquivalentDomain, AccountPasskeyChallenge, AccountPasskeyChallengeScope, AccountPasskeyCredential } from '../types';
+import { User, Cipher, Folder, Attachment, Device, Invite, AuditLog, Send, TrustedDeviceTokenSummary, RefreshTokenRecord, CustomEquivalentDomain, AccountPasskeyChallenge, AccountPasskeyChallengeScope, AccountPasskeyCredential, AuthRequestRecord } from '../types';
 import { LIMITS } from '../config/limits';
 import { ensureStorageSchema } from './storage-schema';
 import {
@@ -104,6 +104,15 @@ import {
   updateTrustedTwoFactorTokensExpiryByDevice as updateStoredTrustedTokensExpiryByDevice,
 } from './storage-device-repo';
 import {
+  createAuthRequest as createStoredAuthRequest,
+  getAuthRequestById as findStoredAuthRequestById,
+  listAuthRequestsByUserId as listStoredAuthRequestsByUserId,
+  listPendingAuthRequestsByUserId as listStoredPendingAuthRequestsByUserId,
+  markAuthRequestAuthenticated as markStoredAuthRequestAuthenticated,
+  pruneExpiredAuthRequests as pruneStoredExpiredAuthRequests,
+  updateAuthRequestResponse as updateStoredAuthRequestResponse,
+} from './storage-auth-request-repo';
+import {
   ensureUsedAttachmentDownloadTokenTable as ensureStoredAttachmentTokenTable,
   consumeAttachmentDownloadToken as consumeStoredAttachmentDownloadToken,
 } from './storage-attachment-token-repo';
@@ -134,8 +143,8 @@ const STORAGE_SCHEMA_VERSION_KEY = 'schema.version';
 // Bump this whenever src/services/storage-schema.ts or migrations/0001_init.sql
 // changes. Existing D1 installs only rerun ensureStorageSchema() when this value
 // differs from config.schema.version.
-const STORAGE_SCHEMA_VERSION = '2026-06-09-account-passkeys';
-const REQUIRED_ACCOUNT_PASSKEY_TABLES = ['webauthn_credentials', 'webauthn_challenges'] as const;
+const STORAGE_SCHEMA_VERSION = '2026-06-12-auth-requests';
+const REQUIRED_SCHEMA_TABLES = ['webauthn_credentials', 'webauthn_challenges', 'auth_requests'] as const;
 
 // D1-backed storage.
 // Contract:
@@ -166,14 +175,14 @@ export class StorageService {
     return stmt.bind(...values.map(v => v === undefined ? null : v));
   }
 
-  private async hasAccountPasskeyTables(): Promise<boolean> {
-    const placeholders = REQUIRED_ACCOUNT_PASSKEY_TABLES.map(() => '?').join(', ');
+  private async hasRequiredSchemaTables(): Promise<boolean> {
+    const placeholders = REQUIRED_SCHEMA_TABLES.map(() => '?').join(', ');
     const result = await this.db
       .prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name IN (${placeholders})`)
-      .bind(...REQUIRED_ACCOUNT_PASSKEY_TABLES)
+      .bind(...REQUIRED_SCHEMA_TABLES)
       .all<{ name: string }>();
     const found = new Set((result.results || []).map((row) => row.name));
-    return REQUIRED_ACCOUNT_PASSKEY_TABLES.every((table) => found.has(table));
+    return REQUIRED_SCHEMA_TABLES.every((table) => found.has(table));
   }
 
   private sqlChunkSize(fixedBindCount: number): number {
@@ -220,7 +229,7 @@ export class StorageService {
     await this.db.prepare('CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT NOT NULL)').run();
     const schemaVersion = await getStoredConfigValue(this.db, STORAGE_SCHEMA_VERSION_KEY);
     const schemaMissingRequiredTables = schemaVersion === STORAGE_SCHEMA_VERSION
-      ? !(await this.hasAccountPasskeyTables())
+      ? !(await this.hasRequiredSchemaTables())
       : true;
     if (schemaVersion !== STORAGE_SCHEMA_VERSION || schemaMissingRequiredTables) {
       await ensureStorageSchema(this.db);
@@ -714,6 +723,45 @@ export class StorageService {
 
   async deleteDevicesByUserId(userId: string): Promise<number> {
     return deleteStoredDevicesByUserId(this.db, userId);
+  }
+
+  // --- Auth requests / Login with device ---
+
+  async createAuthRequest(request: AuthRequestRecord): Promise<void> {
+    await createStoredAuthRequest(this.db, request);
+  }
+
+  async getAuthRequestById(id: string): Promise<AuthRequestRecord | null> {
+    return findStoredAuthRequestById(this.db, id);
+  }
+
+  async listAuthRequestsByUserId(userId: string): Promise<AuthRequestRecord[]> {
+    return listStoredAuthRequestsByUserId(this.db, userId);
+  }
+
+  async listPendingAuthRequestsByUserId(userId: string): Promise<AuthRequestRecord[]> {
+    return listStoredPendingAuthRequestsByUserId(this.db, userId);
+  }
+
+  async updateAuthRequestResponse(
+    id: string,
+    userId: string,
+    update: {
+      approved: boolean;
+      responseDeviceIdentifier: string;
+      key?: string | null;
+      masterPasswordHash?: string | null;
+    }
+  ): Promise<boolean> {
+    return updateStoredAuthRequestResponse(this.db, id, userId, update);
+  }
+
+  async markAuthRequestAuthenticated(id: string): Promise<boolean> {
+    return markStoredAuthRequestAuthenticated(this.db, id);
+  }
+
+  async pruneExpiredAuthRequests(): Promise<number> {
+    return pruneStoredExpiredAuthRequests(this.db);
   }
 
   async getTrustedDeviceTokenSummariesByUserId(userId: string): Promise<TrustedDeviceTokenSummary[]> {

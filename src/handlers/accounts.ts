@@ -10,6 +10,10 @@ import { isTotpEnabled, verifyTotpToken } from '../utils/totp';
 import { createRecoveryCode, recoveryCodeEquals } from '../utils/recovery-code';
 import { buildAccountKeys } from '../utils/user-decryption';
 
+const TWO_FACTOR_PROVIDER_AUTHENTICATOR = 0;
+const TOTP_USER_VERIFICATION_TOKEN_TTL_MS = 10 * 60 * 1000;
+const TOTP_BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+
 // CONTRACT:
 // users.master_password_hash is server-side login verification only. It does
 // not decrypt vault data. Password changes must keep encrypted user key material,
@@ -64,6 +68,77 @@ function normalizeTotpSecret(input: string): string {
   return out;
 }
 
+function randomBase32Secret(length: number = 32): string {
+  const bytes = new Uint8Array(length);
+  crypto.getRandomValues(bytes);
+  let out = '';
+  for (const byte of bytes) {
+    out += TOTP_BASE32_ALPHABET[byte % TOTP_BASE32_ALPHABET.length];
+  }
+  return out;
+}
+
+function base64UrlEncodeBytes(data: Uint8Array): string {
+  const base64 = btoa(String.fromCharCode(...data));
+  return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function base64UrlDecodeBytes(input: string): Uint8Array {
+  let base64 = input.replace(/-/g, '+').replace(/_/g, '/');
+  while (base64.length % 4) base64 += '=';
+  const binary = atob(base64);
+  const out = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
+  return out;
+}
+
+async function hmacSha256(secret: string, data: string): Promise<Uint8Array> {
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  return new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(data)));
+}
+
+async function createTotpUserVerificationToken(env: Env, user: User, key: string): Promise<string> {
+  const payload = {
+    sub: user.id,
+    key,
+    stamp: user.securityStamp,
+    exp: Date.now() + TOTP_USER_VERIFICATION_TOKEN_TTL_MS,
+  };
+  const payloadB64 = base64UrlEncodeBytes(new TextEncoder().encode(JSON.stringify(payload)));
+  const signatureB64 = base64UrlEncodeBytes(await hmacSha256(env.JWT_SECRET, payloadB64));
+  return `${payloadB64}.${signatureB64}`;
+}
+
+async function verifyTotpUserVerificationToken(env: Env, user: User, key: string, token: string): Promise<boolean> {
+  try {
+    const [payloadB64, signatureB64] = String(token || '').split('.');
+    if (!payloadB64 || !signatureB64) return false;
+    const expected = base64UrlEncodeBytes(await hmacSha256(env.JWT_SECRET, payloadB64));
+    if (expected !== signatureB64) return false;
+    const payload = JSON.parse(new TextDecoder().decode(base64UrlDecodeBytes(payloadB64))) as {
+      sub?: string;
+      key?: string;
+      stamp?: string;
+      exp?: number;
+    };
+    return (
+      payload.sub === user.id &&
+      payload.key === key &&
+      payload.stamp === user.securityStamp &&
+      typeof payload.exp === 'number' &&
+      payload.exp >= Date.now()
+    );
+  } catch {
+    return false;
+  }
+}
+
 function normalizeRecoveryCodeInput(input: string): string {
   return String(input || '').toUpperCase().replace(/[^A-Z2-7]/g, '');
 }
@@ -89,6 +164,23 @@ async function verifyUserSecret(
   const normalized = String(secret || '').trim();
   if (!normalized) return false;
   return auth.verifyPassword(normalized, user.masterPasswordHash, user.email);
+}
+
+function readBodyString(body: Record<string, unknown>, names: string[]): string {
+  for (const name of names) {
+    const value = body[name];
+    if (typeof value === 'string') return value;
+  }
+  return '';
+}
+
+async function readRequestBody(request: Request): Promise<Record<string, unknown>> {
+  const contentType = request.headers.get('content-type') || '';
+  if (contentType.includes('application/x-www-form-urlencoded')) {
+    const formData = await request.formData();
+    return Object.fromEntries(formData.entries()) as Record<string, unknown>;
+  }
+  return await request.json();
 }
 
 function toProfile(user: User, env: Env): ProfileResponse {
@@ -592,6 +684,164 @@ export async function handleGetTotpStatus(request: Request, env: Env, userId: st
   });
 }
 
+function twoFactorProviderResponse(type: number, enabled: boolean): Record<string, unknown> {
+  return {
+    Enabled: enabled,
+    Type: type,
+    Object: 'twoFactorProvider',
+  };
+}
+
+function twoFactorAuthenticatorResponse(
+  enabled: boolean,
+  key: string,
+  userVerificationToken?: string
+): Record<string, unknown> {
+  return {
+    Enabled: enabled,
+    Key: key,
+    UserVerificationToken: userVerificationToken ?? null,
+    Object: 'twoFactorAuthenticator',
+  };
+}
+
+// GET /api/two-factor
+export async function handleGetTwoFactorProviders(request: Request, env: Env, userId: string): Promise<Response> {
+  void request;
+  const storage = new StorageService(env.DB);
+  const user = await storage.getUserById(userId);
+  if (!user) return errorResponse('User not found', 404);
+
+  const data = user.totpSecret
+    ? [twoFactorProviderResponse(TWO_FACTOR_PROVIDER_AUTHENTICATOR, true)]
+    : [];
+
+  return jsonResponse({
+    Data: data,
+    ContinuationToken: null,
+    Object: 'list',
+  });
+}
+
+// POST /api/two-factor/get-authenticator
+export async function handleGetTwoFactorAuthenticator(request: Request, env: Env, userId: string): Promise<Response> {
+  const storage = new StorageService(env.DB);
+  const auth = new AuthService(env);
+  const user = await storage.getUserById(userId);
+  if (!user) return errorResponse('User not found', 404);
+
+  let body: Record<string, unknown>;
+  try {
+    body = await readRequestBody(request);
+  } catch {
+    return errorResponse('Invalid JSON', 400);
+  }
+
+  const secret = readBodyString(body, ['masterPasswordHash', 'MasterPasswordHash', 'otp', 'OTP', 'secret', 'Secret']);
+  const verified = await verifyUserSecret(auth, user, secret);
+  if (!verified) return errorResponse('User verification failed.', 400);
+
+  const key = normalizeTotpSecret(user.totpSecret || '') || randomBase32Secret();
+  const userVerificationToken = await createTotpUserVerificationToken(env, user, key);
+  return jsonResponse(twoFactorAuthenticatorResponse(!!user.totpSecret, key, userVerificationToken));
+}
+
+// PUT/POST /api/two-factor/authenticator
+export async function handlePutTwoFactorAuthenticator(request: Request, env: Env, userId: string): Promise<Response> {
+  const storage = new StorageService(env.DB);
+  const user = await storage.getUserById(userId);
+  if (!user) return errorResponse('User not found', 404);
+
+  let body: Record<string, unknown>;
+  try {
+    body = await readRequestBody(request);
+  } catch {
+    return errorResponse('Invalid JSON', 400);
+  }
+
+  const key = normalizeTotpSecret(readBodyString(body, ['key', 'Key']));
+  const token = readBodyString(body, ['token', 'Token']).trim();
+  const userVerificationToken = readBodyString(body, ['userVerificationToken', 'UserVerificationToken']);
+  if (!key || !token || !userVerificationToken) {
+    return errorResponse('Key, token and userVerificationToken are required', 400);
+  }
+  if (!await verifyTotpUserVerificationToken(env, user, key, userVerificationToken)) {
+    return errorResponse('User verification failed.', 400);
+  }
+  if (!isTotpEnabled(key)) return errorResponse('Invalid TOTP secret', 400);
+  if (!await verifyTotpToken(key, token)) return errorResponse('Invalid token.', 400);
+
+  user.totpSecret = key;
+  if (!user.totpRecoveryCode) {
+    user.totpRecoveryCode = createRecoveryCode();
+  }
+  user.updatedAt = new Date().toISOString();
+  await storage.saveUser(user);
+  await storage.deleteRefreshTokensByUserId(user.id);
+  AuthService.invalidateUserCache(user.id);
+  await writeAuditEvent(storage, {
+    actorUserId: user.id,
+    action: 'account.totp.enable',
+    category: 'security',
+    level: 'security',
+    targetType: 'user',
+    targetId: user.id,
+    metadata: auditRequestMetadata(request),
+  });
+
+  return jsonResponse(twoFactorAuthenticatorResponse(true, key));
+}
+
+// DELETE /api/two-factor/authenticator and PUT/POST /api/two-factor/disable
+export async function handleDisableTwoFactorProvider(request: Request, env: Env, userId: string): Promise<Response> {
+  const storage = new StorageService(env.DB);
+  const auth = new AuthService(env);
+  const user = await storage.getUserById(userId);
+  if (!user) return errorResponse('User not found', 404);
+
+  let body: Record<string, unknown>;
+  try {
+    body = await readRequestBody(request);
+  } catch {
+    return errorResponse('Invalid JSON', 400);
+  }
+
+  const typeRaw = body.type ?? body.Type ?? TWO_FACTOR_PROVIDER_AUTHENTICATOR;
+  const type = typeof typeRaw === 'number' ? typeRaw : Number.parseInt(String(typeRaw), 10);
+  if (type !== TWO_FACTOR_PROVIDER_AUTHENTICATOR) {
+    return errorResponse('Two-factor provider is not supported by this server.', 400);
+  }
+
+  const key = normalizeTotpSecret(readBodyString(body, ['key', 'Key']));
+  const userVerificationToken = readBodyString(body, ['userVerificationToken', 'UserVerificationToken']);
+  const secret = readBodyString(body, ['masterPasswordHash', 'MasterPasswordHash', 'otp', 'OTP', 'secret', 'Secret']);
+  let verified = false;
+  if (key && userVerificationToken) {
+    verified = await verifyTotpUserVerificationToken(env, user, key, userVerificationToken);
+  }
+  if (!verified) {
+    verified = await verifyUserSecret(auth, user, secret);
+  }
+  if (!verified) return errorResponse('User verification failed.', 400);
+
+  user.totpSecret = null;
+  user.updatedAt = new Date().toISOString();
+  await storage.saveUser(user);
+  await storage.deleteRefreshTokensByUserId(user.id);
+  AuthService.invalidateUserCache(user.id);
+  await writeAuditEvent(storage, {
+    actorUserId: user.id,
+    action: 'account.totp.disable',
+    category: 'security',
+    level: 'security',
+    targetType: 'user',
+    targetId: user.id,
+    metadata: auditRequestMetadata(request),
+  });
+
+  return jsonResponse(twoFactorProviderResponse(TWO_FACTOR_PROVIDER_AUTHENTICATOR, false));
+}
+
 // PUT /api/accounts/totp
 // enable: { enabled: true, secret: "...", token: "123456" }
 // disable: { enabled: false, masterPasswordHash: "..." }
@@ -699,7 +949,9 @@ export async function handleGetTotpRecoveryCode(request: Request, env: Env, user
   }
 
   return jsonResponse({
+    Code: user.totpRecoveryCode,
     code: user.totpRecoveryCode,
+    Object: 'twoFactorRecover',
     object: 'twoFactorRecover',
   });
 }

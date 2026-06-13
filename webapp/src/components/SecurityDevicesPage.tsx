@@ -2,14 +2,20 @@ import { useState } from 'preact/hooks';
 import { Clock3, Pencil, RefreshCw, ShieldCheck, ShieldOff, Trash2 } from 'lucide-preact';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import LoadingState from '@/components/LoadingState';
-import type { AuthorizedDevice } from '@/lib/types';
+import PendingAuthRequestsPanel from '@/components/PendingAuthRequestsPanel';
+import type { AuthRequest, AuthorizedDevice } from '@/lib/types';
 import { t } from '@/lib/i18n';
 
 interface SecurityDevicesPageProps {
   devices: AuthorizedDevice[];
   loading: boolean;
   error: string;
+  pendingAuthRequests: AuthRequest[];
+  pendingAuthRequestsLoading: boolean;
   onRefresh: () => void;
+  onRefreshPendingAuthRequests: () => Promise<void>;
+  onApproveAuthRequest: (request: AuthRequest) => Promise<void>;
+  onDenyAuthRequest: (request: AuthRequest) => Promise<void>;
   onRenameDevice: (device: AuthorizedDevice, name: string) => Promise<void>;
   onRevokeTrust: (device: AuthorizedDevice) => void;
   onTrustPermanently: (device: AuthorizedDevice) => void;
@@ -72,6 +78,16 @@ export default function SecurityDevicesPage(props: SecurityDevicesPageProps) {
   return (
     <>
       <div className="stack">
+        <PendingAuthRequestsPanel
+          className="card"
+          loadingVariant="compact"
+          pendingAuthRequests={props.pendingAuthRequests}
+          pendingAuthRequestsLoading={props.pendingAuthRequestsLoading}
+          onRefreshPendingAuthRequests={props.onRefreshPendingAuthRequests}
+          onApproveAuthRequest={props.onApproveAuthRequest}
+          onDenyAuthRequest={props.onDenyAuthRequest}
+        />
+
         <section className="card">
         <div className="section-head">
           <div>

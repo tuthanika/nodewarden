@@ -47,6 +47,9 @@ function isAdminProfile(profile: Profile | null): boolean {
   return String(profile?.role || '').toLowerCase() === 'admin';
 }
 
+const DEVICE_MANAGEMENT_ROUTE = '/settings/security/device-management';
+const LEGACY_DEVICE_MANAGEMENT_ROUTE = '/security/devices';
+
 export default function AppAuthenticatedShell(props: AppAuthenticatedShellProps) {
   const routeAnimationKey = props.isImportRoute ? props.importRoute : props.location;
   const isDomainRulesRoute = props.location === '/settings/domain-rules';
@@ -55,7 +58,8 @@ export default function AppAuthenticatedShell(props: AppAuthenticatedShellProps)
   const vaultActive = props.location === '/vault' || props.location === '/vault/totp';
   const settingsActive = props.location === props.settingsAccountRoute || props.location === '/settings/domain-rules';
   const dataActive = props.location === '/backup' || props.isImportRoute;
-  const managementActive = props.location === '/admin' || props.location === '/security/devices' || props.location === '/logs';
+  const deviceManagementActive = props.location === DEVICE_MANAGEMENT_ROUTE || props.location === LEGACY_DEVICE_MANAGEMENT_ROUTE;
+  const managementActive = props.location === '/admin' || deviceManagementActive || props.location === '/logs';
   const [navLayoutMode, setNavLayoutMode] = useState<NavLayoutMode>(readNavLayoutMode);
   const [navLayoutPickerOpen, setNavLayoutPickerOpen] = useState(false);
   const navLayoutPickerRef = useRef<HTMLDivElement | null>(null);
@@ -177,7 +181,7 @@ export default function AppAuthenticatedShell(props: AppAuthenticatedShellProps)
       {renderSideLink(props.importRoute, props.isImportRoute, <ArrowUpDown size={16} />, t('nav_import_export'))}
       {isAdmin && renderSideLink('/admin', props.location === '/admin', <Users size={16} />, t('nav_admin_panel'))}
       {isAdmin && renderSideLink('/logs', props.location === '/logs', <FileClock size={16} />, t('nav_log_center'))}
-      {renderSideLink('/security/devices', props.location === '/security/devices', <MonitorSmartphone size={16} />, t('nav_device_management'))}
+      {renderSideLink(DEVICE_MANAGEMENT_ROUTE, deviceManagementActive, <MonitorSmartphone size={16} />, t('nav_device_management'))}
     </>
   );
 
@@ -222,7 +226,7 @@ export default function AppAuthenticatedShell(props: AppAuthenticatedShellProps)
         <>
           {isAdmin && renderSubLink('/admin', props.location === '/admin', t('nav_admin_panel'))}
           {isAdmin && renderSubLink('/logs', props.location === '/logs', t('nav_log_center'))}
-          {renderSubLink('/security/devices', props.location === '/security/devices', t('nav_device_management'))}
+          {renderSubLink(DEVICE_MANAGEMENT_ROUTE, deviceManagementActive, t('nav_device_management'))}
         </>
       )}
     </>

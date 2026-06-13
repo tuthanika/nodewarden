@@ -273,6 +273,28 @@ export interface DevicePendingAuthRequest {
   creationDate: string;
 }
 
+export type AuthRequestType = 0 | 1 | 2;
+
+export interface AuthRequestRecord {
+  id: string;
+  userId: string;
+  organizationId: string | null;
+  type: AuthRequestType;
+  requestDeviceIdentifier: string;
+  requestDeviceType: number;
+  requestIpAddress: string | null;
+  requestCountryName: string | null;
+  responseDeviceIdentifier: string | null;
+  accessCode: string;
+  publicKey: string;
+  key: string | null;
+  masterPasswordHash: string | null;
+  approved: boolean | null;
+  creationDate: string;
+  responseDate: string | null;
+  authenticationDate: string | null;
+}
+
 export interface DeviceResponse {
   id: string;
   userId?: string | null;

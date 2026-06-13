@@ -338,6 +338,23 @@ export interface AccountPasskeyCredential {
   revisionDate?: string;
 }
 
+export interface AuthRequest {
+  id: string;
+  publicKey: string;
+  requestDeviceType?: string | null;
+  requestDeviceTypeValue?: number | null;
+  requestDeviceIdentifier: string;
+  requestIpAddress?: string | null;
+  requestCountryName?: string | null;
+  key?: string | null;
+  creationDate: string;
+  requestApproved?: boolean | null;
+  responseDate?: string | null;
+  deviceId?: string | null;
+  requestDeviceId?: string | null;
+  fingerprintPhrase?: string;
+}
+
 export interface AccountPasskeyAssertionOptionsResponse {
   options: PublicKeyCredentialRequestOptions;
   token: string;

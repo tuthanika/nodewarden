@@ -21,7 +21,13 @@
 }
 
 .sidebar-title {
-  @apply mb-2 text-[13px] font-bold text-slate-700;
+  @apply mb-2;
+  font-size: var(--font-xs);
+  font-weight: 700;
+  letter-spacing: var(--tracking-wider);
+  text-transform: uppercase;
+  color: var(--muted);
+  line-height: var(--leading-tight);
 }
 
 .sidebar-title-row {
@@ -86,17 +92,25 @@
 }
 
 .tree-btn {
-  @apply mb-1 flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-lg border-0 bg-transparent px-2.5 py-2 text-left transition;
+  @apply mb-1 flex w-full min-w-0 cursor-pointer items-center border-0 bg-transparent px-2.5 py-2 text-left transition;
+  gap: var(--space-2);
+  border-radius: var(--radius-md);
+  font-size: var(--font-sm);
+  font-weight: 500;
+  line-height: var(--leading-snug);
+  letter-spacing: var(--tracking-normal);
+  color: var(--muted-strong);
 }
 
 .tree-btn:hover {
   background: rgba(37, 99, 235, 0.05);
+  color: var(--text);
 }
 
 .tree-btn.active {
   background: rgba(37, 99, 235, 0.09);
   color: var(--primary-strong);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .tree-icon {
@@ -191,8 +205,12 @@
 }
 
 .list-count {
-  @apply shrink-0 whitespace-nowrap text-xs;
-  color: var(--text-muted);
+  @apply shrink-0 whitespace-nowrap;
+  font-size: var(--font-xs);
+  font-weight: 600;
+  letter-spacing: var(--tracking-wide);
+  color: var(--muted);
+  line-height: var(--leading-tight);
 }
 
 .list-icon-btn {
@@ -525,7 +543,12 @@
 }
 
 .list-title {
-  @apply flex min-w-0 items-center gap-1.5 text-[15px] font-bold;
+  @apply flex min-w-0 items-center;
+  gap: var(--space-2);
+  font-size: var(--font-base);
+  font-weight: 600;
+  line-height: var(--leading-tight);
+  letter-spacing: var(--tracking-tight);
   color: var(--primary-strong);
   transition: color var(--dur-fast) var(--ease-smooth), letter-spacing 220ms var(--ease-out-soft);
 }
@@ -569,7 +592,7 @@
 
 .list-item:hover .list-title,
 .list-item.active .list-title {
-  letter-spacing: -0.012em;
+  letter-spacing: var(--tracking-tighter);
 }
 
 .list-item:hover .list-sub,
@@ -614,11 +637,19 @@
 
 .detail-title {
   @apply m-0 overflow-hidden text-ellipsis whitespace-nowrap;
+  font-size: var(--font-2xl);
+  font-weight: 600;
+  line-height: var(--leading-tight);
+  letter-spacing: var(--tracking-tighter);
+  color: var(--text);
 }
 
 .detail-sub {
   @apply mt-2;
-  color: #667085;
+  font-size: var(--font-sm);
+  line-height: var(--leading-relaxed);
+  letter-spacing: var(--tracking-normal);
+  color: var(--muted);
 }
 
 .password-history-link {

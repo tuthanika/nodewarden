@@ -1172,7 +1172,22 @@ const zhTW: Record<string, string> = {
   "txt_target": "目標",
   "txt_time": "時間",
   "txt_time_range": "時間範圍",
-  "txt_remove_domain": "移除域名"
+  "txt_remove_domain": "移除域名",
+  "txt_approve_device_login": "批准裝置登入",
+  "txt_auth_request_approve_message": "解鎖您裝置上的 Bitwarden，或透過網頁 App 批准。批准前，請確保指紋短語與下面的相符。",
+  "txt_fingerprint_phrase": "指紋短語",
+  "txt_ip_address": "IP 位址",
+  "txt_approve": "批准",
+  "txt_approving": "正在批准...",
+  "txt_deny": "拒絕",
+  "txt_later": "稍後",
+  "txt_pending_device_logins": "待處理裝置登入",
+  "txt_no_pending_device_logins": "沒有待處理裝置登入",
+  "txt_auth_requests_load_failed": "載入裝置登入請求失敗",
+  "txt_auth_request_update_failed": "更新裝置登入請求失敗",
+  "txt_auth_request_approved": "已批准裝置登入",
+  "txt_auth_request_denied": "已拒絕裝置登入",
+  "txt_auth_request_missing_public_key": "裝置登入請求缺少公鑰"
 };
 
 export default zhTW;

@@ -8,7 +8,14 @@ body,
   @apply m-0 h-full w-full p-0;
   color: var(--text);
   background: var(--bg-accent);
-  font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
+  font-size: var(--font-base);
+  line-height: var(--leading-normal);
+  letter-spacing: var(--tracking-normal);
+  font-feature-settings: 'liga' 1, 'kern' 1;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 html {
@@ -16,13 +23,35 @@ html {
 }
 
 body {
-  @apply relative antialiased;
+  @apply relative;
   transition: background-color var(--dur-medium) var(--ease-smooth), color var(--dur-medium) var(--ease-smooth);
 }
 
 body.dialog-open {
   @apply overflow-hidden;
   overscroll-behavior: contain;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 600;
+  letter-spacing: var(--tracking-tight);
+  line-height: var(--leading-tight);
+  margin: 0;
+}
+
+h1 { font-size: var(--font-4xl); }
+h2 { font-size: var(--font-3xl); }
+h3 { font-size: var(--font-xl); }
+h4 { font-size: var(--font-lg); }
+
+p {
+  margin: 0;
+  line-height: var(--leading-relaxed);
+}
+
+small {
+  font-size: var(--font-sm);
+  line-height: var(--leading-snug);
 }
 
 ::selection {

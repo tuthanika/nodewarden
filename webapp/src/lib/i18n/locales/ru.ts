@@ -1172,7 +1172,22 @@ const ru: Record<string, string> = {
   "txt_target": "Цель",
   "txt_time": "Время",
   "txt_time_range": "Период",
-  "txt_remove_domain": "Удалить домен"
+  "txt_remove_domain": "Удалить домен",
+  "txt_approve_device_login": "Подтвердить вход с устройства",
+  "txt_auth_request_approve_message": "Разблокируйте Bitwarden на устройстве или подтвердите вход через веб-приложение. Перед подтверждением убедитесь, что фраза отпечатка совпадает с указанной ниже.",
+  "txt_fingerprint_phrase": "Фраза отпечатка",
+  "txt_ip_address": "IP-адрес",
+  "txt_approve": "Подтвердить",
+  "txt_approving": "Подтверждение...",
+  "txt_deny": "Отклонить",
+  "txt_later": "Позже",
+  "txt_pending_device_logins": "Ожидающие входы с устройств",
+  "txt_no_pending_device_logins": "Нет ожидающих входов с устройств",
+  "txt_auth_requests_load_failed": "Не удалось загрузить запросы входа с устройств",
+  "txt_auth_request_update_failed": "Не удалось обновить запрос входа с устройства",
+  "txt_auth_request_approved": "Вход с устройства подтвержден",
+  "txt_auth_request_denied": "Вход с устройства отклонен",
+  "txt_auth_request_missing_public_key": "В запросе входа с устройства отсутствует открытый ключ"
 };
 
 export default ru;

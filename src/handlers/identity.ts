@@ -19,15 +19,17 @@ import {
   assertAccountPasskeyCredential,
   buildAccountPasskeyTokenUserDecryptionOption,
 } from './account-passkeys';
+import { isAuthRequestExpired } from '../services/storage-auth-request-repo';
 
 const TWO_FACTOR_REMEMBER_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const TWO_FACTOR_PROVIDER_AUTHENTICATOR = 0;
 const TWO_FACTOR_PROVIDER_REMEMBER = 5;
+const TWO_FACTOR_PROVIDER_RECOVERY_CODE = 8;
 const WEB_REFRESH_COOKIE = 'nodewarden_web_refresh';
-// Android client (2026.2.x) deserializes TwoFactorProviders2 keys with -1 for recovery code.
-// Keep request parsing backward-compatible with historical provider values (8 / 100).
+// Some UI surfaces use -1 for the recovery-code settings dialog. Login itself follows
+// the official Identity provider enum (RecoveryCode = 8), while request parsing remains
+// compatible with older/local provider values.
 const TWO_FACTOR_PROVIDER_RECOVERY_CODE_RESPONSE = '-1';
-const TWO_FACTOR_PROVIDER_RECOVERY_CODE_LEGACY = 8;
 const TWO_FACTOR_PROVIDER_RECOVERY_CODE_ANDROID_REQUEST = 100;
 
 function resolveTotpSecret(userSecret: string | null): string | null {
@@ -74,6 +76,14 @@ function constantTimeEquals(a: string, b: string): boolean {
     diff |= encA[i] ^ encB[i];
   }
   return diff === 0;
+}
+
+function readBodyValue(body: Record<string, string>, names: string[]): string | undefined {
+  for (const name of names) {
+    const value = body[name];
+    if (value != null) return value;
+  }
+  return undefined;
 }
 
 function buildRefreshCookie(request: Request, refreshToken: string, maxAgeSeconds: number): string {
@@ -130,12 +140,13 @@ function buildPreloginResponse(
   };
 }
 
-function twoFactorRequiredResponse(message: string = 'Two factor required.', includeRecoveryCode: boolean = false): Response {
-  const providers = includeRecoveryCode
-    ? [String(TWO_FACTOR_PROVIDER_AUTHENTICATOR), TWO_FACTOR_PROVIDER_RECOVERY_CODE_RESPONSE]
-    : [String(TWO_FACTOR_PROVIDER_AUTHENTICATOR)];
-  const providers2: Record<string, null> = {};
-  for (const provider of providers) providers2[provider] = null;
+function twoFactorRequiredResponse(message: string = 'Two factor required.'): Response {
+  // Match Bitwarden Identity: TwoFactorProviders2 lists enabled 2FA providers only.
+  // Clients expose recovery-code entry points themselves; Android 2026.4 fails to
+  // parse the challenge if an unknown recovery provider key such as "8" is included.
+  const providers = [String(TWO_FACTOR_PROVIDER_AUTHENTICATOR)];
+  const providers2: Record<string, { Email: null }> = {};
+  for (const provider of providers) providers2[provider] = { Email: null };
   const customResponse = {
     TwoFactorProviders: providers,
     TwoFactorProviders2: providers2,
@@ -228,9 +239,10 @@ export async function handleToken(request: Request, env: Env): Promise<Response>
     // Login with password
     const email = body.username?.toLowerCase();
     const passwordHash = body.password;
-    const twoFactorToken = body.twoFactorToken;
-    const twoFactorProvider = body.twoFactorProvider;
-    const twoFactorRemember = body.twoFactorRemember;
+    const authRequestId = readBodyValue(body, ['authRequest', 'AuthRequest']);
+    const twoFactorToken = readBodyValue(body, ['twoFactorToken', 'TwoFactorToken']);
+    const twoFactorProvider = readBodyValue(body, ['twoFactorProvider', 'TwoFactorProvider']);
+    const twoFactorRemember = readBodyValue(body, ['twoFactorRemember', 'TwoFactorRemember']);
     const loginIdentifier = clientIdentifier;
     const deviceInfo = readAuthRequestDeviceInfo(body, request);
 
@@ -272,11 +284,31 @@ export async function handleToken(request: Request, env: Env): Promise<Response>
       return identityErrorResponse('Account is disabled', 'invalid_grant', 400);
     }
 
-    const valid = await auth.verifyPassword(passwordHash, user.masterPasswordHash, user.email);
+    let validatedAuthRequestId: string | null = null;
+    let valid = false;
+    const normalizedAuthRequestId = String(authRequestId || '').trim();
+    if (normalizedAuthRequestId) {
+      const authRequest = await storage.getAuthRequestById(normalizedAuthRequestId);
+      valid = !!(
+        authRequest &&
+        authRequest.userId === user.id &&
+        authRequest.type === 0 &&
+        authRequest.approved === true &&
+        authRequest.responseDate &&
+        !authRequest.authenticationDate &&
+        !isAuthRequestExpired(authRequest) &&
+        constantTimeEquals(authRequest.accessCode, passwordHash)
+      );
+      if (valid) {
+        validatedAuthRequestId = authRequest!.id;
+      }
+    } else {
+      valid = await auth.verifyPassword(passwordHash, user.masterPasswordHash, user.email);
+    }
     if (!valid) {
       await safeWriteAuditEvent(env, {
         actorUserId: user.id,
-        action: 'auth.login.failed.bad_password',
+        action: normalizedAuthRequestId ? 'auth.login.failed.bad_auth_request' : 'auth.login.failed.bad_password',
         category: 'auth',
         level: 'warn',
         targetType: 'user',
@@ -298,7 +330,6 @@ export async function handleToken(request: Request, env: Env): Promise<Response>
     let trustedTwoFactorTokenToReturn: string | undefined;
     const effectiveTotpSecret = resolveTotpSecret(user.totpSecret);
     if (effectiveTotpSecret) {
-      const canUseRecoveryCode = !!user.totpRecoveryCode;
       const normalizedTwoFactorProvider = String(twoFactorProvider ?? '').trim();
       const normalizedTwoFactorToken = String(twoFactorToken ?? '').trim();
       let rememberRequested = ['1', 'true', 'True', 'TRUE', 'on', 'yes', 'Yes', 'YES'].includes(String(twoFactorRemember || '').trim());
@@ -308,7 +339,7 @@ export async function handleToken(request: Request, env: Env): Promise<Response>
       // Upstream-compatible behavior: if 2FA is required and either provider or token is missing,
       // respond with a 2FA challenge payload.
       if (!hasProvider || !hasToken) {
-        return twoFactorRequiredResponse('Two factor required.', canUseRecoveryCode);
+        return twoFactorRequiredResponse('Two factor required.');
       }
 
       let passedByRememberToken = false;
@@ -323,7 +354,7 @@ export async function handleToken(request: Request, env: Env): Promise<Response>
 
         // Remember token missing/invalid/expired should re-enter the 2FA challenge flow.
         if (!passedByRememberToken) {
-          return twoFactorRequiredResponse('Two factor required.', canUseRecoveryCode);
+          return twoFactorRequiredResponse('Two factor required.');
         }
       } else if (normalizedTwoFactorProvider === String(TWO_FACTOR_PROVIDER_AUTHENTICATOR)) {
         const totpOk = await verifyTotpToken(effectiveTotpSecret, normalizedTwoFactorToken);
@@ -332,7 +363,7 @@ export async function handleToken(request: Request, env: Env): Promise<Response>
         }
       } else if (
         normalizedTwoFactorProvider === TWO_FACTOR_PROVIDER_RECOVERY_CODE_RESPONSE ||
-        normalizedTwoFactorProvider === String(TWO_FACTOR_PROVIDER_RECOVERY_CODE_LEGACY) ||
+        normalizedTwoFactorProvider === String(TWO_FACTOR_PROVIDER_RECOVERY_CODE) ||
         normalizedTwoFactorProvider === String(TWO_FACTOR_PROVIDER_RECOVERY_CODE_ANDROID_REQUEST)
       ) {
         if (!recoveryCodeEquals(normalizedTwoFactorToken, user.totpRecoveryCode)) {
@@ -375,6 +406,9 @@ export async function handleToken(request: Request, env: Env): Promise<Response>
 
     // Successful login - clear failed attempts
     await rateLimit.clearLoginAttempts(loginIdentifier);
+    if (validatedAuthRequestId) {
+      await storage.markAuthRequestAuthenticated(validatedAuthRequestId);
+    }
 
     const accessToken = await auth.generateAccessToken(user, deviceSession);
     const refreshToken = await auth.generateRefreshToken(user.id, deviceSession);

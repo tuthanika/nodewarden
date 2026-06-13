@@ -3,6 +3,7 @@ import { useLocation } from 'wouter';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import AppAuthenticatedShell from '@/components/AppAuthenticatedShell';
 import AppGlobalOverlays, { type AppConfirmState } from '@/components/AppGlobalOverlays';
+import AuthRequestApprovalDialog from '@/components/AuthRequestApprovalDialog';
 import AuthViews from '@/components/AuthViews';
 import NotFoundPage from '@/components/NotFoundPage';
 import PublicSendPage from '@/components/PublicSendPage';
@@ -22,6 +23,12 @@ import {
   saveSession,
   stripProfileSecrets,
 } from '@/lib/api/auth';
+import {
+  encryptSessionUserKeyForAuthRequest,
+  isPendingAuthRequest,
+  listPendingAuthRequests,
+  respondToAuthRequest,
+} from '@/lib/api/auth-requests';
 import { clearAuditLogs, getAuditLogSettings, listAdminInvites, listAdminUsers, listAuditLogs, saveAuditLogSettings, type AuditLogFilters } from '@/lib/api/admin';
 import { getDomainRules, saveDomainRules } from '@/lib/api/domains';
 import { getSends } from '@/lib/api/send';
@@ -74,7 +81,7 @@ import {
   createDemoMainRoutesProps,
 } from '@/lib/demo';
 import type { AdminBackupSettings } from '@/lib/api/backup';
-import type { AdminInvite, AdminUser, AppPhase, AuditLogSettings, AuthorizedDevice, Cipher, CustomEquivalentDomain, DomainRules, Folder as VaultFolder, Profile, Send, SessionState } from '@/lib/types';
+import type { AdminInvite, AdminUser, AppPhase, AuditLogSettings, AuthRequest, AuthorizedDevice, Cipher, CustomEquivalentDomain, DomainRules, Folder as VaultFolder, Profile, Send, SessionState } from '@/lib/types';
 import type { VaultCoreSnapshot } from '@/lib/vault-cache';
 
 function isBackupProgressDetail(value: unknown): value is BackupProgressDetail {
@@ -94,6 +101,8 @@ const IMPORT_ROUTE_ALIASES: ReadonlySet<string> = new Set(IMPORT_ROUTE_PATHS.fil
 const SETTINGS_HOME_ROUTE = '/settings';
 const SETTINGS_ACCOUNT_ROUTE = '/settings/account';
 const SETTINGS_DOMAIN_RULES_ROUTE = '/settings/domain-rules';
+const DEVICE_MANAGEMENT_ROUTE = '/settings/security/device-management';
+const LEGACY_DEVICE_MANAGEMENT_ROUTE = '/security/devices';
 const AUTH_ROUTE_PATHS = ['/', '/login', '/register', '/lock', '/recover-2fa'] as const;
 const APP_ROUTE_PATHS = [
   '/',
@@ -102,7 +111,8 @@ const APP_ROUTE_PATHS = [
   '/sends',
   '/admin',
   '/logs',
-  '/security/devices',
+  LEGACY_DEVICE_MANAGEMENT_ROUTE,
+  DEVICE_MANAGEMENT_ROUTE,
   '/backup',
   '/settings',
   SETTINGS_ACCOUNT_ROUTE,
@@ -213,6 +223,8 @@ export default function App() {
   const [disableTotpOpen, setDisableTotpOpen] = useState(false);
   const [disableTotpPassword, setDisableTotpPassword] = useState('');
   const [disableTotpSubmitting, setDisableTotpSubmitting] = useState(false);
+  const [authRequestDialogDismissedId, setAuthRequestDialogDismissedId] = useState<string | null>(null);
+  const [authRequestSubmittingId, setAuthRequestSubmittingId] = useState<string | null>(null);
   const [recoverValues, setRecoverValues] = useState({ email: '', password: '', recoveryCode: '' });
   const [themePreference, setThemePreference] = useState<ThemePreference>(() => readThemePreference());
   const [systemTheme, setSystemTheme] = useState<'light' | 'dark'>(() => resolveSystemTheme());
@@ -1060,6 +1072,52 @@ export default function App() {
     enabled: !IS_DEMO_MODE && phase === 'app' && !!session?.accessToken && vaultInitialDecryptDone,
     staleTime: 30_000,
   });
+  const pendingAuthRequestsQuery = useQuery({
+    queryKey: ['auth-requests-pending', vaultCacheKey || session?.email],
+    queryFn: () => listPendingAuthRequests(authedFetch, profile?.email || session?.email || ''),
+    enabled: !IS_DEMO_MODE && phase === 'app' && !!session?.accessToken && !!session?.symEncKey && !!session?.symMacKey && !!(profile?.email || session?.email),
+    staleTime: 5_000,
+    refetchInterval: 15_000,
+    refetchIntervalInBackground: true,
+  });
+  const pendingAuthRequests = (pendingAuthRequestsQuery.data || []).filter(isPendingAuthRequest);
+  const latestPendingAuthRequest = pendingAuthRequests[0] || null;
+  const authRequestDialogOpen = !!latestPendingAuthRequest && latestPendingAuthRequest.id !== authRequestDialogDismissedId;
+
+  async function approveAuthRequest(authRequest: AuthRequest): Promise<void> {
+    if (!session) throw new Error(t('txt_vault_key_unavailable'));
+    setAuthRequestSubmittingId(authRequest.id);
+    try {
+      const key = await encryptSessionUserKeyForAuthRequest(session, authRequest);
+      await respondToAuthRequest(authedFetch, authRequest.id, {
+        key,
+        masterPasswordHash: null,
+        deviceIdentifier: getCurrentDeviceIdentifier(),
+        requestApproved: true,
+      });
+      setAuthRequestDialogDismissedId(null);
+      pushToast('success', t('txt_auth_request_approved'));
+      await pendingAuthRequestsQuery.refetch();
+    } finally {
+      setAuthRequestSubmittingId(null);
+    }
+  }
+
+  async function denyAuthRequest(authRequest: AuthRequest): Promise<void> {
+    setAuthRequestSubmittingId(authRequest.id);
+    try {
+      await respondToAuthRequest(authedFetch, authRequest.id, {
+        deviceIdentifier: getCurrentDeviceIdentifier(),
+        requestApproved: false,
+      });
+      setAuthRequestDialogDismissedId(null);
+      pushToast('success', t('txt_auth_request_denied'));
+      await pendingAuthRequestsQuery.refetch();
+    } finally {
+      setAuthRequestSubmittingId(null);
+    }
+  }
+
   function handleSaveDomainRules(customEquivalentDomains: CustomEquivalentDomain[], excludedGlobalEquivalentDomains: number[]): Promise<void> {
     const equivalentDomains = customEquivalentDomains.filter((rule) => !rule.excluded).map((rule) => rule.domains);
     const excludedGlobalTypes = new Set(excludedGlobalEquivalentDomains);
@@ -1509,7 +1567,7 @@ export default function App() {
     if (location === '/sends') return t('nav_sends');
     if (location === '/admin') return t('nav_admin_panel');
     if (location === '/logs') return t('nav_log_center');
-    if (location === '/security/devices') return t('nav_device_management');
+    if (location === LEGACY_DEVICE_MANAGEMENT_ROUTE || location === DEVICE_MANAGEMENT_ROUTE) return t('nav_device_management');
     if (location === SETTINGS_DOMAIN_RULES_ROUTE) return t('nav_domain_rules');
     if (location === '/backup') return t('nav_backup_strategy');
     if (isImportRoute) return t('nav_import_export');
@@ -1517,6 +1575,16 @@ export default function App() {
     if (location === SETTINGS_HOME_ROUTE) return t('txt_settings');
     return t('nav_my_vault');
   })();
+
+  useEffect(() => {
+    if (phase !== 'app') return;
+    if (!hashPath.startsWith('/')) return;
+    if (normalizedHashPath !== DEVICE_MANAGEMENT_ROUTE && normalizedHashPath !== LEGACY_DEVICE_MANAGEMENT_ROUTE) return;
+    if (typeof window !== 'undefined' && typeof window.history?.replaceState === 'function') {
+      window.history.replaceState(null, '', DEVICE_MANAGEMENT_ROUTE);
+    }
+    if (location !== DEVICE_MANAGEMENT_ROUTE) navigate(DEVICE_MANAGEMENT_ROUTE);
+  }, [phase, hashPath, normalizedHashPath, location, navigate]);
 
   useEffect(() => {
     if (phase === 'app' && location === '/' && !isPublicSendRoute) navigate('/vault');
@@ -1624,6 +1692,13 @@ export default function App() {
     onCreateAccountPasskey: accountSecurityActions.createAccountPasskey,
     onEnableAccountPasskeyDirectUnlock: accountSecurityActions.enableAccountPasskeyDirectUnlock,
     onDeleteAccountPasskey: accountSecurityActions.deleteAccountPasskey,
+    pendingAuthRequests,
+    pendingAuthRequestsLoading: pendingAuthRequestsQuery.isFetching,
+    onRefreshPendingAuthRequests: async () => {
+      await pendingAuthRequestsQuery.refetch();
+    },
+    onApproveAuthRequest: approveAuthRequest,
+    onDenyAuthRequest: denyAuthRequest,
     onLockTimeoutChange: setLockTimeoutMinutes,
     onSessionTimeoutActionChange: setSessionTimeoutAction,
     onRefreshAuthorizedDevices: accountSecurityActions.refreshAuthorizedDevices,
@@ -1867,6 +1942,24 @@ export default function App() {
           setDisableTotpPassword('');
         }}
         disableTotpSubmitting={disableTotpSubmitting}
+      />
+      <AuthRequestApprovalDialog
+        open={authRequestDialogOpen}
+        authRequest={latestPendingAuthRequest}
+        submitting={!!authRequestSubmittingId}
+        onApprove={() => {
+          if (!latestPendingAuthRequest) return;
+          void approveAuthRequest(latestPendingAuthRequest).catch((error) => {
+            pushToast('error', error instanceof Error ? error.message : t('txt_auth_request_update_failed'));
+          });
+        }}
+        onDeny={() => {
+          if (!latestPendingAuthRequest) return;
+          void denyAuthRequest(latestPendingAuthRequest).catch((error) => {
+            pushToast('error', error instanceof Error ? error.message : t('txt_auth_request_update_failed'));
+          });
+        }}
+        onClose={() => setAuthRequestDialogDismissedId(latestPendingAuthRequest?.id || null)}
       />
     </>
   );

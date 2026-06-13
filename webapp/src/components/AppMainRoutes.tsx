@@ -8,7 +8,7 @@ import type { AdminBackupImportResponse, AdminBackupRunResponse, AdminBackupSett
 import type { AuditLogFilters } from '@/lib/api/admin';
 import type { CiphersImportPayload } from '@/lib/api/vault';
 import { t } from '@/lib/i18n';
-import type { AccountPasskeyCredential, AdminInvite, AdminUser, AuditLogListResult, AuditLogSettings, AuthorizedDevice, Cipher, CustomEquivalentDomain, DomainRules, Folder as VaultFolder, Profile, Send, SendDraft, SessionState, VaultDraft } from '@/lib/types';
+import type { AccountPasskeyCredential, AdminInvite, AdminUser, AuditLogListResult, AuditLogSettings, AuthRequest, AuthorizedDevice, Cipher, CustomEquivalentDomain, DomainRules, Folder as VaultFolder, Profile, Send, SendDraft, SessionState, VaultDraft } from '@/lib/types';
 import type { ExportRequest } from '@/lib/export-formats';
 
 const VaultPage = lazy(() => import('@/components/VaultPage'));
@@ -116,6 +116,11 @@ export interface AppMainRoutesProps {
   onCreateAccountPasskey: (name: string, masterPassword: string, directUnlock: boolean) => Promise<AccountPasskeyCredential | null>;
   onEnableAccountPasskeyDirectUnlock: (id: string, masterPassword: string) => Promise<void>;
   onDeleteAccountPasskey: (id: string, masterPassword: string) => Promise<void>;
+  pendingAuthRequests: AuthRequest[];
+  pendingAuthRequestsLoading: boolean;
+  onRefreshPendingAuthRequests: () => Promise<void>;
+  onApproveAuthRequest: (request: AuthRequest) => Promise<void>;
+  onDenyAuthRequest: (request: AuthRequest) => Promise<void>;
   onLockTimeoutChange: (minutes: 0 | 1 | 5 | 15 | 30) => void;
   onSessionTimeoutActionChange: (action: 'lock' | 'logout') => void;
   onRefreshAuthorizedDevices: () => Promise<void>;
@@ -153,6 +158,7 @@ export interface AppMainRoutesProps {
 
 export default function AppMainRoutes(props: AppMainRoutesProps) {
   const importRoutePaths = [props.importRoute, '/tools/import', '/tools/import-export', '/tools/import-data', '/import', '/import-export'] as const;
+  const deviceManagementRoutePaths = ['/security/devices', '/settings/security/device-management'] as const;
   const isAdmin = String(props.profile?.role || '').toLowerCase() === 'admin';
   const importPageContent = (
     <Suspense fallback={<RouteContentFallback />}>
@@ -269,6 +275,11 @@ export default function AppMainRoutes(props: AppMainRoutesProps) {
                 onCreateAccountPasskey={props.onCreateAccountPasskey}
                 onEnableAccountPasskeyDirectUnlock={props.onEnableAccountPasskeyDirectUnlock}
                 onDeleteAccountPasskey={props.onDeleteAccountPasskey}
+                pendingAuthRequests={props.pendingAuthRequests}
+                pendingAuthRequestsLoading={props.pendingAuthRequestsLoading}
+                onRefreshPendingAuthRequests={props.onRefreshPendingAuthRequests}
+                onApproveAuthRequest={props.onApproveAuthRequest}
+                onDenyAuthRequest={props.onDenyAuthRequest}
                 onLockTimeoutChange={props.onLockTimeoutChange}
                 onSessionTimeoutActionChange={props.onSessionTimeoutActionChange}
                 onNotify={props.onNotify}
@@ -287,7 +298,7 @@ export default function AppMainRoutes(props: AppMainRoutesProps) {
                 <SettingsIcon size={18} />
                 <span>{t('nav_account_settings')}</span>
               </Link>
-              <Link href="/security/devices" className="mobile-settings-link">
+              <Link href="/settings/security/device-management" className="mobile-settings-link">
                 <Shield size={18} />
                 <span>{t('nav_device_management')}</span>
               </Link>
@@ -327,32 +338,39 @@ export default function AppMainRoutes(props: AppMainRoutesProps) {
           <LoadingState card lines={4} />
         ) : null}
       </Route>
-      <Route path="/security/devices">
-        <div className="stack">
-          {props.mobileLayout && (
-            <div className="mobile-settings-subhead">
-              <button type="button" className="btn btn-secondary small mobile-settings-back" onClick={() => props.onNavigate(props.settingsHomeRoute)}>
-                <span className="btn-icon" aria-hidden="true">{"<"}</span>
-                {t('txt_back')}
-              </button>
-            </div>
-          )}
-          <Suspense fallback={<RouteContentFallback />}>
-            <SecurityDevicesPage
-              devices={props.authorizedDevices}
-              loading={props.authorizedDevicesLoading}
-              error={props.authorizedDevicesError}
-              onRefresh={() => void props.onRefreshAuthorizedDevices()}
-              onRenameDevice={props.onRenameAuthorizedDevice}
-              onRevokeTrust={props.onRevokeDeviceTrust}
-              onTrustPermanently={props.onTrustDevicePermanently}
-              onRemoveDevice={props.onRemoveDevice}
-              onRevokeAll={props.onRevokeAllDeviceTrust}
-              onRemoveAll={props.onRemoveAllDevices}
-            />
-          </Suspense>
-        </div>
-      </Route>
+      {deviceManagementRoutePaths.map((path) => (
+        <Route key={path} path={path}>
+          <div className="stack">
+            {props.mobileLayout && (
+              <div className="mobile-settings-subhead">
+                <button type="button" className="btn btn-secondary small mobile-settings-back" onClick={() => props.onNavigate(props.settingsHomeRoute)}>
+                  <span className="btn-icon" aria-hidden="true">{"<"}</span>
+                  {t('txt_back')}
+                </button>
+              </div>
+            )}
+            <Suspense fallback={<RouteContentFallback />}>
+              <SecurityDevicesPage
+                devices={props.authorizedDevices}
+                loading={props.authorizedDevicesLoading}
+                error={props.authorizedDevicesError}
+                pendingAuthRequests={props.pendingAuthRequests}
+                pendingAuthRequestsLoading={props.pendingAuthRequestsLoading}
+                onRefresh={() => void props.onRefreshAuthorizedDevices()}
+                onRefreshPendingAuthRequests={props.onRefreshPendingAuthRequests}
+                onApproveAuthRequest={props.onApproveAuthRequest}
+                onDenyAuthRequest={props.onDenyAuthRequest}
+                onRenameDevice={props.onRenameAuthorizedDevice}
+                onRevokeTrust={props.onRevokeDeviceTrust}
+                onTrustPermanently={props.onTrustDevicePermanently}
+                onRemoveDevice={props.onRemoveDevice}
+                onRevokeAll={props.onRevokeAllDeviceTrust}
+                onRemoveAll={props.onRemoveAllDevices}
+              />
+            </Suspense>
+          </div>
+        </Route>
+      ))}
       <Route path="/settings/domain-rules">
         <div className="stack domain-rules-route">
           {props.mobileLayout && (

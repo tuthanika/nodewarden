@@ -1172,7 +1172,22 @@ const es: Record<string, string> = {
   "txt_target": "Destino",
   "txt_time": "Hora",
   "txt_time_range": "Rango de tiempo",
-  "txt_remove_domain": "Quitar dominio"
+  "txt_remove_domain": "Quitar dominio",
+  "txt_approve_device_login": "Aprobar inicio de sesión con dispositivo",
+  "txt_auth_request_approve_message": "Desbloquee Bitwarden en su dispositivo o apruebe desde la aplicación web. Antes de aprobar, asegúrese de que la frase de huella coincida con la siguiente.",
+  "txt_fingerprint_phrase": "Frase de huella",
+  "txt_ip_address": "Dirección IP",
+  "txt_approve": "Aprobar",
+  "txt_approving": "Aprobando...",
+  "txt_deny": "Denegar",
+  "txt_later": "Más tarde",
+  "txt_pending_device_logins": "Inicios de sesión con dispositivo pendientes",
+  "txt_no_pending_device_logins": "No hay inicios de sesión con dispositivo pendientes",
+  "txt_auth_requests_load_failed": "No se pudieron cargar las solicitudes de inicio de sesión con dispositivo",
+  "txt_auth_request_update_failed": "No se pudo actualizar la solicitud de inicio de sesión con dispositivo",
+  "txt_auth_request_approved": "Inicio de sesión con dispositivo aprobado",
+  "txt_auth_request_denied": "Inicio de sesión con dispositivo denegado",
+  "txt_auth_request_missing_public_key": "La solicitud de inicio de sesión con dispositivo no incluye una clave pública"
 };
 
 export default es;

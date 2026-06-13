@@ -2,9 +2,10 @@ import { useEffect, useMemo, useState } from 'preact/hooks';
 import { Clipboard, KeyRound, RefreshCw, ShieldCheck, ShieldOff, Trash2 } from 'lucide-preact';
 import { copyTextToClipboard } from '@/lib/clipboard';
 import qrcode from 'qrcode-generator';
-import type { AccountPasskeyCredential, Profile } from '@/lib/types';
+import type { AccountPasskeyCredential, AuthRequest, Profile } from '@/lib/types';
 import { AVAILABLE_LOCALES, getLocale, setLocale, t, type Locale } from '@/lib/i18n';
 import ConfirmDialog from '@/components/ConfirmDialog';
+import PendingAuthRequestsPanel from '@/components/PendingAuthRequestsPanel';
 
 interface SettingsPageProps {
   profile: Profile;
@@ -22,6 +23,11 @@ interface SettingsPageProps {
   onCreateAccountPasskey: (name: string, masterPassword: string, directUnlock: boolean) => Promise<AccountPasskeyCredential | null>;
   onEnableAccountPasskeyDirectUnlock: (id: string, masterPassword: string) => Promise<void>;
   onDeleteAccountPasskey: (id: string, masterPassword: string) => Promise<void>;
+  pendingAuthRequests: AuthRequest[];
+  pendingAuthRequestsLoading: boolean;
+  onRefreshPendingAuthRequests: () => Promise<void>;
+  onApproveAuthRequest: (request: AuthRequest) => Promise<void>;
+  onDenyAuthRequest: (request: AuthRequest) => Promise<void>;
   onLockTimeoutChange: (minutes: 0 | 1 | 5 | 15 | 30) => void;
   onSessionTimeoutActionChange: (action: 'lock' | 'logout') => void;
   onNotify?: (type: 'success' | 'error' | 'warning', text: string) => void;
@@ -74,6 +80,13 @@ function clearLegacyTotpSetupSecrets(): void {
   for (const key of keys) {
     window.localStorage.removeItem(key);
   }
+}
+
+function formatDateTime(value: string | null | undefined): string {
+  if (!value) return t('txt_dash');
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return t('txt_dash');
+  return date.toLocaleString();
 }
 
 export default function SettingsPage(props: SettingsPageProps) {
@@ -217,13 +230,6 @@ export default function SettingsPage(props: SettingsPageProps) {
     if (credential.prfStatus === 0) return t('txt_direct_unlock');
     if (credential.prfStatus === 1) return t('txt_login_only');
     return t('txt_prf_not_supported');
-  }
-
-  function formatDateTime(value: string | null | undefined): string {
-    if (!value) return t('txt_dash');
-    const parsed = new Date(value);
-    if (Number.isNaN(parsed.getTime())) return value;
-    return parsed.toLocaleString();
   }
 
   async function changeLocale(next: Locale): Promise<void> {
@@ -503,6 +509,14 @@ export default function SettingsPage(props: SettingsPageProps) {
           )}
         </div>
       </section>
+
+      <PendingAuthRequestsPanel
+        pendingAuthRequests={props.pendingAuthRequests}
+        pendingAuthRequestsLoading={props.pendingAuthRequestsLoading}
+        onRefreshPendingAuthRequests={props.onRefreshPendingAuthRequests}
+        onApproveAuthRequest={props.onApproveAuthRequest}
+        onDenyAuthRequest={props.onDenyAuthRequest}
+      />
 
       <section className="settings-module sensitive-actions-module">
         <div className="sensitive-actions-grid">
