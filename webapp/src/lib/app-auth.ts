@@ -279,20 +279,16 @@ export async function hydrateLockedSession(
   fallbackProfile: Profile | null = null
 ): Promise<{ session: SessionState | null; profile: Profile | null }> {
   const hasOfflineUnlock = hasOfflineUnlockRecord(session.email);
-  let serviceReachable = true;
-  if (hasOfflineUnlock) {
-    serviceReachable = await probeNodeWardenService();
-    if (!serviceReachable) {
-      return {
-        session,
-        profile: fallbackProfile || loadOfflineProfileSnapshot(session.email),
-      };
-    }
+  if (hasOfflineUnlock && browserReportsOffline()) {
+    return {
+      session,
+      profile: fallbackProfile || loadOfflineProfileSnapshot(session.email),
+    };
   }
 
   const refreshedSession = await maybeRefreshSession(session);
   if (!refreshedSession?.accessToken) {
-    if (hasOfflineUnlock && !serviceReachable) {
+    if (hasOfflineUnlock && (browserReportsOffline() || !(await probeNodeWardenService()))) {
       return {
         session,
         profile: fallbackProfile || loadOfflineProfileSnapshot(session.email),
@@ -571,14 +567,8 @@ export async function performUnlock(
     }
   };
 
-  if (hasOfflineUnlock) {
-    if (browserReportsOffline()) {
-      return unlockOffline();
-    }
-    const serviceReachable = await probeNodeWardenService();
-    if (!serviceReachable) {
-      return unlockOffline();
-    }
+  if (hasOfflineUnlock && browserReportsOffline()) {
+    return unlockOffline();
   }
 
   let token: TokenSuccess | { TwoFactorProviders?: unknown; error_description?: string; error?: string };

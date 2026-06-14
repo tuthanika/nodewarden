@@ -4,6 +4,7 @@ import type { ExportRequest, ZipAttachmentEntry } from '@/lib/export-formats';
 import {
   attachNodeWardenEncryptedAttachmentPayload,
   buildAccountEncryptedBitwardenJsonString,
+  buildBitwardenCsvString,
   buildBitwardenZipBytes,
   buildExportFileName,
   buildNodeWardenAttachmentRecords,
@@ -1189,6 +1190,12 @@ export default function useVaultSendActions(options: UseVaultSendActionsOptions)
             fileName: buildExportFileName(format),
             mimeType: 'application/json',
             bytes: new TextEncoder().encode(await getPlainJson()),
+          };
+        } else if (format === 'bitwarden_csv') {
+          result = {
+            fileName: buildExportFileName(format),
+            mimeType: 'text/csv;charset=utf-8',
+            bytes: new TextEncoder().encode(buildBitwardenCsvString(await getPlainJsonDoc())),
           };
         } else if (format === 'bitwarden_encrypted_json') {
           if (request.encryptedJsonMode === 'password') {

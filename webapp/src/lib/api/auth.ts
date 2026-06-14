@@ -9,6 +9,7 @@ import type {
   TokenSuccess,
 } from '../types';
 import type { AccountPasskeyAssertion, AccountPasskeyPrfKeySet } from '../account-passkeys';
+import { recordNodeWardenReachable, recordNodeWardenUnreachable } from '../network-status';
 import { parseJson, type AuthedFetch, type SessionSetter } from './shared';
 
 const SESSION_KEY = 'nodewarden.web.session.v4';
@@ -474,6 +475,7 @@ export function createAuthedFetch(getSession: () => SessionState | null, setSess
       for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
         try {
           const response = await fetch(input, { ...init, headers });
+          recordNodeWardenReachable();
           if (response.status !== 429 && (response.status < 500 || response.status >= 600)) {
             return response;
           }
@@ -484,6 +486,7 @@ export function createAuthedFetch(getSession: () => SessionState | null, setSess
         } catch (error) {
           lastError = error;
           if (attempt === maxAttempts - 1) {
+            recordNodeWardenUnreachable();
             throw error;
           }
         }

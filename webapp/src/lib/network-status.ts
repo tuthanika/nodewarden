@@ -1,12 +1,14 @@
 export type NetworkStatus = 'online' | 'offline';
 
-const STATUS_PROBE_TIMEOUT_MS = 3500;
+const STATUS_PROBE_TIMEOUT_MS = 8000;
 const STATUS_PROBE_CACHE_MS = 5000;
+const PROBE_FAILURES_BEFORE_OFFLINE = 2;
 const listeners = new Set<(status: NetworkStatus) => void>();
 let currentStatus: NetworkStatus = getInitialNetworkStatus();
 let pendingProbe: Promise<boolean> | null = null;
 let lastProbeAt = 0;
 let lastProbeResult = currentStatus === 'online';
+let consecutiveProbeFailures = 0;
 
 export function browserReportsOffline(): boolean {
   return typeof navigator !== 'undefined' && navigator.onLine === false;
@@ -35,8 +37,23 @@ export function subscribeNetworkStatus(listener: (status: NetworkStatus) => void
   };
 }
 
+export function recordNodeWardenReachable(): void {
+  consecutiveProbeFailures = 0;
+  lastProbeResult = true;
+  setCurrentNetworkStatus('online');
+}
+
+export function recordNodeWardenUnreachable(): void {
+  lastProbeResult = false;
+  consecutiveProbeFailures += 1;
+  if (browserReportsOffline() || consecutiveProbeFailures >= PROBE_FAILURES_BEFORE_OFFLINE) {
+    setCurrentNetworkStatus('offline');
+  }
+}
+
 export async function probeNodeWardenService(): Promise<boolean> {
   if (browserReportsOffline()) {
+    consecutiveProbeFailures = PROBE_FAILURES_BEFORE_OFFLINE;
     setCurrentNetworkStatus('offline');
     return false;
   }
@@ -68,8 +85,11 @@ export async function probeNodeWardenService(): Promise<boolean> {
     .catch(() => false)
     .then((result) => {
       lastProbeAt = Date.now();
-      lastProbeResult = result;
-      setCurrentNetworkStatus(result ? 'online' : 'offline');
+      if (result) {
+        recordNodeWardenReachable();
+      } else {
+        recordNodeWardenUnreachable();
+      }
       return result;
     })
     .finally(() => {

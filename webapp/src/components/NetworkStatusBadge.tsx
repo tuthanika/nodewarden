@@ -23,7 +23,6 @@ export default function NetworkStatusBadge() {
   const Icon = status === 'online' ? Wifi : WifiOff;
 
   useEffect(() => {
-    let cancelled = false;
     let timer = 0;
 
     const checkService = async () => {
@@ -31,10 +30,7 @@ export default function NetworkStatusBadge() {
         setCurrentNetworkStatus('offline');
         return;
       }
-      const reachable = await probeNodeWardenService();
-      if (!cancelled) {
-        setCurrentNetworkStatus(reachable ? 'online' : 'offline');
-      }
+      await probeNodeWardenService();
     };
 
     const scheduleNextCheck = () => {
@@ -62,7 +58,6 @@ export default function NetworkStatusBadge() {
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
-      cancelled = true;
       unsubscribe();
       window.clearTimeout(timer);
       window.removeEventListener('online', handleOnline);

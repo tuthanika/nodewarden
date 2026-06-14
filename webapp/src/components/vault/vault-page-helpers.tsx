@@ -326,7 +326,7 @@ export function buildCipherDuplicateSignature(cipher: Cipher): string {
       linkedId: field.linkedId ?? null,
     })),
     passwordHistory: (cipher.passwordHistory || []).map((entry) => ({
-      password: valueOrFallback(entry.password),
+      password: valueOrFallback(entry.decPassword ?? entry.password),
       lastUsedDate: valueOrFallback(entry.lastUsedDate),
     })),
   };

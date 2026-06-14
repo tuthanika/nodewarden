@@ -8,11 +8,12 @@ body,
   @apply m-0 h-full w-full p-0;
   color: var(--text);
   background: var(--bg-accent);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
+  font-family: var(--font-sans);
   font-size: var(--font-base);
   line-height: var(--leading-normal);
   letter-spacing: var(--tracking-normal);
-  font-feature-settings: 'liga' 1, 'kern' 1;
+  font-feature-settings: 'liga' 1, 'kern' 1, 'calt' 1;
+  font-variant-numeric: tabular-nums;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -33,8 +34,8 @@ body.dialog-open {
 }
 
 h1, h2, h3, h4, h5, h6 {
-  font-weight: 600;
-  letter-spacing: var(--tracking-tight);
+  font-weight: 700;
+  letter-spacing: 0;
   line-height: var(--leading-tight);
   margin: 0;
 }

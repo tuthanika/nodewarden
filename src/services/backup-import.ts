@@ -24,6 +24,7 @@ type BackupTableName =
   | 'users'
   | 'domain_settings'
   | 'user_revisions'
+  | 'trusted_two_factor_device_tokens'
   | 'webauthn_credentials'
   | 'folders'
   | 'ciphers'
@@ -34,6 +35,7 @@ const BACKUP_TABLES: BackupTableName[] = [
   'users',
   'domain_settings',
   'user_revisions',
+  'trusted_two_factor_device_tokens',
   'webauthn_credentials',
   'folders',
   'ciphers',
@@ -51,6 +53,7 @@ export interface BackupImportResultBody {
     users: number;
     domainSettings: number;
     userRevisions: number;
+    trustedTwoFactorDeviceTokens: number;
     webauthnCredentials: number;
     folders: number;
     ciphers: number;
@@ -172,6 +175,7 @@ function buildResetImportTargetStatements(db: D1Database): D1PreparedStatement[]
     'DELETE FROM ciphers',
     'DELETE FROM folders',
     'DELETE FROM webauthn_credentials',
+    'DELETE FROM trusted_two_factor_device_tokens',
     'DELETE FROM domain_settings',
     'DELETE FROM user_revisions',
     'DELETE FROM users',
@@ -296,6 +300,7 @@ async function importPreparedBackupRows(db: D1Database, payload: BackupPayload['
     })),
     domain_settings: cloneRows(payload.domain_settings || []),
     user_revisions: cloneRows(payload.user_revisions || []),
+    trusted_two_factor_device_tokens: cloneRows(payload.trusted_two_factor_device_tokens || []),
     webauthn_credentials: cloneRows(payload.webauthn_credentials || []),
     folders: cloneRows(payload.folders || []),
     ciphers: cloneRows(payload.ciphers || []).map((row) => ({
@@ -636,6 +641,16 @@ async function importBackupRows(db: D1Database, payload: BackupPayload['db'], us
   );
   await runInsertBatch(
     db,
+    tableName('trusted_two_factor_device_tokens'),
+    buildInsertStatements(
+      db,
+      tableName('trusted_two_factor_device_tokens'),
+      ['token', 'user_id', 'device_identifier', 'expires_at'],
+      payload.trusted_two_factor_device_tokens || []
+    )
+  );
+  await runInsertBatch(
+    db,
     tableName('webauthn_credentials'),
     buildInsertStatements(
       db,
@@ -712,6 +727,7 @@ export async function importBackupArchiveBytes(
       users: (db.users || []).length,
       domain_settings: (db.domain_settings || []).length,
       user_revisions: (db.user_revisions || []).length,
+      trusted_two_factor_device_tokens: (db.trusted_two_factor_device_tokens || []).length,
       webauthn_credentials: (db.webauthn_credentials || []).length,
       folders: (db.folders || []).length,
       ciphers: (db.ciphers || []).length,
@@ -735,6 +751,7 @@ export async function importBackupArchiveBytes(
       users: (db.users || []).length,
       domain_settings: (db.domain_settings || []).length,
       user_revisions: (db.user_revisions || []).length,
+      trusted_two_factor_device_tokens: (db.trusted_two_factor_device_tokens || []).length,
       webauthn_credentials: (db.webauthn_credentials || []).length,
       folders: (db.folders || []).length,
       ciphers: (db.ciphers || []).length,
@@ -776,6 +793,7 @@ export async function importBackupArchiveBytes(
           users: (db.users || []).length,
           domainSettings: (db.domain_settings || []).length,
           userRevisions: (db.user_revisions || []).length,
+          trustedTwoFactorDeviceTokens: (db.trusted_two_factor_device_tokens || []).length,
           webauthnCredentials: (db.webauthn_credentials || []).length,
           folders: (db.folders || []).length,
           ciphers: (db.ciphers || []).length,
@@ -853,6 +871,7 @@ export async function importRemoteBackupArchiveBytes(
       users: (db.users || []).length,
       domain_settings: (db.domain_settings || []).length,
       user_revisions: (db.user_revisions || []).length,
+      trusted_two_factor_device_tokens: (db.trusted_two_factor_device_tokens || []).length,
       webauthn_credentials: (db.webauthn_credentials || []).length,
       folders: (db.folders || []).length,
       ciphers: (db.ciphers || []).length,
@@ -876,6 +895,7 @@ export async function importRemoteBackupArchiveBytes(
       users: (db.users || []).length,
       domain_settings: (db.domain_settings || []).length,
       user_revisions: (db.user_revisions || []).length,
+      trusted_two_factor_device_tokens: (db.trusted_two_factor_device_tokens || []).length,
       webauthn_credentials: (db.webauthn_credentials || []).length,
       folders: (db.folders || []).length,
       ciphers: (db.ciphers || []).length,
@@ -923,6 +943,7 @@ export async function importRemoteBackupArchiveBytes(
           users: (db.users || []).length,
           domainSettings: (db.domain_settings || []).length,
           userRevisions: (db.user_revisions || []).length,
+          trustedTwoFactorDeviceTokens: (db.trusted_two_factor_device_tokens || []).length,
           webauthnCredentials: (db.webauthn_credentials || []).length,
           folders: (db.folders || []).length,
           ciphers: (db.ciphers || []).length,

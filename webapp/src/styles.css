@@ -810,6 +810,101 @@ h4 {
   background: transparent;
 }
 
+/* Typography refinement: stronger scan targets for dense vault/admin surfaces. */
+body {
+  font-family: var(--font-sans);
+  font-size: var(--font-base);
+  font-weight: 400;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+.side-link,
+.side-group-trigger,
+.side-sub-link,
+.tree-btn,
+.mobile-settings-link,
+.backup-destination-item,
+.backup-browser-entry,
+.sort-menu-item,
+.create-menu-item,
+.nav-layout-option {
+  font-size: var(--font-sm);
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.side-link.active,
+.side-group-trigger.active,
+.side-sub-link.active,
+.tree-btn.active,
+.mobile-tab.active,
+.mobile-settings-link.active,
+.nav-layout-option.active {
+  font-weight: 700;
+}
+
+.sidebar-title,
+.list-count,
+.field > span,
+.table th,
+.dialog-warning-kicker,
+.backup-recommendation-group-title {
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.list-title {
+  color: var(--text);
+  font-size: var(--font-base);
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.list-sub,
+.detail-sub,
+.backup-destination-meta,
+.totp-code-username,
+.field-help,
+.settings-field-note {
+  font-size: var(--font-sm);
+  line-height: var(--leading-snug);
+}
+
+.btn,
+.input,
+.search-input,
+.user-chip,
+.network-status-badge {
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.btn-primary,
+.btn-danger,
+.btn.full,
+.topbar-actions .btn,
+.network-status-badge {
+  font-weight: 700;
+}
+
+.card h4,
+.settings-module h3,
+.section-head h3,
+.section-head h4,
+.detail-title,
+.totp-code-name,
+.backup-destination-name,
+.mobile-sidebar-title {
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
 .toast-item,
 .dialog-card {
   border-radius: var(--radius-lg);
