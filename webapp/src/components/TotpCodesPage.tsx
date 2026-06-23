@@ -6,7 +6,7 @@ import { t } from '@/lib/i18n';
 import type { Cipher } from '@/lib/types';
 import LoadingState from '@/components/LoadingState';
 import WebsiteIcon from '@/components/vault/WebsiteIcon';
-import { isCipherVisibleInNormalVault } from '@/components/vault/vault-page-helpers';
+import { formatTotp, isCipherVisibleInNormalVault } from '@/components/vault/vault-page-helpers';
 
 interface TotpCodesPageProps {
   ciphers: Cipher[];
@@ -24,13 +24,6 @@ function getTotpTimeState(): { windowId: number; remain: number } {
     windowId: Math.floor(epoch / TOTP_PERIOD_SECONDS),
     remain: TOTP_PERIOD_SECONDS - (epoch % TOTP_PERIOD_SECONDS),
   };
-}
-
-function formatTotp(code: string): string {
-  if (!code) return code;
-  if (code.length === 5) return `${code.slice(0, 2)} ${code.slice(2)}`;
-  if (code.length < 6) return code;
-  return `${code.slice(0, 3)} ${code.slice(3, 6)}`;
 }
 
 function TotpListIcon({ cipher }: { cipher: Cipher }) {

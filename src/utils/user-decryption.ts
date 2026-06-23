@@ -16,6 +16,7 @@ export function buildAccountKeys(user: Pick<User, 'privateKey' | 'publicKey'>): 
     publicKeyEncryptionKeyPair: {
       wrappedPrivateKey: user.privateKey,
       publicKey,
+      signedPublicKey: null,
       Object: 'publicKeyEncryptionKeyPair',
     },
     Object: 'privateKeys',

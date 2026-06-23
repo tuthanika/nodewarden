@@ -133,7 +133,10 @@
   }
 
   .topbar-actions > .network-status-badge {
-    @apply h-8 px-2 text-[0];
+    @apply inline-flex h-9 w-9 min-w-9 justify-center gap-0 rounded-xl p-0 text-[0];
+    background: color-mix(in srgb, var(--panel) 88%, transparent);
+    border-color: var(--line);
+    box-shadow: none;
   }
 
   .topbar-actions > .network-status-badge svg {
@@ -142,7 +145,10 @@
 
   .mobile-sidebar-toggle,
   .mobile-lock-btn {
-    @apply inline-flex h-9 w-9 min-w-9 justify-center gap-0 p-0 text-[0];
+    @apply inline-flex h-9 w-9 min-w-9 justify-center gap-0 rounded-xl p-0 text-[0];
+    background: color-mix(in srgb, var(--panel) 88%, transparent);
+    border-color: var(--line);
+    box-shadow: none;
   }
 
   .mobile-sidebar-toggle .btn-icon,
@@ -155,8 +161,44 @@
   }
 
   .mobile-theme-btn .theme-switch {
-    transform: scale(0.8);
+    @apply h-9 w-9 rounded-xl border;
+    background: color-mix(in srgb, var(--panel) 88%, transparent);
+    border-color: var(--line);
+    box-shadow: none;
+    transform: none;
     transform-origin: center;
+  }
+
+  .mobile-theme-btn .theme-switch-slider,
+  .mobile-theme-btn .theme-switch-slider::before {
+    @apply hidden;
+  }
+
+  .mobile-theme-btn .theme-switch .sun svg,
+  .mobile-theme-btn .theme-switch .moon svg {
+    @apply h-[18px] w-[18px];
+    top: 7px;
+    left: 8px;
+    z-index: 1;
+    opacity: 0;
+    transform: none;
+  }
+
+  .mobile-theme-btn .theme-switch.unchecked .sun svg,
+  .mobile-theme-btn .theme-switch.checked .moon svg {
+    opacity: 1;
+  }
+
+  .mobile-theme-btn .theme-switch.checked .moon svg {
+    fill: var(--primary);
+  }
+
+  .topbar-actions > .network-status-badge:hover,
+  .mobile-sidebar-toggle:hover,
+  .mobile-lock-btn:hover,
+  .mobile-theme-btn .theme-switch:hover {
+    background: var(--panel-subtle);
+    border-color: color-mix(in srgb, var(--primary) 28%, var(--line));
   }
 
   .app-main {
@@ -302,8 +344,13 @@
   }
 
   .list-head {
-    @apply grid items-center gap-2;
+    @apply grid items-center gap-1.5;
     grid-template-columns: minmax(0, 1fr) auto auto auto;
+  }
+
+  .list-head.selection-mode {
+    @apply justify-stretch;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 
   .list-count {
@@ -316,11 +363,50 @@
   }
 
   .list-head .search-input {
-    @apply h-[42px] w-full min-w-0 rounded-[14px];
+    @apply h-[34px] w-full min-w-0 rounded-[10px] px-3 py-0 text-[13px] font-semibold;
+    line-height: 34px;
+  }
+
+  .mobile-vault-filter-row {
+    @apply grid min-w-0 gap-1.5;
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .list-head .duplicate-mode-head-select {
+    @apply h-[34px] min-w-0 w-auto max-w-full rounded-[10px];
   }
 
   .list-icon-btn {
-    @apply w-auto min-w-0 gap-1.5 whitespace-nowrap px-3 py-0 text-[13px];
+    @apply h-[34px] w-auto min-w-0 gap-1.5 whitespace-nowrap rounded-[10px] px-3 py-0 text-[13px];
+  }
+
+  .list-head.selection-mode > .btn.small {
+    @apply h-[34px] min-w-0 w-full justify-center gap-1 px-2 text-[12px];
+  }
+
+  .list-head.selection-mode > .btn.small .btn-icon {
+    @apply m-0;
+  }
+
+  .sort-trigger {
+    @apply h-[34px] w-[34px] min-w-[34px] rounded-[10px];
+  }
+
+  .sort-trigger.sort-trigger-labeled {
+    @apply h-[34px] w-auto min-w-0 gap-1.5 px-3 text-[13px];
+  }
+
+  .sort-trigger.sort-trigger-labeled .btn-icon {
+    @apply mr-0;
+  }
+
+  .desktop-create-menu-wrap {
+    display: none;
+  }
+
+  .duplicate-mode-head-menu .mobile-vault-filter-menu {
+    min-width: max(100%, 190px);
   }
 
   .toolbar.actions {
@@ -329,12 +415,21 @@
     gap: var(--actions-gap);
   }
 
+  .toolbar.actions.duplicates-toolbar {
+    @apply justify-start;
+    flex-wrap: wrap;
+  }
+
   .actions {
     gap: var(--actions-gap);
   }
 
   .toolbar.actions .btn.small {
     @apply h-[34px] w-auto min-w-0 gap-1.5 whitespace-nowrap rounded-full px-3 py-0 text-[13px];
+  }
+
+  .list-count-status {
+    @apply mb-1 px-1;
   }
 
   .mobile-fab-wrap {
@@ -881,6 +976,10 @@
     min-height: 30px;
     padding: 0 10px;
     font-size: 13px;
+  }
+
+  .totp-code-main strong {
+    font-size: 20px;
   }
 
   .settings-module .field,

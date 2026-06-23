@@ -10,6 +10,7 @@ import type {
 import {
   BULK_API_CHUNK_SIZE,
   chunkArray,
+  createApiError,
   parseErrorMessage,
   parseJson,
   uploadDirectEncryptedPayload,
@@ -20,17 +21,29 @@ import { readResponseBytesWithProgress } from '../download';
 import { loadVaultCoreSyncSnapshot } from './vault-sync';
 
 type CipherLoginData = NonNullable<Cipher['login']>;
+const NODEWARDEN_WEB_REPAIR_HEADER = 'X-NodeWarden-Web';
 
 export async function getFolders(authedFetch: AuthedFetch, cacheKey: string): Promise<Folder[]> {
   const body = await loadVaultCoreSyncSnapshot(authedFetch, cacheKey);
   return body.folders || [];
 }
 
+export async function getFolderById(authedFetch: AuthedFetch, folderId: string): Promise<Folder> {
+  const id = String(folderId || '').trim();
+  if (!id) throw new Error('Folder id is required');
+  const resp = await authedFetch(`/api/folders/${encodeURIComponent(id)}`);
+  if (resp.status === 404) throw createApiError('Folder not found', 404);
+  if (!resp.ok) throw new Error(await parseErrorMessage(resp, 'Load folder failed'));
+  const body = await parseJson<Folder>(resp);
+  if (!body?.id) throw new Error('Load folder failed');
+  return body;
+}
+
 export async function createFolder(
   authedFetch: AuthedFetch,
   session: SessionState,
   name: string
-): Promise<{ id: string; name?: string | null }> {
+): Promise<Folder> {
   if (!session.symEncKey || !session.symMacKey) throw new Error('Vault key unavailable');
   const enc = base64ToBytes(session.symEncKey);
   const mac = base64ToBytes(session.symMacKey);
@@ -41,9 +54,9 @@ export async function createFolder(
     body: JSON.stringify({ name: encryptedName }),
   });
   if (!resp.ok) throw new Error('Create folder failed');
-  const body = await parseJson<{ id?: string; name?: string | null }>(resp);
+  const body = await parseJson<Folder>(resp);
   if (!body?.id) throw new Error('Create folder failed');
-  return { id: body.id, name: body.name ?? null };
+  return body;
 }
 
 export async function encryptFolderImportName(session: SessionState, name: string): Promise<string> {
@@ -79,7 +92,7 @@ export async function updateFolder(
   session: SessionState,
   folderId: string,
   name: string
-): Promise<void> {
+): Promise<Folder> {
   const id = String(folderId || '').trim();
   if (!id) throw new Error('Folder id is required');
   if (!session.symEncKey || !session.symMacKey) throw new Error('Vault key unavailable');
@@ -92,11 +105,25 @@ export async function updateFolder(
     body: JSON.stringify({ name: encryptedName }),
   });
   if (!resp.ok) throw new Error('Update folder failed');
+  const body = await parseJson<Folder>(resp);
+  if (!body?.id) throw new Error('Update folder failed');
+  return body;
 }
 
 export async function getCiphers(authedFetch: AuthedFetch, cacheKey: string): Promise<Cipher[]> {
   const body = await loadVaultCoreSyncSnapshot(authedFetch, cacheKey);
   return body.ciphers || [];
+}
+
+export async function getCipherById(authedFetch: AuthedFetch, cipherId: string): Promise<Cipher> {
+  const id = String(cipherId || '').trim();
+  if (!id) throw new Error('Cipher id is required');
+  const resp = await authedFetch(`/api/ciphers/${encodeURIComponent(id)}`);
+  if (resp.status === 404) throw createApiError('Cipher not found', 404);
+  if (!resp.ok) throw new Error(await parseErrorMessage(resp, 'Load cipher failed'));
+  const body = await parseJson<Cipher>(resp);
+  if (!body?.id) throw new Error('Load cipher failed');
+  return body;
 }
 
 export interface CiphersImportPayload {
@@ -933,7 +960,7 @@ export async function repairCipherUriChecksums(
 
     const resp = await authedFetch(`/api/ciphers/${encodeURIComponent(cipher.id)}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', [NODEWARDEN_WEB_REPAIR_HEADER]: '1' },
       body: JSON.stringify(payload),
     });
     if (!resp.ok) throw new Error(await parseErrorMessage(resp, 'Repair URI checksum failed'));
@@ -1092,9 +1119,14 @@ export async function repairCipherKeyMismatches(
     if (!cipher?.id || !looksLikeCipherString(cipher.key)) continue;
     if (!(await hasItemKeyFieldMismatch(cipher, userEnc, userMac))) continue;
     if (hasUnresolvedEncryptedFields(cipher)) continue;
-    await updateCipher(authedFetch, session, cipher, draftFromDecryptedCipher(cipher), {
-      preserveRevisionDate: true,
-    });
+    await updateCipher(
+      authedFetch,
+      session,
+      cipher,
+      draftFromDecryptedCipher(cipher),
+      { preserveRevisionDate: true },
+      { webRepair: true }
+    );
     repaired += 1;
   }
 
@@ -1229,7 +1261,8 @@ export async function updateCipher(
   session: SessionState,
   cipher: Cipher,
   draft: VaultDraft,
-  extraPayload?: Record<string, unknown>
+  extraPayload?: Record<string, unknown>,
+  options?: { webRepair?: boolean }
 ): Promise<Cipher> {
   const payload = await buildCipherPayload(session, draft, cipher);
   if (extraPayload) {
@@ -1238,7 +1271,10 @@ export async function updateCipher(
 
   const resp = await authedFetch(`/api/ciphers/${encodeURIComponent(cipher.id)}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(options?.webRepair ? { [NODEWARDEN_WEB_REPAIR_HEADER]: '1' } : {}),
+    },
     body: JSON.stringify(payload),
   });
   if (!resp.ok) throw new Error('Update item failed');

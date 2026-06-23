@@ -596,7 +596,7 @@ h4 {
 }
 
 .list-head {
-  margin-bottom: 8px;
+  margin-bottom: 5px;
 }
 
 .list-count {
@@ -1069,6 +1069,7 @@ textarea {
   .list-panel {
     padding: 6px;
     border-radius: var(--radius-md);
+    margin-top: 5px;
   }
 
   .list-item {

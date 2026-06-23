@@ -6,6 +6,7 @@ import type {
   BackupRuntimeState,
   BackupScheduleConfig,
   BackupSettings as AdminBackupSettings,
+  S3BackupAddressingStyle,
   S3BackupDestination,
   WebDavBackupDestination,
 } from '@shared/backup-schema';
@@ -26,6 +27,7 @@ export type {
   BackupRuntimeState,
   BackupScheduleConfig,
   AdminBackupSettings,
+  S3BackupAddressingStyle,
   S3BackupDestination,
   WebDavBackupDestination,
 };

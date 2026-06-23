@@ -500,7 +500,6 @@ export function createAuthedFetch(getSession: () => SessionState | null, setSess
     if (!session?.accessToken) throw new Error(t('txt_offline_vault_readonly'));
     const headers = new Headers(init.headers || {});
     headers.set('Authorization', `Bearer ${session.accessToken}`);
-    headers.set('X-NodeWarden-Web', '1');
 
     let resp = await retryableRequest(headers);
     if (resp.status !== 401 || (!session.refreshToken && session.authMode !== 'web-cookie')) return resp;
@@ -509,7 +508,6 @@ export function createAuthedFetch(getSession: () => SessionState | null, setSess
     if (latest?.accessToken && latest.accessToken !== session.accessToken) {
       const latestHeaders = new Headers(init.headers || {});
       latestHeaders.set('Authorization', `Bearer ${latest.accessToken}`);
-      latestHeaders.set('X-NodeWarden-Web', '1');
       resp = await retryableRequest(latestHeaders);
       if (resp.status !== 401) return resp;
     }
@@ -535,7 +533,6 @@ export function createAuthedFetch(getSession: () => SessionState | null, setSess
 
     const retryHeaders = new Headers(init.headers || {});
     retryHeaders.set('Authorization', `Bearer ${nextSession.accessToken}`);
-    retryHeaders.set('X-NodeWarden-Web', '1');
     resp = await retryableRequest(retryHeaders);
     return resp;
   };
@@ -599,14 +596,35 @@ export async function changeMasterPassword(
   const nextEnc = await hkdfExpand(nextMasterKey, 'enc', 32);
   const nextMac = await hkdfExpand(nextMasterKey, 'mac', 32);
   const newKey = await encryptBw(userSym.slice(0, 64), nextEnc, nextMac);
+  const newMasterPasswordHash = bytesToBase64(nextHash);
 
   const resp = await authedFetch('/api/accounts/password', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      currentPasswordHash: current.hash,
-      newMasterPasswordHash: bytesToBase64(nextHash),
-      newKey,
+      masterPasswordHash: current.hash,
+      newMasterPasswordHash,
+      key: newKey,
+      authenticationData: {
+        kdf: {
+          kdfType: 0,
+          iterations: current.kdfIterations,
+          memory: null,
+          parallelism: null,
+        },
+        masterPasswordAuthenticationHash: newMasterPasswordHash,
+        salt: args.email.trim().toLowerCase(),
+      },
+      unlockData: {
+        kdf: {
+          kdfType: 0,
+          iterations: current.kdfIterations,
+          memory: null,
+          parallelism: null,
+        },
+        masterKeyWrappedUserKey: newKey,
+        salt: args.email.trim().toLowerCase(),
+      },
       kdf: 0,
       kdfIterations: current.kdfIterations,
     }),

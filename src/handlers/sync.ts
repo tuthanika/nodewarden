@@ -5,12 +5,12 @@ import { cipherToResponse, isCipherResponseSyncCompatible, shouldPreserveRepaira
 import { sendToResponse } from './sends';
 import { LIMITS } from '../config/limits';
 import {
-  buildAccountKeys,
   buildUserDecryptionCompat,
   buildUserDecryptionOptions,
 } from '../utils/user-decryption';
 import { buildDomainsResponse } from '../services/domain-rules';
 import { buildWebAuthnPrfOption } from '../utils/account-passkeys';
+import { buildProfileResponse } from '../utils/profile-response';
 
 // CONTRACT:
 // /api/sync reuses cipherToResponse() as the single cipher response shaper.
@@ -84,36 +84,12 @@ export async function handleSync(request: Request, env: Env, userId: string): Pr
     storage.getAttachmentsByUserId(userId),
     excludeDomains ? Promise.resolve(null) : storage.getUserDomainSettings(userId),
   ]);
-  const accountKeys = buildAccountKeys(user);
   const webAuthnPrfOptions = accountPasskeys
     .map(buildWebAuthnPrfOption)
     .filter((option): option is NonNullable<typeof option> => !!option);
   const userDecryptionOptions = buildUserDecryptionOptions(user, webAuthnPrfOptions[0] || null);
 
-  const profile: ProfileResponse = {
-    id: user.id,
-    name: user.name,
-    email: user.email,
-    emailVerified: true,
-    premium: true,
-    premiumFromOrganization: false,
-    usesKeyConnector: false,
-    masterPasswordHint: user.masterPasswordHint,
-    culture: 'en-US',
-    twoFactorEnabled: !!user.totpSecret,
-    key: user.key,
-    privateKey: user.privateKey,
-    accountKeys,
-    securityStamp: user.securityStamp || user.id,
-    organizations: [],
-    providers: [],
-    providerOrganizations: [],
-    forcePasswordReset: false,
-    avatarColor: null,
-    creationDate: user.createdAt,
-    verifyDevices: user.verifyDevices,
-    object: 'profile',
-  };
+  const profile: ProfileResponse = buildProfileResponse(user, env);
 
   const cipherResponses: CipherResponse[] = [];
   for (const cipher of ciphers) {
@@ -149,6 +125,7 @@ export async function handleSync(request: Request, env: Env, userId: string): Pr
           { omitExcludedGlobals: true }
         ),
     policies: [],
+    policiesNew: [],
     sends: sendResponses,
     UserDecryption: {
       MasterPasswordUnlock: userDecryptionOptions.MasterPasswordUnlock,
@@ -156,6 +133,7 @@ export async function handleSync(request: Request, env: Env, userId: string): Pr
       KeyConnectorOption: null,
       WebAuthnPrfOption: webAuthnPrfOptions[0] || null,
       WebAuthnPrfOptions: webAuthnPrfOptions,
+      V2UpgradeToken: null,
       Object: 'userDecryption',
     },
     UserDecryptionOptions: userDecryptionOptions,

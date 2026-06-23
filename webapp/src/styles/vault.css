@@ -184,24 +184,161 @@
   gap: var(--actions-gap);
 }
 
+.toolbar.actions.duplicates-toolbar {
+  @apply items-center;
+}
+
 .toolbar .btn.small {
-  @apply h-[30px] rounded-full text-xs;
+  @apply h-[32px] rounded-full text-xs;
+}
+
+.duplicate-mode-select {
+  @apply h-8 min-w-[150px] rounded-full py-0 pl-3 pr-6 text-xs;
+  border-color: rgba(74, 103, 150, 0.26);
+  box-shadow: none;
+  line-height: 32px;
+  background-position:
+    calc(100% - 10px) calc(50% - 2px),
+    calc(100% - 6px) calc(50% - 2px);
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+
+select.input.duplicate-mode-toolbar-select {
+  height: 32px;
+  padding-top: 0;
+  padding-right: 24px;
+  padding-bottom: 0;
+  line-height: 32px;
+  background-position:
+    calc(100% - 10px) calc(50% - 2px),
+    calc(100% - 6px) calc(50% - 2px);
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+
+.duplicate-mode-head-select {
+  @apply h-[34px] w-auto min-w-[156px] max-w-full;
+}
+
+.duplicate-mode-head-menu {
+  @apply min-w-0;
+}
+
+.duplicate-mode-toolbar-select {
+  @apply w-auto max-w-[170px] shrink-0;
 }
 
 .list-head {
-  @apply mb-2 flex items-center gap-2.5;
+  @apply mb-1.5 flex items-center gap-2;
+  min-height: 34px;
 }
 
-.list-head .search-input-wrap {
+.list-head.selection-mode {
+  @apply gap-2;
+}
+
+.list-head.selection-mode > .btn.small {
+  @apply min-w-0 flex-1 justify-center;
+}
+
+.list-head .search-input-wrap,
+.duplicate-mode-head-menu {
   @apply min-w-0 flex-auto;
 }
 
 .list-head .search-input {
-  @apply h-[42px];
+  @apply h-[34px] rounded-[10px] px-3 py-0 text-[13px] font-semibold;
+  line-height: 34px;
 }
 
 .list-head .btn {
-  @apply whitespace-nowrap;
+  @apply h-[34px] whitespace-nowrap rounded-[10px] px-3 py-0 text-[13px];
+}
+
+.list-head .btn,
+.list-head .search-input,
+.list-head .sort-trigger,
+.list-head .list-icon-btn {
+  animation: none !important;
+  transition: none !important;
+  transform: none !important;
+}
+
+.list-head .btn:hover:not(:disabled),
+.list-head .btn:active:not(:disabled) {
+  transform: none !important;
+}
+
+.mobile-vault-filter-row {
+  @apply hidden;
+}
+
+.mobile-vault-filter-control {
+  @apply relative min-w-0;
+}
+
+.mobile-vault-filter-trigger {
+  @apply flex h-[34px] w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-[10px] border px-2.5 py-0 text-left text-[13px] font-semibold;
+  background: var(--panel);
+  border-color: rgba(74, 103, 150, 0.28);
+  color: var(--muted-strong);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.74);
+  transition:
+    border-color var(--dur-fast) var(--ease-smooth),
+    background-color var(--dur-fast) var(--ease-smooth),
+    color var(--dur-fast) var(--ease-smooth),
+    box-shadow var(--dur-fast) var(--ease-smooth);
+}
+
+.mobile-vault-filter-trigger:hover,
+.mobile-vault-filter-trigger.active {
+  border-color: rgba(43, 102, 217, 0.46);
+  background: #f8fbff;
+  color: var(--primary-strong);
+}
+
+.mobile-vault-filter-trigger:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.86);
+}
+
+.mobile-vault-filter-trigger-icon,
+.mobile-vault-filter-item-icon {
+  @apply inline-flex shrink-0 items-center justify-center;
+}
+
+.mobile-vault-filter-trigger-label {
+  @apply min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap;
+}
+
+.mobile-vault-filter-chevron {
+  @apply shrink-0;
+}
+
+.mobile-vault-filter-trigger.active .mobile-vault-filter-chevron {
+  transform: rotate(180deg);
+}
+
+.mobile-vault-filter-menu {
+  @apply left-0 right-auto max-h-[280px] min-w-full overflow-auto;
+  min-width: max(100%, 168px);
+}
+
+.mobile-vault-filter-control:last-child .mobile-vault-filter-menu {
+  @apply left-auto right-0;
+}
+
+.mobile-vault-filter-item {
+  @apply gap-2;
+}
+
+.mobile-vault-filter-item-main {
+  @apply flex min-w-0 items-center gap-2;
+}
+
+.mobile-vault-filter-item-main span:last-child {
+  @apply min-w-0 overflow-hidden text-ellipsis whitespace-nowrap;
 }
 
 .list-count {
@@ -223,6 +360,10 @@
 
 .sort-trigger {
   @apply w-9 min-w-9 justify-center gap-0 p-0;
+}
+
+.sort-trigger.sort-trigger-labeled {
+  @apply h-[34px] w-auto min-w-0 gap-1.5 rounded-[10px] px-3;
 }
 
 .sort-trigger.active {
@@ -266,6 +407,30 @@
   @apply h-3.5 w-3.5 shrink-0;
 }
 
+.desktop-create-menu-wrap {
+  @apply shrink-0;
+}
+
+.desktop-create-trigger {
+  @apply h-[34px] w-[34px] min-w-[34px] gap-0 rounded-[10px] p-0 text-[0];
+}
+
+.desktop-create-trigger .btn-icon {
+  @apply m-0;
+}
+
+.duplicates-helper-toolbar {
+  @apply justify-start pb-0.5;
+}
+
+.duplicates-helper-toolbar .btn.small {
+  @apply h-[34px] rounded-[10px] px-3 py-0 text-[13px];
+}
+
+.list-count-status {
+  @apply mb-1 pl-1;
+}
+
 .list-panel {
   @apply min-h-0 overflow-auto p-2;
   /* Virtualized rows update top/bottom spacers while scrolling. Chrome's scroll anchoring
@@ -279,6 +444,11 @@
   border-color: var(--line);
   contain: paint;
   overflow-anchor: none;
+}
+
+.list-item.duplicate-group-item {
+  background: hsl(var(--duplicate-group-hue) 84% 94%);
+  border-color: hsl(var(--duplicate-group-hue) 42% 78%);
 }
 
 .list-item::before {
@@ -361,6 +531,11 @@
   box-shadow: 0 10px 22px rgba(15, 23, 42, 0.06), 0 0 0 1px rgba(37, 99, 235, 0.04);
 }
 
+.list-item.duplicate-group-item:hover {
+  background: hsl(var(--duplicate-group-hue) 88% 92%);
+  border-color: hsl(var(--duplicate-group-hue) 52% 68%);
+}
+
 .list-item:hover::before {
   opacity: 1;
   transform: translateX(0);
@@ -370,6 +545,11 @@
   background: rgba(37, 99, 235, 0.1);
   border-color: rgba(43, 102, 217, 0.26);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.42);
+}
+
+.list-item.duplicate-group-item.active {
+  background: hsl(var(--duplicate-group-hue) 88% 89%);
+  border-color: hsl(var(--duplicate-group-hue) 58% 58%);
 }
 
 .list-item.active::before {
@@ -900,7 +1080,7 @@
 
 .totp-codes-list {
   @apply grid w-full items-start gap-2.5;
-  grid-template-columns: repeat(var(--totp-columns, 1), minmax(300px, 1fr));
+  grid-template-columns: repeat(var(--totp-columns, 1), minmax(0, 1fr));
 }
 
 .totp-code-row {
@@ -925,7 +1105,7 @@
 }
 
 .totp-code-main strong {
-  @apply whitespace-nowrap text-[22px] leading-none;
+  @apply min-w-0 whitespace-nowrap text-[22px] leading-none;
   letter-spacing: 0.04em;
 }
 

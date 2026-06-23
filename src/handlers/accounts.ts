@@ -1,4 +1,4 @@
-import { Env, User, ProfileResponse, DEFAULT_DEV_SECRET } from '../types';
+import { Env, User, DEFAULT_DEV_SECRET } from '../types';
 import { StorageService } from '../services/storage';
 import { AuthService } from '../services/auth';
 import { RateLimitService, getClientIdentifier } from '../services/ratelimit';
@@ -9,6 +9,7 @@ import { LIMITS } from '../config/limits';
 import { isTotpEnabled, verifyTotpToken } from '../utils/totp';
 import { createRecoveryCode, recoveryCodeEquals } from '../utils/recovery-code';
 import { buildAccountKeys } from '../utils/user-decryption';
+import { buildProfileResponse } from '../utils/profile-response';
 
 const TWO_FACTOR_PROVIDER_AUTHENTICATOR = 0;
 const TOTP_USER_VERIFICATION_TOKEN_TTL_MS = 10 * 60 * 1000;
@@ -174,6 +175,24 @@ function readBodyString(body: Record<string, unknown>, names: string[]): string 
   return '';
 }
 
+function readNestedString(source: unknown, path: string[]): string {
+  let current = source;
+  for (const key of path) {
+    if (!current || typeof current !== 'object') return '';
+    current = (current as Record<string, unknown>)[key];
+  }
+  return typeof current === 'string' ? current : '';
+}
+
+function readNestedNumber(source: unknown, path: string[]): number | undefined {
+  let current = source;
+  for (const key of path) {
+    if (!current || typeof current !== 'object') return undefined;
+    current = (current as Record<string, unknown>)[key];
+  }
+  return typeof current === 'number' ? current : undefined;
+}
+
 async function readRequestBody(request: Request): Promise<Record<string, unknown>> {
   const contentType = request.headers.get('content-type') || '';
   if (contentType.includes('application/x-www-form-urlencoded')) {
@@ -183,34 +202,32 @@ async function readRequestBody(request: Request): Promise<Record<string, unknown
   return await request.json();
 }
 
-function toProfile(user: User, env: Env): ProfileResponse {
-  void env;
+function masterPasswordPolicyResponse(): Record<string, unknown> {
+  return {
+    minComplexity: 0,
+    minLength: 0,
+    requireUpper: false,
+    requireLower: false,
+    requireNumbers: false,
+    requireSpecial: false,
+    enforceOnLogin: false,
+    object: 'masterPasswordPolicy',
+  };
+}
+
+function keysResponse(user: User): Record<string, unknown> {
   const accountKeys = buildAccountKeys(user);
   return {
-    id: user.id,
-    name: user.name,
-    email: user.email,
-    emailVerified: true,
-    premium: true,
-    premiumFromOrganization: false,
-    usesKeyConnector: false,
-    masterPasswordHint: user.masterPasswordHint,
-    culture: 'en-US',
-    twoFactorEnabled: !!user.totpSecret,
+    Key: user.key,
+    PublicKey: user.publicKey ?? '',
+    PrivateKey: user.privateKey ?? '',
+    AccountKeys: accountKeys,
+    Object: 'keys',
     key: user.key,
-    privateKey: user.privateKey,
+    publicKey: user.publicKey ?? '',
+    privateKey: user.privateKey ?? '',
     accountKeys,
-    securityStamp: user.securityStamp || user.id,
-    organizations: [],
-    providers: [],
-    providerOrganizations: [],
-    forcePasswordReset: false,
-    avatarColor: null,
-    creationDate: user.createdAt,
-    verifyDevices: user.verifyDevices,
-    role: user.role,
-    status: user.status,
-    object: 'profile',
+    object: 'keys',
   };
 }
 
@@ -445,7 +462,7 @@ export async function handleGetProfile(request: Request, env: Env, userId: strin
   const storage = new StorageService(env.DB);
   const user = await storage.getUserById(userId);
   if (!user) return errorResponse('User not found', 404);
-  return jsonResponse(toProfile(user, env));
+  return jsonResponse(buildProfileResponse(user, env));
 }
 
 // PUT /api/accounts/profile
@@ -484,7 +501,7 @@ export async function handleUpdateProfile(request: Request, env: Env, userId: st
     },
   });
 
-  return jsonResponse(toProfile(user, env));
+  return jsonResponse(buildProfileResponse(user, env));
 }
 
 // PUT/POST /api/accounts/verify-devices
@@ -498,6 +515,7 @@ export async function handleSetVerifyDevices(request: Request, env: Env, userId:
     secret?: string;
     masterPasswordHash?: string;
     verifyDevices?: boolean;
+    VerifyDevices?: boolean;
   };
   try {
     body = await request.json();
@@ -505,7 +523,8 @@ export async function handleSetVerifyDevices(request: Request, env: Env, userId:
     return errorResponse('Invalid JSON', 400);
   }
 
-  if (typeof body.verifyDevices !== 'boolean') {
+  const verifyDevices = typeof body.verifyDevices === 'boolean' ? body.verifyDevices : body.VerifyDevices;
+  if (typeof verifyDevices !== 'boolean') {
     return errorResponse('verifyDevices must be true or false', 400);
   }
 
@@ -514,7 +533,7 @@ export async function handleSetVerifyDevices(request: Request, env: Env, userId:
     return errorResponse('User verification failed.', 400);
   }
 
-  user.verifyDevices = body.verifyDevices;
+  user.verifyDevices = verifyDevices;
   user.updatedAt = new Date().toISOString();
   await storage.saveUser(user);
   await writeAuditEvent(storage, {
@@ -531,6 +550,19 @@ export async function handleSetVerifyDevices(request: Request, env: Env, userId:
   });
 
   return new Response(null, { status: 200 });
+}
+
+// GET /api/accounts/keys
+export async function handleGetKeys(request: Request, env: Env, userId: string): Promise<Response> {
+  void request;
+  const storage = new StorageService(env.DB);
+  const user = await storage.getUserById(userId);
+
+  if (!user) {
+    return errorResponse('User not found', 404);
+  }
+
+  return jsonResponse(keysResponse(user));
 }
 
 // POST /api/accounts/keys
@@ -593,7 +625,7 @@ export async function handleSetKeys(request: Request, env: Env, userId: string):
     },
   });
 
-  return handleGetProfile(request, env, userId);
+  return jsonResponse(keysResponse(user));
 }
 
 // POST/PUT /api/accounts/password
@@ -607,6 +639,7 @@ export async function handleChangePassword(request: Request, env: Env, userId: s
     masterPasswordHash?: string;
     currentPasswordHash?: string;
     newMasterPasswordHash?: string;
+    masterPasswordHint?: string | null;
     key?: string;
     newKey?: string;
     encryptedPrivateKey?: string;
@@ -617,6 +650,8 @@ export async function handleChangePassword(request: Request, env: Env, userId: s
     kdfIterations?: number;
     kdfMemory?: number;
     kdfParallelism?: number;
+    authenticationData?: Record<string, unknown>;
+    unlockData?: Record<string, unknown>;
   };
   try {
     body = await request.json();
@@ -629,10 +664,16 @@ export async function handleChangePassword(request: Request, env: Env, userId: s
   const valid = await auth.verifyPassword(currentHash, user.masterPasswordHash, user.email);
   if (!valid) return errorResponse('Invalid password', 400);
 
-  if (!body.newMasterPasswordHash) {
+  const newMasterPasswordHash =
+    body.newMasterPasswordHash ||
+    readNestedString(body, ['authenticationData', 'masterPasswordAuthenticationHash']);
+  if (!newMasterPasswordHash) {
     return errorResponse('newMasterPasswordHash is required', 400);
   }
-  const nextKey = body.newKey || body.key;
+  const nextKey =
+    body.newKey ||
+    body.key ||
+    readNestedString(body, ['unlockData', 'masterKeyWrappedUserKey']);
   const nextPrivateKey = body.newEncryptedPrivateKey || body.encryptedPrivateKey;
   const nextPublicKey = body.newPublicKey || body.publicKey;
   if (nextKey && !looksLikeEncString(nextKey)) {
@@ -642,17 +683,24 @@ export async function handleChangePassword(request: Request, env: Env, userId: s
     return errorResponse('new encryptedPrivateKey is not a valid encrypted string', 400);
   }
 
-  const kdfErr = validateKdfParams(body.kdf ?? user.kdfType, body.kdfIterations, body.kdfMemory, body.kdfParallelism);
+  const nextKdf = body.kdf ?? readNestedNumber(body, ['unlockData', 'kdf', 'kdfType']) ?? user.kdfType;
+  const nextKdfIterations = body.kdfIterations ?? readNestedNumber(body, ['unlockData', 'kdf', 'iterations']);
+  const nextKdfMemory = body.kdfMemory ?? readNestedNumber(body, ['unlockData', 'kdf', 'memory']);
+  const nextKdfParallelism = body.kdfParallelism ?? readNestedNumber(body, ['unlockData', 'kdf', 'parallelism']);
+  const kdfErr = validateKdfParams(nextKdf, nextKdfIterations, nextKdfMemory, nextKdfParallelism);
   if (kdfErr) return errorResponse(kdfErr, 400);
 
-  user.masterPasswordHash = await auth.hashPasswordServer(body.newMasterPasswordHash, user.email);
+  user.masterPasswordHash = await auth.hashPasswordServer(newMasterPasswordHash, user.email);
   if (nextKey) user.key = nextKey;
   if (nextPrivateKey) user.privateKey = nextPrivateKey;
   if (nextPublicKey) user.publicKey = nextPublicKey;
-  if (typeof body.kdf === 'number') user.kdfType = body.kdf;
-  if (typeof body.kdfIterations === 'number') user.kdfIterations = body.kdfIterations;
-  if (typeof body.kdfMemory === 'number') user.kdfMemory = body.kdfMemory;
-  if (typeof body.kdfParallelism === 'number') user.kdfParallelism = body.kdfParallelism;
+  if (typeof nextKdf === 'number') user.kdfType = nextKdf;
+  if (typeof nextKdfIterations === 'number') user.kdfIterations = nextKdfIterations;
+  if (typeof nextKdfMemory === 'number') user.kdfMemory = nextKdfMemory;
+  if (typeof nextKdfParallelism === 'number') user.kdfParallelism = nextKdfParallelism;
+  if (typeof body.masterPasswordHint === 'string' || body.masterPasswordHint === null) {
+    user.masterPasswordHint = body.masterPasswordHint;
+  }
   user.securityStamp = generateUUID();
   user.updatedAt = new Date().toISOString();
   await storage.saveUser(user);
@@ -1061,23 +1109,26 @@ export async function handleVerifyPassword(request: Request, env: Env, userId: s
     return errorResponse('User not found', 404);
   }
 
-  let body: { masterPasswordHash?: string };
+  let body: { masterPasswordHash?: string; authenticationData?: Record<string, unknown> };
   try {
     body = await request.json();
   } catch {
     return errorResponse('Invalid JSON', 400);
   }
 
-  if (!body.masterPasswordHash) {
+  const masterPasswordHash =
+    body.masterPasswordHash ||
+    readNestedString(body, ['authenticationData', 'masterPasswordAuthenticationHash']);
+  if (!masterPasswordHash) {
     return errorResponse('masterPasswordHash is required', 400);
   }
 
-  const valid = await auth.verifyPassword(body.masterPasswordHash, user.masterPasswordHash, user.email);
+  const valid = await auth.verifyPassword(masterPasswordHash, user.masterPasswordHash, user.email);
   if (!valid) {
     return errorResponse('Invalid password', 400);
   }
 
-  return new Response(null, { status: 200 });
+  return jsonResponse(masterPasswordPolicyResponse());
 }
 
 // POST /api/accounts/api-key

@@ -176,6 +176,8 @@ CREATE TABLE IF NOT EXISTS devices (
   encrypted_user_key TEXT,
   encrypted_public_key TEXT,
   encrypted_private_key TEXT,
+  push_uuid TEXT,
+  push_token TEXT,
   banned INTEGER NOT NULL DEFAULT 0,
   banned_at TEXT,
   device_note TEXT,
@@ -187,6 +189,7 @@ CREATE TABLE IF NOT EXISTS devices (
 );
 CREATE INDEX IF NOT EXISTS idx_devices_user_updated ON devices(user_id, updated_at);
 CREATE INDEX IF NOT EXISTS idx_devices_user_last_seen ON devices(user_id, last_seen_at);
+CREATE INDEX IF NOT EXISTS idx_devices_user_push ON devices(user_id, push_token);
 
 CREATE TABLE IF NOT EXISTS auth_requests (
   id TEXT PRIMARY KEY,

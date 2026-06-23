@@ -2,6 +2,7 @@ import { CloudUpload, Save, Trash2 } from 'lucide-preact';
 import type {
   BackupDestinationRecord,
   RemoteBackupBrowserResponse,
+  S3BackupAddressingStyle,
   S3BackupDestination,
   WebDavBackupDestination,
 } from '@/lib/api/backup';
@@ -401,7 +402,7 @@ export function BackupDestinationDetail(props: BackupDestinationDetailProps) {
 
           {props.selectedDestination.type === 's3' ? (
             <div className="field-grid">
-              <label className="field field-span-2">
+              <label className="field">
                 <span>{t('txt_backup_s3_endpoint')}</span>
                 <input
                   className="input"
@@ -416,6 +417,24 @@ export function BackupDestinationDetail(props: BackupDestinationDetailProps) {
                     },
                   }))}
                 />
+              </label>
+              <label className="field">
+                <span>{t('txt_backup_s3_addressing_style')}</span>
+                <select
+                  className="input"
+                  value={(props.selectedDestination.destination as S3BackupDestination).addressingStyle || 'path-style'}
+                  disabled={props.loadingSettings || props.disableWhileBusy}
+                  onChange={(event) => props.onUpdateDestination((destination) => ({
+                    ...destination,
+                    destination: {
+                      ...(destination.destination as S3BackupDestination),
+                      addressingStyle: (event.currentTarget as HTMLSelectElement).value as S3BackupAddressingStyle,
+                    },
+                  }))}
+                >
+                  <option value="path-style">{t('txt_backup_s3_addressing_path_style')}</option>
+                  <option value="virtual-hosted-style">{t('txt_backup_s3_addressing_virtual_hosted_style')}</option>
+                </select>
               </label>
               <label className="field">
                 <span>{t('txt_backup_s3_bucket')}</span>

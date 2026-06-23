@@ -70,6 +70,7 @@
 :root[data-theme='dark'] .textarea,
 :root[data-theme='dark'] select.input,
 :root[data-theme='dark'] .search-input,
+:root[data-theme='dark'] .mobile-vault-filter-trigger,
 :root[data-theme='dark'] .dialog input,
 :root[data-theme='dark'] .dialog textarea,
 :root[data-theme='dark'] .dialog select {
@@ -77,6 +78,13 @@
   border-color: var(--line);
   color: var(--text);
   box-shadow: none;
+}
+
+:root[data-theme='dark'] .mobile-vault-filter-trigger:hover,
+:root[data-theme='dark'] .mobile-vault-filter-trigger.active {
+  background: var(--panel-muted);
+  border-color: color-mix(in srgb, var(--primary) 42%, var(--line));
+  color: var(--text);
 }
 
 :root[data-theme='dark'] .input::placeholder,
@@ -198,6 +206,21 @@
 
 :root[data-theme='dark'] .list-item:hover {
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.24), 0 0 0 1px rgba(139, 184, 255, 0.12);
+}
+
+:root[data-theme='dark'] .list-item.duplicate-group-item {
+  background: hsl(var(--duplicate-group-hue) 34% 18%);
+  border-color: hsl(var(--duplicate-group-hue) 28% 30%);
+}
+
+:root[data-theme='dark'] .list-item.duplicate-group-item:hover {
+  background: hsl(var(--duplicate-group-hue) 36% 21%);
+  border-color: hsl(var(--duplicate-group-hue) 34% 38%);
+}
+
+:root[data-theme='dark'] .list-item.duplicate-group-item.active {
+  background: hsl(var(--duplicate-group-hue) 38% 24%);
+  border-color: hsl(var(--duplicate-group-hue) 42% 48%);
 }
 
 :root[data-theme='dark'] .card-brand-icon {

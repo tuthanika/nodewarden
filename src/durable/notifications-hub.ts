@@ -1,13 +1,24 @@
 import { DurableObject, waitUntil } from 'cloudflare:workers';
 import type { Env } from '../types';
+import { notifyMobilePush } from '../services/push-relay';
 
 const SIGNALR_RECORD_SEPARATOR = 0x1e;
 const SIGNALR_HANDSHAKE_ACK = new Uint8Array([0x7b, 0x7d, SIGNALR_RECORD_SEPARATOR]);
+const SIGNALR_UPDATE_TYPE_SYNC_CIPHER_UPDATE = 0;
+const SIGNALR_UPDATE_TYPE_SYNC_CIPHER_CREATE = 1;
+const SIGNALR_UPDATE_TYPE_SYNC_FOLDER_DELETE = 3;
+const SIGNALR_UPDATE_TYPE_SYNC_CIPHERS = 4;
 const SIGNALR_UPDATE_TYPE_SYNC_VAULT = 5;
+const SIGNALR_UPDATE_TYPE_SYNC_FOLDER_CREATE = 7;
+const SIGNALR_UPDATE_TYPE_SYNC_FOLDER_UPDATE = 8;
+const SIGNALR_UPDATE_TYPE_SYNC_CIPHER_DELETE = 9;
 const SIGNALR_UPDATE_TYPE_LOG_OUT = 11;
-const SIGNALR_UPDATE_TYPE_BACKUP_RESTORE_PROGRESS = 13;
+const SIGNALR_UPDATE_TYPE_SYNC_SEND_CREATE = 12;
+const SIGNALR_UPDATE_TYPE_SYNC_SEND_UPDATE = 13;
+const SIGNALR_UPDATE_TYPE_SYNC_SEND_DELETE = 14;
 const SIGNALR_UPDATE_TYPE_AUTH_REQUEST = 15;
 const SIGNALR_UPDATE_TYPE_AUTH_REQUEST_RESPONSE = 16;
+const SIGNALR_UPDATE_TYPE_BACKUP_RESTORE_PROGRESS = 102;
 
 type HubProtocol = 'json' | 'messagepack';
 type HubKind = 'user' | 'anonymous-auth-request';
@@ -164,7 +175,7 @@ function buildSignalRMessagePackInvocation(
   target: string = 'ReceiveMessage'
 ): Uint8Array {
   // SignalR MessagePack hub protocol uses an array-based invocation shape:
-  // [type, headers, invocationId, target, arguments]
+  // [type, headers, invocationId, target, arguments, streamIds]
   const encodedPayload = encodeMsgPack([
     1,
     {},
@@ -177,6 +188,7 @@ function buildSignalRMessagePackInvocation(
         Payload: messagePayload,
       },
     ],
+    [],
   ]);
   return frameSignalRBinary(encodedPayload);
 }
@@ -207,7 +219,9 @@ export class NotificationsHub extends DurableObject<Env> {
       const revisionDate = String(body?.revisionDate || '').trim() || new Date().toISOString();
       const userId = String(request.headers.get('X-NodeWarden-UserId') || body?.userId || '').trim();
       const contextId = String(body?.contextId || '').trim() || null;
-      const updateType = Number(body?.updateType || SIGNALR_UPDATE_TYPE_SYNC_VAULT) || SIGNALR_UPDATE_TYPE_SYNC_VAULT;
+      const rawUpdateType = body?.updateType;
+      const parsedUpdateType = typeof rawUpdateType === 'number' ? rawUpdateType : Number(rawUpdateType);
+      const updateType = Number.isFinite(parsedUpdateType) ? parsedUpdateType : SIGNALR_UPDATE_TYPE_SYNC_VAULT;
       const targetDeviceIdentifier = String(body?.targetDeviceIdentifier || '').trim() || null;
       const payload = body?.payload && typeof body.payload === 'object'
         ? body.payload
@@ -422,6 +436,243 @@ export function notifyUserVaultSync(
   waitUntil(notifyUserUpdate(env, userId, SIGNALR_UPDATE_TYPE_SYNC_VAULT, revisionDate, contextId ?? null, null));
 }
 
+export function notifyUserCiphersSync(
+  env: Env,
+  userId: string,
+  revisionDate: string,
+  contextId?: string | null
+): void {
+  waitUntil(notifyUserUpdate(env, userId, SIGNALR_UPDATE_TYPE_SYNC_CIPHERS, revisionDate, contextId ?? null, null));
+}
+
+export function notifyUserCipherCreate(
+  env: Env,
+  payload: {
+    userId: string;
+    cipherId: string;
+    revisionDate: string;
+    organizationId?: string | null;
+    collectionIds?: string[] | null;
+    contextId?: string | null;
+  }
+): void {
+  waitUntil(notifyUserUpdate(
+    env,
+    payload.userId,
+    SIGNALR_UPDATE_TYPE_SYNC_CIPHER_CREATE,
+    payload.revisionDate,
+    payload.contextId ?? null,
+    null,
+    {
+      UserId: payload.userId,
+      Id: payload.cipherId,
+      OrganizationId: payload.organizationId ?? null,
+      CollectionIds: Array.isArray(payload.collectionIds) ? payload.collectionIds : null,
+      RevisionDate: payload.revisionDate,
+    }
+  ));
+}
+
+export function notifyUserCipherUpdate(
+  env: Env,
+  payload: {
+    userId: string;
+    cipherId: string;
+    revisionDate: string;
+    organizationId?: string | null;
+    collectionIds?: string[] | null;
+    contextId?: string | null;
+  }
+): void {
+  waitUntil(notifyUserUpdate(
+    env,
+    payload.userId,
+    SIGNALR_UPDATE_TYPE_SYNC_CIPHER_UPDATE,
+    payload.revisionDate,
+    payload.contextId ?? null,
+    null,
+    {
+      UserId: payload.userId,
+      Id: payload.cipherId,
+      OrganizationId: payload.organizationId ?? null,
+      CollectionIds: Array.isArray(payload.collectionIds) ? payload.collectionIds : null,
+      RevisionDate: payload.revisionDate,
+    }
+  ));
+}
+
+export function notifyUserCipherDelete(
+  env: Env,
+  payload: {
+    userId: string;
+    cipherId: string;
+    revisionDate: string;
+    organizationId?: string | null;
+    collectionIds?: string[] | null;
+    contextId?: string | null;
+  }
+): void {
+  waitUntil(notifyUserUpdate(
+    env,
+    payload.userId,
+    SIGNALR_UPDATE_TYPE_SYNC_CIPHER_DELETE,
+    payload.revisionDate,
+    payload.contextId ?? null,
+    null,
+    {
+      UserId: payload.userId,
+      Id: payload.cipherId,
+      OrganizationId: payload.organizationId ?? null,
+      CollectionIds: Array.isArray(payload.collectionIds) ? payload.collectionIds : null,
+      RevisionDate: payload.revisionDate,
+    }
+  ));
+}
+
+export function notifyUserFolderCreate(
+  env: Env,
+  payload: {
+    userId: string;
+    folderId: string;
+    revisionDate: string;
+    contextId?: string | null;
+  }
+): void {
+  waitUntil(notifyUserUpdate(
+    env,
+    payload.userId,
+    SIGNALR_UPDATE_TYPE_SYNC_FOLDER_CREATE,
+    payload.revisionDate,
+    payload.contextId ?? null,
+    null,
+    {
+      UserId: payload.userId,
+      Id: payload.folderId,
+      RevisionDate: payload.revisionDate,
+    }
+  ));
+}
+
+export function notifyUserFolderUpdate(
+  env: Env,
+  payload: {
+    userId: string;
+    folderId: string;
+    revisionDate: string;
+    contextId?: string | null;
+  }
+): void {
+  waitUntil(notifyUserUpdate(
+    env,
+    payload.userId,
+    SIGNALR_UPDATE_TYPE_SYNC_FOLDER_UPDATE,
+    payload.revisionDate,
+    payload.contextId ?? null,
+    null,
+    {
+      UserId: payload.userId,
+      Id: payload.folderId,
+      RevisionDate: payload.revisionDate,
+    }
+  ));
+}
+
+export function notifyUserFolderDelete(
+  env: Env,
+  payload: {
+    userId: string;
+    folderId: string;
+    revisionDate: string;
+    contextId?: string | null;
+  }
+): void {
+  waitUntil(notifyUserUpdate(
+    env,
+    payload.userId,
+    SIGNALR_UPDATE_TYPE_SYNC_FOLDER_DELETE,
+    payload.revisionDate,
+    payload.contextId ?? null,
+    null,
+    {
+      UserId: payload.userId,
+      Id: payload.folderId,
+      RevisionDate: payload.revisionDate,
+    }
+  ));
+}
+
+export function notifyUserSendCreate(
+  env: Env,
+  payload: {
+    userId: string;
+    sendId: string;
+    revisionDate: string;
+    contextId?: string | null;
+  }
+): void {
+  waitUntil(notifyUserUpdate(
+    env,
+    payload.userId,
+    SIGNALR_UPDATE_TYPE_SYNC_SEND_CREATE,
+    payload.revisionDate,
+    payload.contextId ?? null,
+    null,
+    {
+      UserId: payload.userId,
+      Id: payload.sendId,
+      RevisionDate: payload.revisionDate,
+    }
+  ));
+}
+
+export function notifyUserSendUpdate(
+  env: Env,
+  payload: {
+    userId: string;
+    sendId: string;
+    revisionDate: string;
+    contextId?: string | null;
+  }
+): void {
+  waitUntil(notifyUserUpdate(
+    env,
+    payload.userId,
+    SIGNALR_UPDATE_TYPE_SYNC_SEND_UPDATE,
+    payload.revisionDate,
+    payload.contextId ?? null,
+    null,
+    {
+      UserId: payload.userId,
+      Id: payload.sendId,
+      RevisionDate: payload.revisionDate,
+    }
+  ));
+}
+
+export function notifyUserSendDelete(
+  env: Env,
+  payload: {
+    userId: string;
+    sendId: string;
+    revisionDate: string;
+    contextId?: string | null;
+  }
+): void {
+  waitUntil(notifyUserUpdate(
+    env,
+    payload.userId,
+    SIGNALR_UPDATE_TYPE_SYNC_SEND_DELETE,
+    payload.revisionDate,
+    payload.contextId ?? null,
+    null,
+    {
+      UserId: payload.userId,
+      Id: payload.sendId,
+      RevisionDate: payload.revisionDate,
+    }
+  ));
+}
+
 export function notifyUserLogout(
   env: Env,
   userId: string,
@@ -516,6 +767,16 @@ async function notifyUserUpdate(
           Date: revisionDate,
         },
       }),
+    });
+    await notifyMobilePush(env, {
+      userId,
+      updateType,
+      revisionDate,
+      contextId,
+      payload: payloadOverride || {
+        UserId: userId,
+        Date: revisionDate,
+      },
     });
   } catch (error) {
     console.error('Failed to broadcast realtime notification:', error);

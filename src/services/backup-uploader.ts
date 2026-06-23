@@ -448,8 +448,27 @@ async function existsInWebDav(config: WebDavBackupDestination, relativePath: str
   return true;
 }
 
+function isBucketHostedS3Endpoint(endpoint: URL, bucket: string): boolean {
+  const hostname = endpoint.hostname.toLowerCase();
+  const bucketName = bucket.trim().toLowerCase();
+  return !!bucketName && (hostname === bucketName || hostname.startsWith(`${bucketName}.`));
+}
+
 function s3BucketBaseUrl(config: S3BackupDestination): URL {
-  return new URL(`${config.endpoint.replace(/\/+$/, '')}/${encodeURIComponent(config.bucket)}`);
+  const endpoint = new URL(config.endpoint.replace(/\/+$/, ''));
+  const bucket = config.bucket.trim();
+
+  if (config.addressingStyle === 'virtual-hosted-style') {
+    if (isBucketHostedS3Endpoint(endpoint, bucket)) return endpoint;
+    endpoint.hostname = `${bucket}.${endpoint.hostname}`;
+    return endpoint;
+  }
+
+  return new URL(`${endpoint.toString().replace(/\/+$/, '')}/${encodeURIComponent(bucket)}`);
+}
+
+function s3ObjectUrl(config: S3BackupDestination, objectKey: string): URL {
+  return new URL(`${s3BucketBaseUrl(config).toString().replace(/\/+$/, '')}/${encodePathSegments(objectKey)}`);
 }
 
 function normalizeS3ObjectKey(config: S3BackupDestination, relativePath: string): string {
@@ -501,7 +520,7 @@ async function putToS3(
   options: RemoteBackupFilePutOptions = {}
 ): Promise<void> {
   const objectKey = normalizeS3ObjectKey(config, relativePath);
-  const url = new URL(`${s3BucketBaseUrl(config).toString()}/${encodePathSegments(objectKey)}`);
+  const url = s3ObjectUrl(config, objectKey);
   const response = await signedS3Request(config, 'PUT', url, bytes, options.contentType);
 
   if (!response.ok) {
@@ -594,7 +613,7 @@ async function downloadFromS3(config: S3BackupDestination, relativePath: string)
     throw new Error('Please select a backup file');
   }
   const objectKey = normalizeS3ObjectKey(config, normalized);
-  const url = new URL(`${s3BucketBaseUrl(config).toString()}/${encodePathSegments(objectKey)}`);
+  const url = s3ObjectUrl(config, objectKey);
   const response = await signedS3Request(config, 'GET', url);
   if (!response.ok) {
     throw new Error(`S3 download failed: ${response.status}`);
@@ -610,7 +629,7 @@ async function downloadFromS3(config: S3BackupDestination, relativePath: string)
 
 async function deleteFromS3(config: S3BackupDestination, relativePath: string): Promise<void> {
   const objectKey = normalizeS3ObjectKey(config, relativePath);
-  const url = new URL(`${s3BucketBaseUrl(config).toString()}/${encodePathSegments(objectKey)}`);
+  const url = s3ObjectUrl(config, objectKey);
   const response = await signedS3Request(config, 'DELETE', url);
   if (!response.ok && response.status !== 404) {
     throw new Error(`S3 delete failed: ${response.status}`);
@@ -619,7 +638,7 @@ async function deleteFromS3(config: S3BackupDestination, relativePath: string): 
 
 async function existsInS3(config: S3BackupDestination, relativePath: string): Promise<boolean> {
   const objectKey = normalizeS3ObjectKey(config, relativePath);
-  const url = new URL(`${s3BucketBaseUrl(config).toString()}/${encodePathSegments(objectKey)}`);
+  const url = s3ObjectUrl(config, objectKey);
   const response = await signedS3Request(config, 'HEAD', url);
   if (response.status === 404) return false;
   if (!response.ok) {

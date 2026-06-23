@@ -14,10 +14,12 @@ export const BACKUP_DEFAULT_INTERVAL_HOURS = 24;
 export const BACKUP_DEFAULT_START_TIME = '03:00';
 
 export type BackupDestinationType = 's3' | 'webdav';
+export type S3BackupAddressingStyle = 'path-style' | 'virtual-hosted-style';
 
 export interface S3BackupDestination {
   endpoint: string;
   bucket: string;
+  addressingStyle: S3BackupAddressingStyle;
   region: string;
   accessKeyId: string;
   secretAccessKey: string;
@@ -103,6 +105,7 @@ export function createDefaultBackupDestinationConfig(type: BackupDestinationType
     return {
       endpoint: '',
       bucket: '',
+      addressingStyle: 'path-style',
       region: BACKUP_DEFAULT_S3_REGION,
       accessKeyId: '',
       secretAccessKey: '',

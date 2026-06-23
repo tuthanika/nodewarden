@@ -3,6 +3,7 @@ import { errorResponse, jsonResponse } from './utils/response';
 import {
   handleGetProfile,
   handleUpdateProfile,
+  handleGetKeys,
   handleSetKeys,
   handleGetRevisionDate,
   handleVerifyPassword,
@@ -115,8 +116,10 @@ export async function handleAuthenticatedRoute(
     return handleChangePassword(request, env, userId);
   }
 
-  if (path === '/api/accounts/keys' && method === 'POST') {
-    return handleSetKeys(request, env, userId);
+  if (path === '/api/accounts/keys') {
+    if (method === 'GET') return handleGetKeys(request, env, userId);
+    if (method === 'POST') return handleSetKeys(request, env, userId);
+    return errorResponse('Method not allowed', 405);
   }
 
   if (path === '/api/accounts/totp') {

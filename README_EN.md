@@ -40,7 +40,7 @@
 | **PWA Support** | ⚠️ Basic | ✅ | **Installable, offline-capable, app shortcuts** |
 | **Web Vault Offline Access** | ❌ | ✅ | **Web client supports offline vault viewing** |
 | **Passkey Login** | ✅ | ✅ | **WebAuthn/FIDO2 passwordless login** |
-| Full sync `/api/sync` | ✅ | ✅ | Compatibility optimized for official clients |
+| Real-time sync | ✅ | ✅ | Web, browser extension, desktop, and mobile clients stay in sync in real time |
 | Attachment upload / download | ✅ | ✅ | Cloudflare R2 or KV |
 | Send | ✅ | ✅ | Supports both text and file Sends |
 | Import / Export | ✅ | ✅ | Supports Bitwarden JSON / CSV / **ZIP import with attachments** |

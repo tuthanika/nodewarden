@@ -16,6 +16,7 @@ import {
   type BackupRuntimeState,
   type BackupScheduleConfig,
   type BackupSettings,
+  type S3BackupAddressingStyle,
   type S3BackupDestination,
   type WebDavBackupDestination,
   createBackupRandomId,
@@ -35,6 +36,7 @@ export type {
   BackupRuntimeState,
   BackupScheduleConfig,
   BackupSettings,
+  S3BackupAddressingStyle,
   S3BackupDestination,
   WebDavBackupDestination,
 } from '../../shared/backup-schema';
@@ -109,6 +111,9 @@ function normalizeS3Destination(value: unknown, allowIncomplete = false): S3Back
   const source = isPlainObject(value) ? value : {};
   const endpoint = asTrimmedString(source.endpoint);
   const bucket = asTrimmedString(source.bucket);
+  const addressingStyleRaw = asTrimmedString(source.addressingStyle);
+  const addressingStyle: S3BackupAddressingStyle =
+    addressingStyleRaw === 'virtual-hosted-style' ? 'virtual-hosted-style' : 'path-style';
   const accessKeyId = asTrimmedString(source.accessKeyId);
   const secretAccessKey = asTrimmedString(source.secretAccessKey);
   const region = asTrimmedString(source.region) || 'auto';
@@ -131,6 +136,7 @@ function normalizeS3Destination(value: unknown, allowIncomplete = false): S3Back
   return {
     endpoint: endpoint ? endpoint.replace(/\/+$/, '') : '',
     bucket,
+    addressingStyle,
     region,
     accessKeyId,
     secretAccessKey,

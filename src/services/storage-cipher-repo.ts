@@ -87,7 +87,7 @@ function parseCipherRow(row: CipherRow | null | undefined): Cipher | null {
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       archivedAt: row.archived_at ?? parsed.archivedAt ?? parsed.archivedDate ?? null,
-      deletedAt: row.deleted_at ?? null,
+      deletedAt: row.deleted_at ?? parsed.deletedAt ?? parsed.deletedDate ?? null,
     };
   } catch {
     console.error('Corrupted cipher data, id:', row.id);
@@ -244,7 +244,9 @@ export async function getCiphersPage(
   limit: number,
   offset: number
 ): Promise<Cipher[]> {
-  const whereDeleted = includeDeleted ? '' : 'AND deleted_at IS NULL';
+  const whereDeleted = includeDeleted
+    ? ''
+    : "AND deleted_at IS NULL AND json_extract(data, '$.deletedAt') IS NULL AND json_extract(data, '$.deletedDate') IS NULL";
   const res = await db
     .prepare(
       `SELECT ${selectCipherColumns()} FROM ciphers
@@ -341,7 +343,10 @@ export async function bulkArchiveCiphers(
         `UPDATE ciphers
          SET archived_at = ?, updated_at = ?,
              data = json_remove(data, '$.archivedAt', '$.archivedDate', '$.updatedAt', '$.revisionDate')
-         WHERE user_id = ? AND id IN (${placeholders}) AND deleted_at IS NULL`
+         WHERE user_id = ? AND id IN (${placeholders})
+           AND deleted_at IS NULL
+           AND json_extract(data, '$.deletedAt') IS NULL
+           AND json_extract(data, '$.deletedDate') IS NULL`
       )
       .bind(now, now, userId, ...chunk)
       .run();

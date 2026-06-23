@@ -94,7 +94,7 @@ const SCHEMA_STATEMENTS: readonly string[] = [
   'CREATE INDEX IF NOT EXISTS idx_audit_logs_level_created ON audit_logs(level, created_at)',
 
   'CREATE TABLE IF NOT EXISTS devices (' +
-  'user_id TEXT NOT NULL, device_identifier TEXT NOT NULL, name TEXT NOT NULL, type INTEGER NOT NULL, session_stamp TEXT, encrypted_user_key TEXT, encrypted_public_key TEXT, encrypted_private_key TEXT, banned INTEGER NOT NULL DEFAULT 0, banned_at TEXT, device_note TEXT, last_seen_at TEXT, ' +
+  'user_id TEXT NOT NULL, device_identifier TEXT NOT NULL, name TEXT NOT NULL, type INTEGER NOT NULL, session_stamp TEXT, encrypted_user_key TEXT, encrypted_public_key TEXT, encrypted_private_key TEXT, push_uuid TEXT, push_token TEXT, banned INTEGER NOT NULL DEFAULT 0, banned_at TEXT, device_note TEXT, last_seen_at TEXT, ' +
   'created_at TEXT NOT NULL, updated_at TEXT NOT NULL, ' +
   'PRIMARY KEY (user_id, device_identifier), ' +
   'FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE)',
@@ -103,11 +103,14 @@ const SCHEMA_STATEMENTS: readonly string[] = [
   'ALTER TABLE devices ADD COLUMN encrypted_user_key TEXT',
   'ALTER TABLE devices ADD COLUMN encrypted_public_key TEXT',
   'ALTER TABLE devices ADD COLUMN encrypted_private_key TEXT',
+  'ALTER TABLE devices ADD COLUMN push_uuid TEXT',
+  'ALTER TABLE devices ADD COLUMN push_token TEXT',
   'ALTER TABLE devices ADD COLUMN banned INTEGER NOT NULL DEFAULT 0',
   'ALTER TABLE devices ADD COLUMN banned_at TEXT',
   'ALTER TABLE devices ADD COLUMN device_note TEXT',
   'ALTER TABLE devices ADD COLUMN last_seen_at TEXT',
   'CREATE INDEX IF NOT EXISTS idx_devices_user_last_seen ON devices(user_id, last_seen_at)',
+  'CREATE INDEX IF NOT EXISTS idx_devices_user_push ON devices(user_id, push_token)',
 
   'CREATE TABLE IF NOT EXISTS auth_requests (' +
   'id TEXT PRIMARY KEY, user_id TEXT NOT NULL, organization_id TEXT, type INTEGER NOT NULL, request_device_identifier TEXT NOT NULL, request_device_type INTEGER NOT NULL, ' +

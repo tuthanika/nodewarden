@@ -220,6 +220,25 @@ function normalizeTotpSecret(secret: string): string {
   return secret.toUpperCase().replace(/[\s-]/g, '').replace(/=+$/g, '');
 }
 
+function readOtpAuthParam(raw: string, name: string): string {
+  const queryStart = raw.indexOf('?');
+  if (queryStart < 0) return '';
+  const fragmentStart = raw.indexOf('#', queryStart + 1);
+  const query = raw.slice(queryStart + 1, fragmentStart > queryStart ? fragmentStart : undefined);
+  for (const part of query.split('&')) {
+    const eq = part.indexOf('=');
+    const key = eq >= 0 ? part.slice(0, eq) : part;
+    if (key.trim().toLowerCase() !== name.toLowerCase()) continue;
+    const value = eq >= 0 ? part.slice(eq + 1) : '';
+    try {
+      return decodeURIComponent(value.replace(/\+/g, ' '));
+    } catch {
+      return value;
+    }
+  }
+  return '';
+}
+
 function parseSteamSecret(raw: string): string {
   const match = raw.trim().match(/^steam:\/\/([^/?#]+)(?:[/?#].*)?$/i);
   if (!match?.[1]) return '';
@@ -276,7 +295,8 @@ function parseTotpConfig(raw: string): TotpConfig {
   if (/^otpauth:\/\//i.test(s)) {
     try {
       const u = new URL(s);
-      if (u.hostname.toLowerCase() !== 'totp') {
+      const otpType = u.hostname.toLowerCase();
+      if (otpType !== 'totp') {
         return { secret: '', steam: false, ...DEFAULT_TOTP_CONFIG };
       }
       const label = decodeURIComponent((u.pathname || '').replace(/^\/+/, '')).toLowerCase();
@@ -291,7 +311,16 @@ function parseTotpConfig(raw: string): TotpConfig {
         period: parseTotpPositiveInt(u.searchParams.get('period'), DEFAULT_TOTP_CONFIG.period, 1, 3600),
       };
     } catch {
-      return { secret: '', steam: false, ...DEFAULT_TOTP_CONFIG };
+      const issuer = readOtpAuthParam(s, 'issuer').trim().toLowerCase();
+      const algorithm = readOtpAuthParam(s, 'algorithm').trim().toLowerCase();
+      const steam = issuer === 'steam' || algorithm === 'steam';
+      return {
+        secret: normalizeTotpSecret(readOtpAuthParam(s, 'secret')),
+        steam,
+        algorithm: steam ? 'SHA-1' : parseTotpHashAlgorithm(algorithm),
+        digits: steam ? 5 : parseTotpPositiveInt(readOtpAuthParam(s, 'digits'), DEFAULT_TOTP_CONFIG.digits, 1, 10),
+        period: parseTotpPositiveInt(readOtpAuthParam(s, 'period'), DEFAULT_TOTP_CONFIG.period, 1, 3600),
+      };
     }
   }
   return { secret: normalizeTotpSecret(s), steam: false, ...DEFAULT_TOTP_CONFIG };

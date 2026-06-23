@@ -10,10 +10,13 @@ import {
 import { copyTextToClipboard } from '@/lib/clipboard';
 import { t } from '@/lib/i18n';
 import type { Cipher, CipherAttachment, CustomFieldType, VaultDraft, VaultDraftField, VaultDraftLoginUri } from '@/lib/types';
+import { firstCipherUri, hostFromUri, websiteIconUrl } from '@/lib/website-utils';
+import { normalizeEquivalentDomain } from '@shared/domain-normalize';
 import WebsiteIcon from './WebsiteIcon';
 
 export type TypeFilter = 'login' | 'card' | 'identity' | 'note' | 'ssh';
 export type VaultSortMode = 'edited' | 'created' | 'name';
+export type DuplicateDetectionMode = 'exact' | 'login-site' | 'login-credentials' | 'password';
 export type SidebarFilter =
   | { kind: 'all' }
   | { kind: 'favorite' }
@@ -126,6 +129,16 @@ export const FOLDER_SORT_STORAGE_KEY = 'nodewarden.folder-sort.v1';
 export const MOBILE_LAYOUT_QUERY = '(max-width: 1180px)';
 export const VAULT_LIST_ROW_HEIGHT = 74;
 export const VAULT_LIST_OVERSCAN = 10;
+
+export function getDuplicateDetectionOptions(): Array<{ value: DuplicateDetectionMode; label: string }> {
+  return [
+    { value: 'exact', label: t('txt_duplicate_mode_exact') },
+    { value: 'login-site', label: t('txt_duplicate_mode_login_site') },
+    { value: 'login-credentials', label: t('txt_duplicate_mode_login_credentials') },
+    { value: 'password', label: t('txt_duplicate_mode_password') },
+  ];
+}
+
 export function getVaultSortOptions(): Array<{ value: VaultSortMode; label: string }> {
   return [
     { value: 'edited', label: t('txt_sort_last_edited') },
@@ -242,7 +255,7 @@ export function toBooleanFieldValue(raw: string): boolean {
   return v === '1' || v === 'true' || v === 'yes' || v === 'on';
 }
 
-export { firstCipherUri, hostFromUri, websiteIconUrl } from '@/lib/website-utils';
+export { firstCipherUri, hostFromUri, websiteIconUrl };
 
 export function createEmptyLoginUri(): VaultDraftLoginUri {
   return { uri: '', match: null, originalUri: '', extra: {} };
@@ -255,6 +268,30 @@ export function websiteMatchLabel(value: number | null | undefined): string {
 
 function valueOrFallback(value: string | null | undefined): string {
   return String(value || '');
+}
+
+function duplicateLoginUsername(cipher: Cipher): string {
+  return valueOrFallback(cipher.login?.decUsername ?? cipher.login?.username).trim().toLowerCase();
+}
+
+function duplicateLoginPassword(cipher: Cipher): string {
+  return valueOrFallback(cipher.login?.decPassword ?? cipher.login?.password);
+}
+
+function duplicateLoginSites(cipher: Cipher): string[] {
+  const sites = new Set<string>();
+  for (const uri of cipher.login?.uris || []) {
+    const raw = valueOrFallback(uri.decUri ?? uri.uri).trim();
+    if (!raw) continue;
+    const host = hostFromUri(raw).trim().toLowerCase().replace(/^www\./, '');
+    const site = normalizeEquivalentDomain(raw) || host;
+    if (site) sites.add(site);
+  }
+  return Array.from(sites).sort();
+}
+
+function duplicateSignature(parts: string[]): string {
+  return JSON.stringify(parts);
 }
 
 export function buildCipherDuplicateSignature(cipher: Cipher): string {
@@ -331,6 +368,23 @@ export function buildCipherDuplicateSignature(cipher: Cipher): string {
     })),
   };
   return JSON.stringify(normalized);
+}
+
+export function buildCipherDuplicateSignatures(cipher: Cipher, mode: DuplicateDetectionMode): string[] {
+  if (mode === 'exact') return [buildCipherDuplicateSignature(cipher)];
+  if (Number(cipher.type || 1) !== 1 || !cipher.login) return [];
+
+  const username = duplicateLoginUsername(cipher);
+  const password = duplicateLoginPassword(cipher);
+  if (mode === 'password') {
+    return password ? [duplicateSignature(['password', password])] : [];
+  }
+  if (!username || !password) return [];
+  if (mode === 'login-credentials') {
+    return [duplicateSignature(['login-credentials', username, password])];
+  }
+
+  return duplicateLoginSites(cipher).map((site) => duplicateSignature(['login-site', site, username, password]));
 }
 
 export function createEmptyDraft(type: number): VaultDraft {
@@ -453,8 +507,9 @@ export function maskSecret(value: string): string {
 export function formatTotp(code: string): string {
   if (!code) return code;
   if (code.length === 5) return `${code.slice(0, 2)} ${code.slice(2)}`;
-  if (code.length < 6) return code;
-  return `${code.slice(0, 3)} ${code.slice(3, 6)}`;
+  if (code.length <= 4) return code;
+  if (code.length === 8) return `${code.slice(0, 4)} ${code.slice(4)}`;
+  return code.replace(/(.{3})(?=.)/g, '$1 ');
 }
 
 export function formatHistoryTime(value: string | null | undefined): string {

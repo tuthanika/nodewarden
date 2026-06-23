@@ -3,6 +3,7 @@ import { Env } from '../types';
 import { getOnlineUserDevices, notifyUserLogout } from '../durable/notifications-hub';
 import { AuthService } from '../services/auth';
 import { auditRequestMetadata, writeAuditEvent } from '../services/audit-events';
+import { registerMobilePushDevice, unregisterMobilePushDevice } from '../services/push-relay';
 import { StorageService } from '../services/storage';
 import { errorResponse, jsonResponse } from '../utils/response';
 import { readKnownDeviceProbe } from '../utils/device';
@@ -223,6 +224,8 @@ export async function handleGetAuthorizedDevices(request: Request, env: Env, use
       encryptedUserKey: null,
       encryptedPublicKey: null,
       encryptedPrivateKey: null,
+      pushUuid: null,
+      pushToken: null,
       devicePendingAuthRequest: null,
       deviceNote: null,
       lastSeenAt: null,
@@ -325,10 +328,12 @@ export async function handleDeleteDevice(
   if (!normalized) return errorResponse('Invalid device identifier', 400);
 
   const storage = new StorageService(env.DB);
+  const device = await storage.getDevice(userId, normalized);
   await storage.deleteTrustedTwoFactorTokensByDevice(userId, normalized);
   await storage.deleteRefreshTokensByDevice(userId, normalized);
   const deleted = await storage.deleteDevice(userId, normalized);
   if (deleted) {
+    await unregisterMobilePushDevice(env, device?.pushUuid);
     AuthService.invalidateDeviceCache(userId, normalized);
     notifyUserLogout(env, userId, normalized);
   }
@@ -537,10 +542,12 @@ export async function handleDeactivateDevice(
   if (!normalized) return errorResponse('Invalid device identifier', 400);
 
   const storage = new StorageService(env.DB);
+  const device = await storage.getDevice(userId, normalized);
   await storage.deleteTrustedTwoFactorTokensByDevice(userId, normalized);
   await storage.deleteRefreshTokensByDevice(userId, normalized);
   const deleted = await storage.deleteDevice(userId, normalized);
   if (deleted) {
+    await unregisterMobilePushDevice(env, device?.pushUuid);
     AuthService.invalidateDeviceCache(userId, normalized);
     notifyUserLogout(env, userId, normalized);
   }
@@ -557,18 +564,36 @@ export async function handleDeactivateDevice(
 }
 
 // PUT /api/devices/identifier/{deviceIdentifier}/token
-// Bitwarden mobile reports push token updates to this endpoint.
-// NodeWarden does not implement push notifications, so accept and no-op.
+// Bitwarden mobile reports APNs/FCM push token updates to this endpoint.
 export async function handleUpdateDeviceToken(
   request: Request,
   env: Env,
   userId: string,
   deviceIdentifier: string
 ): Promise<Response> {
-  void request;
-  void env;
-  void userId;
-  void deviceIdentifier;
+  const normalized = normalizeIdentifier(deviceIdentifier);
+  if (!normalized) return errorResponse('Invalid device identifier', 400);
+
+  const body = await readJsonBody(request);
+  const pushToken = String(body?.pushToken ?? body?.PushToken ?? '').trim();
+  if (!pushToken) return errorResponse('Invalid push token', 400);
+
+  const storage = new StorageService(env.DB);
+  const device = await storage.getDevice(userId, normalized);
+  if (!device) return errorResponse('Device not found', 404);
+
+  const pushUuid = device.pushUuid || generateUUID();
+  const updated = await storage.updateDevicePushToken(userId, normalized, pushUuid, pushToken);
+  if (updated) {
+    await registerMobilePushDevice(env, {
+      userId,
+      deviceIdentifier: normalized,
+      type: device.type,
+      pushUuid,
+      pushToken,
+    });
+  }
+
   return new Response(null, { status: 200 });
 }
 
@@ -594,9 +619,15 @@ export async function handleClearDeviceToken(
   deviceIdentifier: string
 ): Promise<Response> {
   void request;
-  void env;
-  void userId;
-  void deviceIdentifier;
+  const normalized = normalizeIdentifier(deviceIdentifier);
+  if (!normalized) return errorResponse('Invalid device identifier', 400);
+
+  const storage = new StorageService(env.DB);
+  const cleared = await storage.clearDevicePushToken(userId, normalized);
+  if (cleared?.pushUuid) {
+    await unregisterMobilePushDevice(env, cleared.pushUuid);
+  }
+
   return new Response(null, { status: 200 });
 }
 

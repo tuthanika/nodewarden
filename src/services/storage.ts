@@ -1,5 +1,6 @@
 import { User, Cipher, Folder, Attachment, Device, Invite, AuditLog, Send, TrustedDeviceTokenSummary, RefreshTokenRecord, CustomEquivalentDomain, AccountPasskeyChallenge, AccountPasskeyChallengeScope, AccountPasskeyCredential, AuthRequestRecord } from '../types';
 import { LIMITS } from '../config/limits';
+import { ensurePushInstallationCredentials } from './push-relay';
 import { ensureStorageSchema } from './storage-schema';
 import {
   getConfigValue as getStoredConfigValue,
@@ -87,10 +88,12 @@ import {
 import {
   deleteDevice as deleteStoredDevice,
   deleteDevicesByUserId as deleteStoredDevicesByUserId,
+  clearDevicePushToken as clearStoredDevicePushToken,
   clearDeviceKeys as clearStoredDeviceKeys,
   deleteTrustedTwoFactorTokensByDevice as deleteStoredTrustedTokensByDevice,
   deleteTrustedTwoFactorTokensByUserId as deleteStoredTrustedTokensByUserId,
   getDevice as findStoredDevice,
+  getDevicePushUuid as findStoredDevicePushUuid,
   getDevicesByUserId as listStoredDevicesByUserId,
   getTrustedDeviceTokenSummariesByUserId as listStoredTrustedTokenSummaries,
   getTrustedTwoFactorDeviceTokenUserId as findStoredTrustedTokenUserId,
@@ -101,7 +104,9 @@ import {
   upsertDevice as saveStoredDevice,
   updateDeviceName as updateStoredDeviceName,
   updateDeviceKeys as updateStoredDeviceKeys,
+  updateDevicePushToken as updateStoredDevicePushToken,
   updateTrustedTwoFactorTokensExpiryByDevice as updateStoredTrustedTokensExpiryByDevice,
+  userHasPushDevice as getUserHasPushDevice,
 } from './storage-device-repo';
 import {
   createAuthRequest as createStoredAuthRequest,
@@ -143,7 +148,7 @@ const STORAGE_SCHEMA_VERSION_KEY = 'schema.version';
 // Bump this whenever src/services/storage-schema.ts or migrations/0001_init.sql
 // changes. Existing D1 installs only rerun ensureStorageSchema() when this value
 // differs from config.schema.version.
-const STORAGE_SCHEMA_VERSION = '2026-06-12-auth-requests';
+const STORAGE_SCHEMA_VERSION = '2026-06-22-push-notifications';
 const REQUIRED_SCHEMA_TABLES = ['webauthn_credentials', 'webauthn_challenges', 'auth_requests'] as const;
 
 // D1-backed storage.
@@ -235,6 +240,7 @@ export class StorageService {
       await ensureStorageSchema(this.db);
       await saveConfigValue(this.db, STORAGE_SCHEMA_VERSION_KEY, STORAGE_SCHEMA_VERSION);
     }
+    await ensurePushInstallationCredentials(this.db);
 
     StorageService.schemaVerified = true;
   }
@@ -711,6 +717,27 @@ export class StorageService {
 
   async touchDeviceLastSeen(userId: string, deviceIdentifier: string): Promise<boolean> {
     return touchStoredDeviceLastSeen(this.db, userId, deviceIdentifier);
+  }
+
+  async updateDevicePushToken(
+    userId: string,
+    deviceIdentifier: string,
+    pushUuid: string,
+    pushToken: string
+  ): Promise<boolean> {
+    return updateStoredDevicePushToken(this.db, userId, deviceIdentifier, pushUuid, pushToken);
+  }
+
+  async clearDevicePushToken(userId: string, deviceIdentifier: string): Promise<{ pushUuid: string | null } | null> {
+    return clearStoredDevicePushToken(this.db, userId, deviceIdentifier);
+  }
+
+  async getDevicePushUuid(userId: string, deviceIdentifier: string): Promise<string | null> {
+    return findStoredDevicePushUuid(this.db, userId, deviceIdentifier);
+  }
+
+  async userHasPushDevice(userId: string): Promise<boolean> {
+    return getUserHasPushDevice(this.db, userId);
   }
 
   async clearDeviceKeys(userId: string, deviceIdentifiers: string[]): Promise<number> {
