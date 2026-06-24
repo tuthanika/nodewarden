@@ -27,6 +27,7 @@ import {
   handleNotificationsNegotiate,
 } from './handlers/notifications';
 import { handlePublicUploadSendFile } from './handlers/sends';
+import { isSafeWebsiteIconContentType } from './utils/content-type';
 import { jsonResponse } from './utils/response';
 import { StorageService } from './services/storage';
 import type { Env } from './types';
@@ -241,6 +242,7 @@ function iconResponse(body: BodyInit | null, contentType: string | null): Respon
     headers: {
       'Content-Type': contentType || 'image/png',
       'Cache-Control': `public, max-age=${LIMITS.cache.iconTtlSeconds}, immutable`,
+      'Content-Security-Policy': "default-src 'none'; img-src 'self' data:; sandbox",
     },
   });
 }
@@ -272,7 +274,7 @@ async function handleWebsiteIcon(host: string, fallbackMode: 'default' | 'not-fo
 
       if (!resp.ok) continue;
       const contentType = String(resp.headers.get('Content-Type') || '').toLowerCase();
-      if (!contentType.startsWith('image/')) continue;
+      if (!isSafeWebsiteIconContentType(contentType)) continue;
 
       const contentLength = getPositiveContentLength(resp.headers);
       if (contentLength !== null && contentLength > ICON_MAX_BUFFER_BYTES) continue;

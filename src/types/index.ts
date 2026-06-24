@@ -466,6 +466,8 @@ export interface TokenResponse {
   ResetMasterPassword: boolean;
   scope: string;
   unofficialServer: boolean;
+  UserVerificationToken?: string;
+  userVerificationToken?: string;
   MasterPasswordPolicy?: {
     minComplexity: number;
     minLength: number;

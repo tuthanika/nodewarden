@@ -353,20 +353,31 @@ export async function handleRegister(request: Request, env: Env): Promise<Respon
     return errorResponse('Invite code is required', 403);
   }
 
+  const inviteMarked = await storage.markInviteUsed(inviteCode, user.id);
+  if (!inviteMarked) {
+    return errorResponse('Invite code is invalid or expired', 403);
+  }
+
   try {
     await storage.createUser(user);
   } catch (error) {
+    await storage.revertInviteUsed(inviteCode, user.id);
     const msg = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
     if (msg.includes('unique') || msg.includes('constraint')) {
       return errorResponse('Email already registered', 409);
     }
+    console.error('Registration failed after invite reservation:', error);
     throw error;
   }
 
-  const inviteMarked = await storage.markInviteUsed(inviteCode, user.id);
-  if (!inviteMarked) {
-    await storage.deleteUserById(user.id);
-    return errorResponse('Invite code is invalid or expired', 403);
+  try {
+    const assigned = await storage.assignInviteUsedBy(inviteCode, user.id);
+    if (!assigned) {
+      console.warn('Invite used_by was not assigned after registration', { inviteCode, userId: user.id });
+    }
+  } catch (error) {
+    // The invite is already consumed. Do not reactivate it after the user row exists.
+    console.error('Invite used_by assignment failed after registration:', error);
   }
 
   await writeAuditEvent(storage, {
@@ -891,7 +902,7 @@ export async function handleDisableTwoFactorProvider(request: Request, env: Env,
 }
 
 // PUT /api/accounts/totp
-// enable: { enabled: true, secret: "...", token: "123456" }
+// enable: { enabled: true, secret: "...", token: "123456", masterPasswordHash?: "...", userVerificationToken?: "..." }
 // disable: { enabled: false, masterPasswordHash: "..." }
 export async function handleSetTotpStatus(request: Request, env: Env, userId: string): Promise<Response> {
   const storage = new StorageService(env.DB);
@@ -899,7 +910,13 @@ export async function handleSetTotpStatus(request: Request, env: Env, userId: st
   const user = await storage.getUserById(userId);
   if (!user) return errorResponse('User not found', 404);
 
-  let body: { enabled?: boolean; secret?: string; token?: string; masterPasswordHash?: string };
+  let body: {
+    enabled?: boolean;
+    secret?: string;
+    token?: string;
+    masterPasswordHash?: string;
+    userVerificationToken?: string;
+  };
   try {
     body = await request.json();
   } catch {
@@ -908,11 +925,23 @@ export async function handleSetTotpStatus(request: Request, env: Env, userId: st
 
   if (body.enabled === true) {
     const normalizedSecret = normalizeTotpSecret(body.secret || '');
+    const masterPasswordHash = readBodyString(body, ['masterPasswordHash', 'MasterPasswordHash']);
+    const userVerificationToken = readBodyString(body, ['userVerificationToken', 'UserVerificationToken']);
     if (!isTotpEnabled(normalizedSecret)) {
       return errorResponse('Invalid TOTP secret', 400);
     }
     if (!body.token) {
       return errorResponse('TOTP token is required', 400);
+    }
+    let verifiedUser = false;
+    if (userVerificationToken) {
+      verifiedUser = await verifyTotpUserVerificationToken(env, user, normalizedSecret, userVerificationToken);
+    }
+    if (!verifiedUser && masterPasswordHash) {
+      verifiedUser = await auth.verifyPassword(masterPasswordHash, user.masterPasswordHash, user.email);
+    }
+    if (!verifiedUser) {
+      return errorResponse('User verification failed.', 400);
     }
     const verified = await verifyTotpToken(normalizedSecret, body.token);
     if (!verified) {

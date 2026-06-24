@@ -4,6 +4,7 @@ import { StorageService } from '../services/storage';
 import { jsonResponse, errorResponse } from '../utils/response';
 import { buildDirectUploadUrl, getSafeJwtSecret, parseDirectUploadPayload } from '../utils/direct-upload';
 import { generateUUID } from '../utils/uuid';
+import { sanitizeDownloadContentType } from '../utils/content-type';
 import {
   createAttachmentUploadToken,
   createFileDownloadToken,
@@ -449,7 +450,7 @@ export async function handlePublicDownloadAttachment(
 
   return new Response(object.body, {
     headers: {
-      'Content-Type': object.contentType || 'application/octet-stream',
+      'Content-Type': sanitizeDownloadContentType(object.contentType),
       'Content-Length': String(object.size),
       'Content-Disposition': contentDispositionAttachment(attachment.fileName),
       'Cache-Control': 'private, no-cache',

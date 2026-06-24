@@ -145,14 +145,30 @@ export default function useAccountSecurityActions(options: UseAccountSecurityAct
         }
       },
 
-      async enableTotp(secret: string, token: string) {
+      async enableTotp(secret: string, token: string, masterPassword: string) {
+        if (!profile) {
+          const error = new Error(t('txt_profile_unavailable'));
+          onNotify('error', error.message);
+          throw error;
+        }
         if (!secret.trim() || !token.trim()) {
           const error = new Error(t('txt_secret_and_code_are_required'));
           onNotify('error', error.message);
           throw error;
         }
+        if (!masterPassword) {
+          const error = new Error(t('txt_master_password_is_required'));
+          onNotify('error', error.message);
+          throw error;
+        }
         try {
-          await setTotp(authedFetch, { enabled: true, secret: secret.trim(), token: token.trim() });
+          const derived = await deriveLoginHash(profile.email, masterPassword, defaultKdfIterations);
+          await setTotp(authedFetch, {
+            enabled: true,
+            secret: secret.trim(),
+            token: token.trim(),
+            masterPasswordHash: derived.hash,
+          });
           onNotify('success', t('txt_totp_enabled'));
         } catch (error) {
           onNotify('error', error instanceof Error ? error.message : t('txt_enable_totp_failed'));

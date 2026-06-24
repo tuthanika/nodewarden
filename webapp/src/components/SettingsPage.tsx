@@ -14,7 +14,7 @@ interface SettingsPageProps {
   sessionTimeoutAction: 'lock' | 'logout';
   onChangePassword: (currentPassword: string, nextPassword: string, nextPassword2: string) => Promise<void>;
   onSavePasswordHint: (masterPasswordHint: string) => Promise<void>;
-  onEnableTotp: (secret: string, token: string) => Promise<void>;
+  onEnableTotp: (secret: string, token: string, masterPassword: string) => Promise<void>;
   onOpenDisableTotp: () => void;
   onGetRecoveryCode: (masterPassword: string) => Promise<string>;
   onGetApiKey: (masterPassword: string) => Promise<string>;
@@ -34,6 +34,7 @@ interface SettingsPageProps {
 }
 
 type MasterPasswordPromptAction =
+  | 'enableTotp'
   | 'recovery'
   | 'apiKey'
   | 'rotateApiKey'
@@ -141,12 +142,12 @@ export default function SettingsPage(props: SettingsPageProps) {
   }, [props.profile.email, secret]);
 
   async function enableTotp(): Promise<void> {
-    try {
-      await props.onEnableTotp(secret, token);
-      setTotpLocked(true);
-    } catch {
-      // Keep inputs editable after a failed attempt.
+    if (totpLocked) return;
+    if (!secret.trim() || !token.trim()) {
+      props.onNotify?.('error', t('txt_secret_and_code_are_required'));
+      return;
     }
+    openMasterPasswordPrompt('enableTotp');
   }
 
   async function refreshAccountPasskeys(): Promise<void> {
@@ -178,7 +179,10 @@ export default function SettingsPage(props: SettingsPageProps) {
     const masterPassword = masterPasswordPromptValue;
     setMasterPasswordPromptSubmitting(true);
     try {
-      if (masterPasswordPrompt === 'recovery') {
+      if (masterPasswordPrompt === 'enableTotp') {
+        await props.onEnableTotp(secret, token, masterPassword);
+        setTotpLocked(true);
+      } else if (masterPasswordPrompt === 'recovery') {
         const code = await props.onGetRecoveryCode(masterPassword);
         setRecoveryCode(code);
         props.onNotify?.('success', t('txt_recovery_code_loaded'));
@@ -214,7 +218,9 @@ export default function SettingsPage(props: SettingsPageProps) {
   }
 
   const masterPasswordPromptTitle =
-    masterPasswordPrompt === 'recovery'
+    masterPasswordPrompt === 'enableTotp'
+      ? t('txt_enable_totp')
+      : masterPasswordPrompt === 'recovery'
       ? t('txt_view_recovery_code')
       : masterPasswordPrompt === 'rotateApiKey'
         ? t('txt_rotate_api_key')

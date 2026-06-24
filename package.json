@@ -1,6 +1,6 @@
 {
   "name": "nodewarden",
-  "version": "1.7.0",
+  "version": "1.7.1",
   "description": "Minimal Bitwarden-compatible server running on Cloudflare Workers",
   "author": "shuaiplus",
   "license": "LGPL-3.0",
@@ -41,6 +41,11 @@
         "description": "Optional KV namespace fallback for attachment/send-file storage"
       }
     }
+  },
+  "overrides": {
+    "undici": ">=7.28.0",
+    "@babel/core": ">=7.29.6",
+    "esbuild": ">=0.28.1"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260131.0",

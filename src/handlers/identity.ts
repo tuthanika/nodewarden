@@ -4,7 +4,7 @@ import { AuthService } from '../services/auth';
 import { RateLimitService, getClientIdentifier } from '../services/ratelimit';
 import { jsonResponse, errorResponse, identityErrorResponse } from '../utils/response';
 import { LIMITS } from '../config/limits';
-import { isTotpEnabled, verifyTotpToken } from '../utils/totp';
+import { findMatchingTotpCounter, isTotpEnabled } from '../utils/totp';
 import { createRefreshToken } from '../utils/jwt';
 import { readAuthRequestDeviceInfo } from '../utils/device';
 import { createRecoveryCode, recoveryCodeEquals } from '../utils/recovery-code';
@@ -21,6 +21,7 @@ import {
   buildAccountPasskeyTokenUserDecryptionOption,
 } from './account-passkeys';
 import { isAuthRequestExpired } from '../services/storage-auth-request-repo';
+import { createPasskeyUserVerificationToken } from '../utils/user-verification-token';
 
 const TWO_FACTOR_REMEMBER_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const TWO_FACTOR_PROVIDER_AUTHENTICATOR = 0;
@@ -336,6 +337,7 @@ export async function handleToken(request: Request, env: Env): Promise<Response>
     }
 
     let validatedAuthRequestId: string | null = null;
+    let authRequestLoginKey: string | null = null;
     let valid = false;
     const normalizedAuthRequestId = String(authRequestId || '').trim();
     if (normalizedAuthRequestId) {
@@ -348,10 +350,12 @@ export async function handleToken(request: Request, env: Env): Promise<Response>
         authRequest.responseDate &&
         !authRequest.authenticationDate &&
         !isAuthRequestExpired(authRequest) &&
+        !!authRequest.key &&
         constantTimeEquals(authRequest.accessCode, passwordHash)
       );
       if (valid) {
         validatedAuthRequestId = authRequest!.id;
+        authRequestLoginKey = authRequest!.key;
       }
     } else {
       valid = await auth.verifyPassword(passwordHash, user.masterPasswordHash, user.email);
@@ -408,8 +412,12 @@ export async function handleToken(request: Request, env: Env): Promise<Response>
           return twoFactorRequiredResponse('Two factor required.');
         }
       } else if (normalizedTwoFactorProvider === String(TWO_FACTOR_PROVIDER_AUTHENTICATOR)) {
-        const totpOk = await verifyTotpToken(effectiveTotpSecret, normalizedTwoFactorToken);
-        if (!totpOk) {
+        const matchedCounter = await findMatchingTotpCounter(effectiveTotpSecret, normalizedTwoFactorToken);
+        if (matchedCounter == null) {
+          return recordFailedTwoFactorAndBuildResponse(rateLimit, loginIdentifier);
+        }
+        const consumed = await storage.consumeTotpLoginCounter(user.id, matchedCounter);
+        if (!consumed) {
           return recordFailedTwoFactorAndBuildResponse(rateLimit, loginIdentifier);
         }
       } else if (
@@ -488,7 +496,7 @@ export async function handleToken(request: Request, env: Env): Promise<Response>
       token_type: 'Bearer',
       ...(shouldUseWebSession(request) ? { web_session: true } : { refresh_token: refreshToken }),
       ...(trustedTwoFactorTokenToReturn ? { TwoFactorToken: trustedTwoFactorTokenToReturn } : {}),
-      Key: user.key,
+      Key: authRequestLoginKey || user.key,
       PrivateKey: user.privateKey,
       AccountKeys: accountKeys,
       accountKeys: accountKeys,
@@ -583,6 +591,7 @@ export async function handleToken(request: Request, env: Env): Promise<Response>
 
     const accessToken = await auth.generateAccessToken(user, deviceSession);
     const refreshToken = await auth.generateRefreshToken(user.id, deviceSession);
+    const userVerificationToken = await createPasskeyUserVerificationToken(env, user.id, 'backup.settings.repair');
     const accountKeys = buildAccountKeys(user);
     const webAuthnPrfOption = buildAccountPasskeyTokenUserDecryptionOption(credential);
     const userDecryptionOptions = buildUserDecryptionOptions(user, webAuthnPrfOption);
@@ -621,6 +630,8 @@ export async function handleToken(request: Request, env: Env): Promise<Response>
       ApiUseKeyConnector: false,
       scope: 'api offline_access',
       unofficialServer: true,
+      UserVerificationToken: userVerificationToken,
+      userVerificationToken,
       UserDecryptionOptions: userDecryptionOptions,
       userDecryptionOptions: userDecryptionOptions,
     };

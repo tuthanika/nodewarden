@@ -2,6 +2,7 @@ import { Env, SendType } from '../types';
 import { StorageService } from '../services/storage';
 import { RateLimitService, getClientIdentifier } from '../services/ratelimit';
 import { jsonResponse, errorResponse } from '../utils/response';
+import { sanitizeDownloadContentType } from '../utils/content-type';
 import { LIMITS } from '../config/limits';
 import {
   createSendAccessToken,
@@ -306,7 +307,7 @@ export async function handleDownloadSendFile(
 
   return new Response(object.body, {
     headers: {
-      'Content-Type': object.contentType || 'application/octet-stream',
+      'Content-Type': sanitizeDownloadContentType(object.contentType),
       'Content-Length': String(object.size),
       'Content-Disposition': contentDispositionAttachment(fileName),
       'Cache-Control': 'private, no-cache',

@@ -314,6 +314,8 @@ export interface TokenSuccess {
   ResetMasterPassword?: boolean;
   scope?: string;
   unofficialServer?: boolean;
+  UserVerificationToken?: string;
+  userVerificationToken?: string;
   UserDecryptionOptions?: unknown;
   userDecryptionOptions?: unknown;
   VaultKeys?: {

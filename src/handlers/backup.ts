@@ -40,13 +40,49 @@ import {
   uploadBackupArchive,
 } from '../services/backup-uploader';
 import { StorageService } from '../services/storage';
+import { AuthService } from '../services/auth';
 import { auditRequestMetadata, writeAuditEvent } from '../services/audit-events';
 import { getBlobObject } from '../services/blob-store';
 import { notifyUserBackupProgress, notifyUserBackupRestoreProgress } from '../durable/notifications-hub';
+import { verifyPasskeyUserVerificationToken } from '../utils/user-verification-token';
 import { unzipSync } from 'fflate';
 
 function isAdmin(user: User): boolean {
   return user.role === 'admin' && user.status === 'active';
+}
+
+async function requireBackupUserVerification(actorUser: User, masterPasswordHash: string, env: Env): Promise<Response | null> {
+  const normalized = String(masterPasswordHash || '').trim();
+  if (!normalized) {
+    return errorResponse('masterPasswordHash is required', 400);
+  }
+  const auth = new AuthService(env);
+  const valid = await auth.verifyPassword(normalized, actorUser.masterPasswordHash, actorUser.email);
+  if (!valid) {
+    return errorResponse('Invalid password', 400);
+  }
+  return null;
+}
+
+async function requireBackupRepairVerification(
+  actorUser: User,
+  body: { masterPasswordHash?: string; userVerificationToken?: string },
+  env: Env
+): Promise<Response | null> {
+  const masterPasswordHash = String(body.masterPasswordHash || '').trim();
+  if (masterPasswordHash) {
+    return requireBackupUserVerification(actorUser, masterPasswordHash, env);
+  }
+
+  const userVerificationToken = String(body.userVerificationToken || '').trim();
+  if (!userVerificationToken) {
+    return errorResponse('masterPasswordHash or userVerificationToken is required', 400);
+  }
+  const valid = await verifyPasskeyUserVerificationToken(env, userVerificationToken, actorUser.id, 'backup.settings.repair');
+  if (!valid) {
+    return errorResponse('Invalid user verification token', 400);
+  }
+  return null;
 }
 
 async function writeAuditLog(
@@ -787,12 +823,15 @@ export async function handleGetAdminBackupSettings(request: Request, env: Env, a
 export async function handleUpdateAdminBackupSettings(request: Request, env: Env, actorUser: User): Promise<Response> {
   if (!isAdmin(actorUser)) return errorResponse('Forbidden', 403);
 
-  let body: BackupSettingsInput;
+  let body: BackupSettingsInput & { masterPasswordHash?: string };
   try {
-    body = await request.json<BackupSettingsInput>();
+    body = await request.json<BackupSettingsInput & { masterPasswordHash?: string }>();
   } catch {
     return errorResponse('Backup settings payload is invalid', 400);
   }
+
+  const verificationError = await requireBackupUserVerification(actorUser, String(body.masterPasswordHash || ''), env);
+  if (verificationError) return verificationError;
 
   const storage = new StorageService(env.DB);
   let previous;
@@ -837,12 +876,15 @@ export async function handleGetAdminBackupSettingsRepairState(request: Request, 
 export async function handleRepairAdminBackupSettings(request: Request, env: Env, actorUser: User): Promise<Response> {
   if (!isAdmin(actorUser)) return errorResponse('Forbidden', 403);
 
-  let body: BackupSettingsInput;
+  let body: BackupSettingsInput & { masterPasswordHash?: string; userVerificationToken?: string };
   try {
-    body = await request.json<BackupSettingsInput>();
+    body = await request.json<BackupSettingsInput & { masterPasswordHash?: string; userVerificationToken?: string }>();
   } catch {
     return errorResponse('Backup settings repair payload is invalid', 400);
   }
+
+  const verificationError = await requireBackupRepairVerification(actorUser, body, env);
+  if (verificationError) return verificationError;
 
   const storage = new StorageService(env.DB);
   let previous;
@@ -871,14 +913,17 @@ export async function handleRunAdminConfiguredBackup(request: Request, env: Env,
   if (!isAdmin(actorUser)) return errorResponse('Forbidden', 403);
 
   try {
-    let body: { destinationId?: string } | null = null;
+    let body: { destinationId?: string; masterPasswordHash?: string } | null = null;
     try {
       if ((request.headers.get('Content-Type') || '').includes('application/json')) {
-        body = await request.json<{ destinationId?: string }>();
+        body = await request.json<{ destinationId?: string; masterPasswordHash?: string }>();
       }
     } catch {
       return errorResponse('Backup run payload is invalid', 400);
     }
+
+    const verificationError = await requireBackupUserVerification(actorUser, String(body?.masterPasswordHash || ''), env);
+    if (verificationError) return verificationError;
 
     const outcome = await runConfiguredBackupInDurableObject(env, {
       actorUserId: actorUser.id,
@@ -928,12 +973,21 @@ export async function handleListAdminRemoteBackups(request: Request, env: Env, a
 export async function handleDownloadAdminRemoteBackup(request: Request, env: Env, actorUser: User): Promise<Response> {
   if (!isAdmin(actorUser)) return errorResponse('Forbidden', 403);
 
+  let body: { destinationId?: string; path?: string; masterPasswordHash?: string };
+  try {
+    body = await request.json<{ destinationId?: string; path?: string; masterPasswordHash?: string }>();
+  } catch {
+    return errorResponse('Remote backup download payload is invalid', 400);
+  }
+
+  const verificationError = await requireBackupUserVerification(actorUser, String(body.masterPasswordHash || ''), env);
+  if (verificationError) return verificationError;
+
   const storage = new StorageService(env.DB);
   try {
     const settings = await loadBackupSettings(storage, env, 'UTC');
-    const url = new URL(request.url);
-    const path = ensureRemoteRestoreCandidate(url.searchParams.get('path') || '');
-    const destination = requireBackupDestination(settings, url.searchParams.get('destinationId') || null);
+    const path = ensureRemoteRestoreCandidate(String(body.path || ''));
+    const destination = requireBackupDestination(settings, body.destinationId || null);
     const remoteFile = await downloadRemoteBackupFile(destination, path);
     return new Response(remoteFile.bytes, {
       status: 200,
@@ -994,12 +1048,21 @@ export async function handleDeleteAdminRemoteBackup(request: Request, env: Env, 
 export async function handleRestoreAdminRemoteBackup(request: Request, env: Env, actorUser: User): Promise<Response> {
   if (!isAdmin(actorUser)) return errorResponse('Forbidden', 403);
 
-  let body: { destinationId?: string; path?: string; replaceExisting?: boolean; allowChecksumMismatch?: boolean };
+  let body: {
+    destinationId?: string;
+    path?: string;
+    replaceExisting?: boolean;
+    allowChecksumMismatch?: boolean;
+    masterPasswordHash?: string;
+  };
   try {
     body = await request.json<{ destinationId?: string; path?: string; replaceExisting?: boolean }>();
   } catch {
     return errorResponse('Remote restore payload is invalid', 400);
   }
+
+  const verificationError = await requireBackupUserVerification(actorUser, String(body.masterPasswordHash || ''), env);
+  if (verificationError) return verificationError;
 
   try {
     const path = ensureRemoteRestoreCandidate(String(body.path || ''));
@@ -1028,14 +1091,16 @@ export async function handleAdminExportBackup(request: Request, env: Env, actorU
 
   const storage = new StorageService(env.DB);
   const targetDeviceIdentifier = String(request.headers.get('X-NodeWarden-Acting-Device-Id') || '').trim() || null;
-  let body: { includeAttachments?: boolean } | null = null;
+  let body: { includeAttachments?: boolean; masterPasswordHash?: string } | null = null;
   try {
     if ((request.headers.get('Content-Type') || '').includes('application/json')) {
-      body = await request.json<{ includeAttachments?: boolean }>();
+      body = await request.json<{ includeAttachments?: boolean; masterPasswordHash?: string }>();
     }
   } catch {
     return errorResponse('Backup export payload is invalid', 400);
   }
+  const verificationError = await requireBackupUserVerification(actorUser, String(body?.masterPasswordHash || ''), env);
+  if (verificationError) return verificationError;
   let archive: BackupArchiveBundle;
   try {
     const progress = async (event: {
@@ -1139,6 +1204,9 @@ export async function handleAdminImportBackup(request: Request, env: Env, actorU
   if (!file || typeof file !== 'object' || !('arrayBuffer' in file)) {
     return errorResponse('Backup file is required', 400);
   }
+
+  const verificationError = await requireBackupUserVerification(actorUser, String(formData.get('masterPasswordHash') || ''), env);
+  if (verificationError) return verificationError;
 
   const replaceExisting = String(formData.get('replaceExisting') || '').trim() === '1';
   const allowChecksumMismatch = String(formData.get('allowChecksumMismatch') || '').trim() === '1';
