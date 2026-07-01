@@ -44,9 +44,14 @@ export async function clearFolderFromCiphers(
       `UPDATE ciphers
        SET folder_id = NULL, updated_at = ?,
            data = json_remove(data, '$.folderId', '$.folder_id', '$.updatedAt', '$.revisionDate')
-       WHERE user_id = ? AND folder_id = ?`
+       WHERE user_id = ?
+         AND (
+           folder_id = ?
+           OR json_extract(data, '$.folderId') = ?
+           OR json_extract(data, '$.folder_id') = ?
+         )`
     )
-    .bind(now, userId, folderId)
+    .bind(now, userId, folderId, folderId, folderId)
     .run();
 }
 
@@ -71,9 +76,14 @@ export async function bulkDeleteFolders(
         `UPDATE ciphers
          SET folder_id = NULL, updated_at = ?,
              data = json_remove(data, '$.folderId', '$.folder_id', '$.updatedAt', '$.revisionDate')
-         WHERE user_id = ? AND folder_id IN (${placeholders})`
+         WHERE user_id = ?
+           AND (
+             folder_id IN (${placeholders})
+             OR json_extract(data, '$.folderId') IN (${placeholders})
+             OR json_extract(data, '$.folder_id') IN (${placeholders})
+           )`
       )
-      .bind(now, userId, ...chunk)
+      .bind(now, userId, ...chunk, ...chunk, ...chunk)
       .run();
 
     await db

@@ -56,6 +56,7 @@ type PendingRestoreIntegrity =
 type PendingBackupVerification =
   | { action: 'export' }
   | { action: 'saveSettings' }
+  | { action: 'deleteDestination'; destinationId: string; settings: AdminBackupSettings }
   | { action: 'import'; replaceExisting: boolean; allowChecksumMismatch: boolean; knownIntegrity?: BackupFileIntegrityCheckResult }
   | { action: 'runRemoteBackup' }
   | { action: 'downloadRemote'; path: string }
@@ -192,7 +193,7 @@ export default function BackupCenterPage(props: BackupCenterPageProps) {
   const [downloadingRemotePercent, setDownloadingRemotePercent] = useState<number | null>(null);
   const [restoringRemotePath, setRestoringRemotePath] = useState('');
   const [deletingRemotePath, setDeletingRemotePath] = useState('');
-  const [localError, setLocalError] = useState('');
+  const [, setLocalError] = useState('');
   const [restoreProgress, setRestoreProgress] = useState<BackupProgressState | null>(null);
   const [restoreElapsedSeconds, setRestoreElapsedSeconds] = useState(0);
   const [confirmLocalRestoreOpen, setConfirmLocalRestoreOpen] = useState(false);
@@ -240,7 +241,7 @@ export default function BackupCenterPage(props: BackupCenterPageProps) {
   const backupPasswordPromptTitle =
     pendingBackupVerification?.action === 'export'
       ? t('txt_backup_export')
-      : pendingBackupVerification?.action === 'saveSettings'
+      : pendingBackupVerification?.action === 'saveSettings' || pendingBackupVerification?.action === 'deleteDestination'
         ? t('txt_backup_save_settings')
         : pendingBackupVerification?.action === 'runRemoteBackup'
           ? t('txt_backup_run_manual')
@@ -501,10 +502,16 @@ export default function BackupCenterPage(props: BackupCenterPageProps) {
       destinations: (savedSettings?.destinations || []).filter((destination) => destination.id !== destinationIdToDelete),
     };
 
+    setPendingBackupVerification({ action: 'deleteDestination', destinationId: destinationIdToDelete, settings: nextSettings });
+    setBackupPasswordValue('');
+    setConfirmDeleteDestinationOpen(false);
+  }
+
+  async function executeDeleteDestination(masterPassword: string, destinationIdToDelete: string, payload: AdminBackupSettings) {
     setSavingSettings(true);
     setLocalError('');
     try {
-      const saved = await props.onSaveSettings(nextSettings);
+      const saved = await props.onSaveSettings(masterPassword, payload);
       const nextDraftDestinations = settings.destinations.filter((destination) => destination.id !== destinationIdToDelete);
       const nextSelected = getFirstVisibleDestinationId({ destinations: nextDraftDestinations }) || getFirstVisibleDestinationId(saved);
       setSavedSettings(saved);
@@ -865,6 +872,8 @@ export default function BackupCenterPage(props: BackupCenterPageProps) {
         await executeExport(masterPassword);
       } else if (request.action === 'saveSettings') {
         await executeSaveSettings(masterPassword);
+      } else if (request.action === 'deleteDestination') {
+        await executeDeleteDestination(masterPassword, request.destinationId, request.settings);
       } else if (request.action === 'import') {
         await executeLocalRestore(masterPassword, request.replaceExisting, request.allowChecksumMismatch, request.knownIntegrity);
       } else if (request.action === 'runRemoteBackup') {
@@ -965,7 +974,6 @@ export default function BackupCenterPage(props: BackupCenterPageProps) {
         }}
       />
 
-      {localError ? <div className="local-error">{localError}</div> : null}
       {restoreProgress && typeof document !== 'undefined' ? createPortal((
         <div className="restore-progress-overlay" aria-live="polite">
           <section className="restore-progress-card restore-progress-modal">

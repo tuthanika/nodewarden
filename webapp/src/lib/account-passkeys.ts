@@ -136,6 +136,19 @@ function withPrfExtension(
   };
 }
 
+function withoutCreatePrfExtension(options: PublicKeyCredentialCreationOptions): PublicKeyCredentialCreationOptions {
+  const extensions = { ...(((options as any).extensions || {}) as Record<string, unknown>) };
+  delete extensions.prf;
+  if (!Object.keys(extensions).length) {
+    const { extensions: _extensions, ...rest } = options as any;
+    return rest as PublicKeyCredentialCreationOptions;
+  }
+  return {
+    ...options,
+    extensions: extensions as any,
+  };
+}
+
 function readPrfFirstResult(credential: PublicKeyCredential): ArrayBuffer | undefined {
   const result = (credential.getClientExtensionResults() as any).prf?.results?.first;
   return result instanceof ArrayBuffer ? result : undefined;
@@ -148,6 +161,22 @@ function hasPrfExtensionResult(credential: PublicKeyCredential): boolean {
 function shouldRetryWithLegacyPrf(error: unknown): boolean {
   const name = error instanceof DOMException || error instanceof Error ? error.name : '';
   return name === 'NotSupportedError' || name === 'SyntaxError' || name === 'TypeError';
+}
+
+function shouldRetryCreateWithoutPrf(error: unknown): boolean {
+  const name = error instanceof DOMException || error instanceof Error ? error.name : '';
+  const message = error instanceof DOMException || error instanceof Error ? error.message : '';
+  return (
+    name === 'NotSupportedError' ||
+    name === 'SyntaxError' ||
+    name === 'TypeError' ||
+    (name === 'UnknownError' && /transient/i.test(message))
+  );
+}
+
+async function canRequestPrfExtension(): Promise<boolean> {
+  if (/\bFirefox\//i.test(navigator.userAgent)) return false;
+  return true;
 }
 
 async function getPublicKeyCredentialWithPrf(
@@ -265,17 +294,39 @@ export async function assertAccountPasskey(
 }
 
 export async function createAccountPasskeyCredential(
-  response: { options: unknown; token: string }
+  response: { options: unknown; token: string },
+  requestPrf: boolean = false
 ): Promise<PendingAccountPasskeyCredential> {
   if (!window.PublicKeyCredential || !navigator.credentials) {
     throw new Error(t('txt_passkey_browser_not_supported'));
   }
   const nativeOptions = cloneCreationOptions(response.options);
-  (nativeOptions as any).extensions = {
-    ...((nativeOptions as any).extensions || {}),
-    prf: {},
+  const noPrfOptions = withoutCreatePrfExtension(nativeOptions);
+  const createWithOptions = async (options: PublicKeyCredentialCreationOptions): Promise<PublicKeyCredential> => {
+    const credential = await navigator.credentials.create({ publicKey: options });
+    if (!(credential instanceof PublicKeyCredential)) {
+      throw new Error(t('txt_no_passkey_created'));
+    }
+    return credential;
   };
-  const credential = await navigator.credentials.create({ publicKey: nativeOptions });
+  let credential: PublicKeyCredential;
+  if (requestPrf && await canRequestPrfExtension()) {
+    const prfOptions: PublicKeyCredentialCreationOptions = {
+      ...noPrfOptions,
+      extensions: {
+        ...((noPrfOptions as any).extensions || {}),
+        prf: {},
+      } as any,
+    };
+    try {
+      credential = await createWithOptions(prfOptions);
+    } catch (error) {
+      if (!shouldRetryCreateWithoutPrf(error)) throw error;
+      credential = await createWithOptions(noPrfOptions);
+    }
+  } else {
+    credential = await createWithOptions(noPrfOptions);
+  }
   if (!(credential instanceof PublicKeyCredential)) {
     throw new Error(t('txt_no_passkey_created'));
   }

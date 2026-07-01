@@ -1,5 +1,5 @@
 import { useState } from 'preact/hooks';
-import { Clock3, Pencil, RefreshCw, ShieldCheck, ShieldOff, Trash2 } from 'lucide-preact';
+import { CheckSquare, Clock3, Pencil, RefreshCw, ShieldCheck, ShieldOff, Trash2 } from 'lucide-preact';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import LoadingState from '@/components/LoadingState';
 import PendingAuthRequestsPanel from '@/components/PendingAuthRequestsPanel';
@@ -8,10 +8,12 @@ import { t } from '@/lib/i18n';
 
 interface SecurityDevicesPageProps {
   devices: AuthorizedDevice[];
+  currentDeviceIdentifier: string;
   loading: boolean;
   error: string;
   pendingAuthRequests: AuthRequest[];
   pendingAuthRequestsLoading: boolean;
+  pendingAuthRequestsRefreshing: boolean;
   onRefresh: () => void;
   onRefreshPendingAuthRequests: () => Promise<void>;
   onApproveAuthRequest: (request: AuthRequest) => Promise<void>;
@@ -20,6 +22,7 @@ interface SecurityDevicesPageProps {
   onRevokeTrust: (device: AuthorizedDevice) => void;
   onTrustPermanently: (device: AuthorizedDevice) => void;
   onRemoveDevice: (device: AuthorizedDevice) => void;
+  onRemoveSelectedDevices: (devices: AuthorizedDevice[]) => void;
   onRevokeAll: () => void;
   onRemoveAll: () => void;
 }
@@ -62,6 +65,14 @@ export default function SecurityDevicesPage(props: SecurityDevicesPageProps) {
   const [editingDevice, setEditingDevice] = useState<AuthorizedDevice | null>(null);
   const [deviceNote, setDeviceNote] = useState('');
   const [savingNote, setSavingNote] = useState(false);
+  const [selectedDeviceIds, setSelectedDeviceIds] = useState<string[]>([]);
+  const currentDeviceIdentifier = props.currentDeviceIdentifier;
+  const selectableDevices = props.devices.filter((device) => (
+    device.identifier !== currentDeviceIdentifier
+  ));
+  const selectedDeviceIdSet = new Set(selectedDeviceIds);
+  const selectedDevices = selectableDevices.filter((device) => selectedDeviceIdSet.has(device.identifier));
+  const allSelectableSelected = selectableDevices.length > 0 && selectedDevices.length === selectableDevices.length;
 
   async function handleSaveDeviceNote(): Promise<void> {
     if (!editingDevice || savingNote) return;
@@ -75,6 +86,19 @@ export default function SecurityDevicesPage(props: SecurityDevicesPageProps) {
     }
   }
 
+  function toggleSelectAllDevices(): void {
+    setSelectedDeviceIds(allSelectableSelected ? [] : selectableDevices.map((device) => device.identifier));
+  }
+
+  function toggleSelectedDevice(device: AuthorizedDevice): void {
+    if (device.identifier === currentDeviceIdentifier) return;
+    setSelectedDeviceIds((current) => (
+      current.includes(device.identifier)
+        ? current.filter((id) => id !== device.identifier)
+        : [...current, device.identifier]
+    ));
+  }
+
   return (
     <>
       <div className="stack">
@@ -83,49 +107,68 @@ export default function SecurityDevicesPage(props: SecurityDevicesPageProps) {
           loadingVariant="compact"
           pendingAuthRequests={props.pendingAuthRequests}
           pendingAuthRequestsLoading={props.pendingAuthRequestsLoading}
+          pendingAuthRequestsRefreshing={props.pendingAuthRequestsRefreshing}
           onRefreshPendingAuthRequests={props.onRefreshPendingAuthRequests}
           onApproveAuthRequest={props.onApproveAuthRequest}
           onDenyAuthRequest={props.onDenyAuthRequest}
         />
 
         <section className="card">
-        <div className="section-head">
-          <div>
-            <h3 className="flush-title">{t('txt_device_management')}</h3>
-            <div className="muted-inline section-note">
-              {t('txt_manage_device_sessions_and_30_day_totp_trusted_sessions')}
+          <div className="section-head">
+            <div>
+              <h3 className="flush-title">{t('txt_authorized_devices')}</h3>
+              <div className="muted-inline section-note">
+                {t('txt_manage_device_sessions_and_30_day_totp_trusted_sessions')}
+              </div>
+            </div>
+            <div className="actions">
+              <button type="button" className="btn btn-secondary small" disabled={props.loading} onClick={props.onRefresh}>
+                <RefreshCw size={14} className="btn-icon" />
+                {t('txt_refresh')}
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary small"
+                disabled={props.loading || selectableDevices.length === 0}
+                onClick={toggleSelectAllDevices}
+              >
+                <CheckSquare size={14} className="btn-icon" />
+                {allSelectableSelected ? t('txt_clear_selection') : t('txt_select_all')}
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger small"
+                disabled={selectedDevices.length === 0}
+                onClick={() => {
+                  props.onRemoveSelectedDevices(selectedDevices);
+                  setSelectedDeviceIds([]);
+                }}
+              >
+                <Trash2 size={14} className="btn-icon" />
+                {t('txt_remove_selected_devices', { count: selectedDevices.length })}
+              </button>
+              <button type="button" className="btn btn-danger small" onClick={props.onRevokeAll}>
+                <ShieldOff size={14} className="btn-icon" />
+                {t('txt_revoke_all_trusted')}
+              </button>
+              <button type="button" className="btn btn-danger small" onClick={props.onRemoveAll}>
+                <Trash2 size={14} className="btn-icon" />
+                {t('txt_remove_all_devices')}
+              </button>
             </div>
           </div>
-          <div className="actions">
-            <button type="button" className="btn btn-secondary small" disabled={props.loading} onClick={props.onRefresh}>
-              <RefreshCw size={14} className="btn-icon" />
-              {t('txt_refresh')}
-            </button>
-            <button type="button" className="btn btn-danger small" onClick={props.onRevokeAll}>
-              <ShieldOff size={14} className="btn-icon" />
-              {t('txt_revoke_all_trusted')}
-            </button>
-            <button type="button" className="btn btn-danger small" onClick={props.onRemoveAll}>
-              <Trash2 size={14} className="btn-icon" />
-              {t('txt_remove_all_devices')}
-            </button>
-          </div>
-        </div>
-        </section>
-
-        <section className="card">
-        <h3 className="section-title-flush">{t('txt_authorized_devices')}</h3>
-        {!!props.error && (
-          <div className="local-error">
-            <span>{props.error}</span>
-            <button type="button" className="btn btn-secondary small" disabled={props.loading} onClick={props.onRefresh}>
-              <RefreshCw size={14} className="btn-icon" />
-              {t('txt_refresh')}
-            </button>
-          </div>
-        )}
-        <table className="table authorized-devices-table">
+          {!!props.error && (
+            <div className="local-error">
+              <span>{props.error}</span>
+              <button type="button" className="btn btn-secondary small" disabled={props.loading} onClick={props.onRefresh}>
+                <RefreshCw size={14} className="btn-icon" />
+                {t('txt_refresh')}
+              </button>
+            </div>
+          )}
+          <table className="table authorized-devices-table">
           <colgroup>
+            <col className="authorized-devices-col-select" />
             <col className="authorized-devices-col-device" />
             <col className="authorized-devices-col-type" />
             <col className="authorized-devices-col-status" />
@@ -136,6 +179,7 @@ export default function SecurityDevicesPage(props: SecurityDevicesPageProps) {
           </colgroup>
           <thead>
             <tr>
+              <th>{t('txt_select')}</th>
               <th>{t('txt_device')}</th>
               <th>{t('txt_type')}</th>
               <th>{t('txt_status')}</th>
@@ -148,6 +192,16 @@ export default function SecurityDevicesPage(props: SecurityDevicesPageProps) {
           <tbody>
             {props.devices.map((device) => (
               <tr key={device.identifier}>
+                <td data-label={t('txt_select')}>
+                  <input
+                    type="checkbox"
+                    className="authorized-device-checkbox"
+                    checked={selectedDeviceIdSet.has(device.identifier)}
+                    disabled={device.identifier === currentDeviceIdentifier}
+                    aria-label={t('txt_select_device_name', { name: device.name || t('txt_unknown_device') })}
+                    onChange={() => toggleSelectedDevice(device)}
+                  />
+                </td>
                 <td data-label={t('txt_device')}>
                   <div>{device.name || t('txt_unknown_device')}</div>
                   {!!device.deviceNote && !!device.systemName && device.systemName !== device.name && (
@@ -220,20 +274,20 @@ export default function SecurityDevicesPage(props: SecurityDevicesPageProps) {
             ))}
             {props.loading && props.devices.length === 0 && (
               <tr>
-                <td colSpan={7}>
+                <td colSpan={8}>
                   <LoadingState lines={5} compact />
                 </td>
               </tr>
             )}
             {!props.loading && props.devices.length === 0 && (
               <tr>
-                <td colSpan={7}>
+                <td colSpan={8}>
                   <div className="empty empty-comfortable">{t('txt_no_devices_found')}</div>
                 </td>
               </tr>
             )}
           </tbody>
-        </table>
+          </table>
         </section>
       </div>
 

@@ -4,7 +4,7 @@ import {
   handleAdminCreateInvite,
   handleAdminListInvites,
   handleAdminDeleteAllInvites,
-  handleAdminRevokeInvite,
+  handleAdminDeleteInvite,
   handleAdminSetUserStatus,
   handleAdminDeleteUser,
   handleAdminListAuditLogs,
@@ -52,7 +52,7 @@ export async function handleAdminRoute(
   const adminInviteMatch = path.match(/^\/api\/admin\/invites\/([^/]+)$/i);
   if (adminInviteMatch && method === 'DELETE') {
     const inviteCode = decodeURIComponent(adminInviteMatch[1]);
-    return handleAdminRevokeInvite(request, env, actorUser, inviteCode);
+    return handleAdminDeleteInvite(request, env, actorUser, inviteCode);
   }
 
   const adminUserStatusMatch = path.match(/^\/api\/admin\/users\/([a-f0-9-]+)\/status$/i);

@@ -1,8 +1,11 @@
 import { Download, FileUp } from 'lucide-preact';
+import { useEffect, useState } from 'preact/hooks';
 import type { RecommendedProvider } from '@/lib/backup-recommendations';
 import { hasLinkedStorages } from '@/lib/backup-recommendations';
 import { t } from '@/lib/i18n';
 import { BackupIncludeAttachmentsField } from './BackupIncludeAttachmentsField';
+
+const MOBILE_RECOMMENDATIONS_QUERY = '(max-width: 760px)';
 
 interface BackupOperationsSidebarProps {
   disableWhileBusy: boolean;
@@ -18,7 +21,30 @@ interface BackupOperationsSidebarProps {
   onSelectProvider: (providerId: string) => void;
 }
 
+function getDefaultRecommendationsOpen() {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+    return true;
+  }
+  return !window.matchMedia(MOBILE_RECOMMENDATIONS_QUERY).matches;
+}
+
 export function BackupOperationsSidebar(props: BackupOperationsSidebarProps) {
+  const [recommendationsOpen, setRecommendationsOpen] = useState(getDefaultRecommendationsOpen);
+  const [recommendationsTouched, setRecommendationsTouched] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function' || recommendationsTouched) {
+      return;
+    }
+
+    const media = window.matchMedia(MOBILE_RECOMMENDATIONS_QUERY);
+    const syncOpenState = () => setRecommendationsOpen(!media.matches);
+
+    syncOpenState();
+    media.addEventListener('change', syncOpenState);
+    return () => media.removeEventListener('change', syncOpenState);
+  }, [recommendationsTouched]);
+
   return (
     <aside className="backup-operations-sidebar">
       <div className="section-head">
@@ -41,7 +67,14 @@ export function BackupOperationsSidebar(props: BackupOperationsSidebarProps) {
         </button>
       </div>
 
-      <details className="backup-recommendations-disclosure">
+      <details
+        className="backup-recommendations-disclosure"
+        open={recommendationsOpen}
+        onToggle={(event) => {
+          setRecommendationsTouched(true);
+          setRecommendationsOpen((event.currentTarget as HTMLDetailsElement).open);
+        }}
+      >
         <summary className="backup-recommendations-summary">
           <span>
             <strong>{t('txt_backup_recommend_title')}</strong>

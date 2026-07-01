@@ -449,6 +449,43 @@ function appendRecordFieldLines(lines: string[], prefix: string, value: unknown)
   }
 }
 
+const BITWARDEN_CSV_OBJECT_FIELDS: Record<string, readonly string[]> = {
+  card: ['cardholderName', 'brand', 'number', 'expMonth', 'expYear', 'code'],
+  identity: [
+    'title',
+    'firstName',
+    'middleName',
+    'lastName',
+    'username',
+    'company',
+    'ssn',
+    'passportNumber',
+    'licenseNumber',
+    'email',
+    'phone',
+    'address1',
+    'address2',
+    'address3',
+    'city',
+    'state',
+    'postalCode',
+    'country',
+  ],
+  sshKey: ['privateKey', 'publicKey', 'keyFingerprint', 'fingerprint'],
+};
+
+function appendKnownRecordFieldLines(lines: string[], prefix: string, value: unknown): void {
+  if (!isRecord(value)) return;
+  const keys = BITWARDEN_CSV_OBJECT_FIELDS[prefix];
+  if (!keys) {
+    appendRecordFieldLines(lines, prefix, value);
+    return;
+  }
+  for (const key of keys) {
+    appendFieldLine(lines, `${prefix}.${key}`, value[key]);
+  }
+}
+
 function buildBitwardenCsvFields(item: Record<string, unknown>, type: number): string {
   const lines: string[] = [];
   const fields = Array.isArray(item.fields) ? item.fields : [];
@@ -457,8 +494,9 @@ function buildBitwardenCsvFields(item: Record<string, unknown>, type: number): s
     appendFieldLine(lines, field.name, field.value);
   }
   if (type !== 1 && type !== 2) {
-    appendFieldLine(lines, 'nodewardenType', sourceTypeLabel(type));
-    appendRecordFieldLines(lines, sourceTypeLabel(type), item[sourceTypeLabel(type)]);
+    const sourceLabel = sourceTypeLabel(type);
+    appendFieldLine(lines, 'nodewardenType', sourceLabel);
+    appendKnownRecordFieldLines(lines, sourceLabel, item[sourceLabel]);
   }
   return lines.join('\n');
 }

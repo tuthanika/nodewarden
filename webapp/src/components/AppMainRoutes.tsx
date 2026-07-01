@@ -57,6 +57,7 @@ export interface AppMainRoutesProps {
   lockTimeoutMinutes: 0 | 1 | 5 | 15 | 30;
   sessionTimeoutAction: 'lock' | 'logout';
   authorizedDevices: AuthorizedDevice[];
+  currentDeviceIdentifier: string;
   authorizedDevicesLoading: boolean;
   authorizedDevicesError: string;
   domainRules: DomainRules | null;
@@ -118,6 +119,7 @@ export interface AppMainRoutesProps {
   onDeleteAccountPasskey: (id: string, masterPassword: string) => Promise<void>;
   pendingAuthRequests: AuthRequest[];
   pendingAuthRequestsLoading: boolean;
+  pendingAuthRequestsRefreshing: boolean;
   onRefreshPendingAuthRequests: () => Promise<void>;
   onApproveAuthRequest: (request: AuthRequest) => Promise<void>;
   onDenyAuthRequest: (request: AuthRequest) => Promise<void>;
@@ -130,14 +132,16 @@ export interface AppMainRoutesProps {
   onRevokeDeviceTrust: (device: AuthorizedDevice) => void;
   onTrustDevicePermanently: (device: AuthorizedDevice) => void;
   onRemoveDevice: (device: AuthorizedDevice) => void;
+  onRemoveSelectedDevices: (devices: AuthorizedDevice[]) => void;
   onRevokeAllDeviceTrust: () => void;
   onRemoveAllDevices: () => void;
   onCreateInvite: (hours: number) => Promise<void>;
   onRefreshAdmin: () => void;
+  onDeleteInvalidInvites: () => Promise<void>;
   onDeleteAllInvites: () => Promise<void>;
   onToggleUserStatus: (userId: string, status: 'active' | 'banned') => Promise<void>;
   onDeleteUser: (userId: string) => Promise<void>;
-  onRevokeInvite: (code: string) => Promise<void>;
+  onDeleteInvite: (code: string) => Promise<void>;
   onLoadAuditLogs: (filters: AuditLogFilters) => Promise<AuditLogListResult>;
   onLoadAuditLogSettings: () => Promise<AuditLogSettings>;
   onSaveAuditLogSettings: (settings: AuditLogSettings) => Promise<AuditLogSettings>;
@@ -275,11 +279,6 @@ export default function AppMainRoutes(props: AppMainRoutesProps) {
                 onCreateAccountPasskey={props.onCreateAccountPasskey}
                 onEnableAccountPasskeyDirectUnlock={props.onEnableAccountPasskeyDirectUnlock}
                 onDeleteAccountPasskey={props.onDeleteAccountPasskey}
-                pendingAuthRequests={props.pendingAuthRequests}
-                pendingAuthRequestsLoading={props.pendingAuthRequestsLoading}
-                onRefreshPendingAuthRequests={props.onRefreshPendingAuthRequests}
-                onApproveAuthRequest={props.onApproveAuthRequest}
-                onDenyAuthRequest={props.onDenyAuthRequest}
                 onLockTimeoutChange={props.onLockTimeoutChange}
                 onSessionTimeoutActionChange={props.onSessionTimeoutActionChange}
                 onNotify={props.onNotify}
@@ -352,10 +351,12 @@ export default function AppMainRoutes(props: AppMainRoutesProps) {
             <Suspense fallback={<RouteContentFallback />}>
               <SecurityDevicesPage
                 devices={props.authorizedDevices}
+                currentDeviceIdentifier={props.currentDeviceIdentifier}
                 loading={props.authorizedDevicesLoading}
                 error={props.authorizedDevicesError}
                 pendingAuthRequests={props.pendingAuthRequests}
                 pendingAuthRequestsLoading={props.pendingAuthRequestsLoading}
+                pendingAuthRequestsRefreshing={props.pendingAuthRequestsRefreshing}
                 onRefresh={() => void props.onRefreshAuthorizedDevices()}
                 onRefreshPendingAuthRequests={props.onRefreshPendingAuthRequests}
                 onApproveAuthRequest={props.onApproveAuthRequest}
@@ -364,6 +365,7 @@ export default function AppMainRoutes(props: AppMainRoutesProps) {
                 onRevokeTrust={props.onRevokeDeviceTrust}
                 onTrustPermanently={props.onTrustDevicePermanently}
                 onRemoveDevice={props.onRemoveDevice}
+                onRemoveSelectedDevices={props.onRemoveSelectedDevices}
                 onRevokeAll={props.onRevokeAllDeviceTrust}
                 onRemoveAll={props.onRemoveAllDevices}
               />
@@ -412,10 +414,11 @@ export default function AppMainRoutes(props: AppMainRoutesProps) {
               error={props.adminError}
               onRefresh={props.onRefreshAdmin}
               onCreateInvite={props.onCreateInvite}
+              onDeleteInvalidInvites={props.onDeleteInvalidInvites}
               onDeleteAllInvites={props.onDeleteAllInvites}
               onToggleUserStatus={props.onToggleUserStatus}
               onDeleteUser={props.onDeleteUser}
-              onRevokeInvite={props.onRevokeInvite}
+              onDeleteInvite={props.onDeleteInvite}
             />
           </Suspense>
         </div>

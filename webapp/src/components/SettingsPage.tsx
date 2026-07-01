@@ -2,10 +2,9 @@ import { useEffect, useMemo, useState } from 'preact/hooks';
 import { Clipboard, KeyRound, RefreshCw, ShieldCheck, ShieldOff, Trash2 } from 'lucide-preact';
 import { copyTextToClipboard } from '@/lib/clipboard';
 import qrcode from 'qrcode-generator';
-import type { AccountPasskeyCredential, AuthRequest, Profile } from '@/lib/types';
+import type { AccountPasskeyCredential, Profile } from '@/lib/types';
 import { AVAILABLE_LOCALES, getLocale, setLocale, t, type Locale } from '@/lib/i18n';
 import ConfirmDialog from '@/components/ConfirmDialog';
-import PendingAuthRequestsPanel from '@/components/PendingAuthRequestsPanel';
 
 interface SettingsPageProps {
   profile: Profile;
@@ -23,11 +22,6 @@ interface SettingsPageProps {
   onCreateAccountPasskey: (name: string, masterPassword: string, directUnlock: boolean) => Promise<AccountPasskeyCredential | null>;
   onEnableAccountPasskeyDirectUnlock: (id: string, masterPassword: string) => Promise<void>;
   onDeleteAccountPasskey: (id: string, masterPassword: string) => Promise<void>;
-  pendingAuthRequests: AuthRequest[];
-  pendingAuthRequestsLoading: boolean;
-  onRefreshPendingAuthRequests: () => Promise<void>;
-  onApproveAuthRequest: (request: AuthRequest) => Promise<void>;
-  onDenyAuthRequest: (request: AuthRequest) => Promise<void>;
   onLockTimeoutChange: (minutes: 0 | 1 | 5 | 15 | 30) => void;
   onSessionTimeoutActionChange: (action: 'lock' | 'logout') => void;
   onNotify?: (type: 'success' | 'error' | 'warning', text: string) => void;
@@ -515,15 +509,6 @@ export default function SettingsPage(props: SettingsPageProps) {
           )}
         </div>
       </section>
-
-      <PendingAuthRequestsPanel
-        pendingAuthRequests={props.pendingAuthRequests}
-        pendingAuthRequestsLoading={props.pendingAuthRequestsLoading}
-        onRefreshPendingAuthRequests={props.onRefreshPendingAuthRequests}
-        onApproveAuthRequest={props.onApproveAuthRequest}
-        onDenyAuthRequest={props.onDenyAuthRequest}
-      />
-
       <section className="settings-module sensitive-actions-module">
         <div className="sensitive-actions-grid">
           <div className="sensitive-action">

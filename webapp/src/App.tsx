@@ -1115,8 +1115,6 @@ export default function App() {
     queryFn: () => listPendingAuthRequests(authedFetch, profile?.email || session?.email || ''),
     enabled: !IS_DEMO_MODE && phase === 'app' && !!session?.accessToken && !!session?.symEncKey && !!session?.symMacKey && !!(profile?.email || session?.email),
     staleTime: 5_000,
-    refetchInterval: 15_000,
-    refetchIntervalInBackground: true,
   });
   const pendingAuthRequests = (pendingAuthRequestsQuery.data || []).filter(isPendingAuthRequest);
   const latestPendingAuthRequest = pendingAuthRequests[0] || null;
@@ -1959,6 +1957,7 @@ export default function App() {
     lockTimeoutMinutes,
     sessionTimeoutAction,
     authorizedDevices: authorizedDevicesQuery.data || [],
+    currentDeviceIdentifier: getCurrentDeviceIdentifier(),
     authorizedDevicesLoading: authorizedDevicesQuery.isFetching,
     authorizedDevicesError: authorizedDevicesQuery.isError && !authorizedDevicesQuery.data ? t('txt_load_devices_failed') : '',
     domainRules: IS_DEMO_MODE ? demoDomainRules : domainRulesQuery.data || null,
@@ -2014,7 +2013,8 @@ export default function App() {
     onEnableAccountPasskeyDirectUnlock: accountSecurityActions.enableAccountPasskeyDirectUnlock,
     onDeleteAccountPasskey: accountSecurityActions.deleteAccountPasskey,
     pendingAuthRequests,
-    pendingAuthRequestsLoading: pendingAuthRequestsQuery.isFetching,
+    pendingAuthRequestsLoading: pendingAuthRequestsQuery.isLoading,
+    pendingAuthRequestsRefreshing: pendingAuthRequestsQuery.isFetching && !pendingAuthRequestsQuery.isLoading,
     onRefreshPendingAuthRequests: async () => {
       await pendingAuthRequestsQuery.refetch();
     },
@@ -2031,14 +2031,16 @@ export default function App() {
     onRevokeDeviceTrust: accountSecurityActions.openRevokeDeviceTrust,
     onTrustDevicePermanently: accountSecurityActions.openTrustDevicePermanently,
     onRemoveDevice: accountSecurityActions.openRemoveDevice,
+    onRemoveSelectedDevices: accountSecurityActions.openRemoveSelectedDevices,
     onRevokeAllDeviceTrust: accountSecurityActions.openRevokeAllDeviceTrust,
     onRemoveAllDevices: accountSecurityActions.openRemoveAllDevices,
     onRefreshAdmin: adminActions.refreshAdmin,
     onCreateInvite: adminActions.createInvite,
+    onDeleteInvalidInvites: adminActions.deleteInvalidInvites,
     onDeleteAllInvites: adminActions.deleteAllInvites,
     onToggleUserStatus: adminActions.toggleUserStatus,
     onDeleteUser: adminActions.deleteUser,
-    onRevokeInvite: adminActions.revokeInvite,
+    onDeleteInvite: adminActions.deleteInvite,
     onLoadAuditLogs: (filters: AuditLogFilters) => listAuditLogs(authedFetch, filters),
     onLoadAuditLogSettings: () => getAuditLogSettings(authedFetch),
     onSaveAuditLogSettings: (settings: AuditLogSettings) => saveAuditLogSettings(authedFetch, settings),

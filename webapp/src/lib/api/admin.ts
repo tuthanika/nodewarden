@@ -24,9 +24,14 @@ export async function createInvite(authedFetch: AuthedFetch, hours: number): Pro
   if (!resp.ok) throw new Error('Create invite failed');
 }
 
-export async function revokeInvite(authedFetch: AuthedFetch, code: string): Promise<void> {
+export async function deleteInvite(authedFetch: AuthedFetch, code: string): Promise<void> {
   const resp = await authedFetch(`/api/admin/invites/${encodeURIComponent(code)}`, { method: 'DELETE' });
-  if (!resp.ok) throw new Error('Revoke invite failed');
+  if (!resp.ok) throw new Error('Delete invite failed');
+}
+
+export async function deleteInvalidInvites(authedFetch: AuthedFetch): Promise<void> {
+  const resp = await authedFetch('/api/admin/invites?scope=invalid', { method: 'DELETE' });
+  if (!resp.ok) throw new Error('Delete invalid invites failed');
 }
 
 export async function deleteAllInvites(authedFetch: AuthedFetch): Promise<void> {

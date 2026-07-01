@@ -26,6 +26,7 @@ import {
 } from '../../shared/backup-schema';
 
 export const BACKUP_SETTINGS_CONFIG_KEY = 'backup.settings.v1';
+const BACKUP_RUNTIME_CONFIG_KEY = 'backup.runtime.v1';
 export const BACKUP_SCHEDULER_WINDOW_MINUTES = 5;
 const MAX_BACKUP_DESTINATIONS = 24;
 
@@ -324,6 +325,47 @@ function mapDestinationsById(destinations: BackupDestinationRecord[]): Map<strin
   return new Map(destinations.map((destination) => [destination.id, destination]));
 }
 
+function stripRuntimeFromSettings(settings: BackupSettings): BackupSettings {
+  return {
+    destinations: settings.destinations.map((destination) => ({
+      ...destination,
+      runtime: normalizeRuntime(null),
+    })),
+  };
+}
+
+function serializeRuntimeState(settings: BackupSettings): string {
+  return JSON.stringify({
+    version: 1,
+    destinations: Object.fromEntries(
+      settings.destinations.map((destination) => [destination.id, normalizeRuntime(destination.runtime)])
+    ),
+  });
+}
+
+async function loadBackupRuntimeStates(storage: StorageService): Promise<Map<string, BackupRuntimeState>> {
+  const raw = await storage.getConfigValue(BACKUP_RUNTIME_CONFIG_KEY);
+  if (!raw) return new Map();
+  try {
+    const parsed = JSON.parse(raw) as { destinations?: Record<string, unknown> };
+    const entries = Object.entries(parsed.destinations || {})
+      .filter(([id]) => !!asTrimmedString(id))
+      .map(([id, runtime]) => [id, normalizeRuntime(runtime)] as const);
+    return new Map(entries);
+  } catch {
+    return new Map();
+  }
+}
+
+function mergeRuntimeStates(settings: BackupSettings, runtimes: Map<string, BackupRuntimeState>): BackupSettings {
+  return {
+    destinations: settings.destinations.map((destination) => ({
+      ...destination,
+      runtime: runtimes.get(destination.id) || normalizeRuntime(destination.runtime),
+    })),
+  };
+}
+
 export function getDefaultBackupSettings(timezone: string = 'UTC'): BackupSettings {
   return createSharedDefaultBackupSettings(assertValidTimeZone(timezone));
 }
@@ -387,27 +429,30 @@ export function normalizeBackupSettingsInput(
 }
 
 export function serializeBackupSettings(settings: BackupSettings): string {
-  return JSON.stringify(settings);
+  return JSON.stringify(stripRuntimeFromSettings(settings));
 }
 
 export async function loadBackupSettings(storage: StorageService, env: Env, fallbackTimezone: string = 'UTC'): Promise<BackupSettings> {
   const raw = await storage.getConfigValue(BACKUP_SETTINGS_CONFIG_KEY);
+  const mergeRuntime = async (settings: BackupSettings): Promise<BackupSettings> => (
+    mergeRuntimeStates(settings, await loadBackupRuntimeStates(storage))
+  );
   if (!raw) {
     const settings = getDefaultBackupSettings(fallbackTimezone);
     await saveBackupSettings(storage, env, settings);
-    return settings;
+    return mergeRuntime(settings);
   }
 
   const envelope = parseBackupSettingsEnvelope(raw);
   if (!envelope) {
     const settings = parseBackupSettings(raw, fallbackTimezone);
     await saveBackupSettings(storage, env, settings);
-    return settings;
+    return mergeRuntime(settings);
   }
 
   try {
     const decrypted = await decryptBackupSettingsRuntime(raw, env);
-    return parseBackupSettings(decrypted, fallbackTimezone);
+    return mergeRuntime(parseBackupSettings(decrypted, fallbackTimezone));
   } catch {
     throw new Error('Backup settings need administrator reactivation after restore');
   }
@@ -417,6 +462,27 @@ export async function saveBackupSettings(storage: StorageService, env: Env, sett
   const users = await storage.getAllUsers();
   const encrypted = await encryptBackupSettingsEnvelope(serializeBackupSettings(settings), env, users);
   await storage.setConfigValue(BACKUP_SETTINGS_CONFIG_KEY, encrypted);
+  await saveBackupRuntimeStates(storage, settings);
+}
+
+export async function saveBackupRuntimeStates(storage: StorageService, settings: BackupSettings): Promise<void> {
+  await storage.setConfigValue(BACKUP_RUNTIME_CONFIG_KEY, serializeRuntimeState(settings));
+}
+
+export async function updateBackupDestinationRuntime(
+  storage: StorageService,
+  destinationId: string,
+  mutator: (runtime: BackupRuntimeState) => BackupRuntimeState
+): Promise<BackupRuntimeState> {
+  const runtimes = await loadBackupRuntimeStates(storage);
+  const current = runtimes.get(destinationId) || normalizeRuntime(null);
+  const next = normalizeRuntime(mutator(current));
+  runtimes.set(destinationId, next);
+  await storage.setConfigValue(BACKUP_RUNTIME_CONFIG_KEY, JSON.stringify({
+    version: 1,
+    destinations: Object.fromEntries(runtimes.entries()),
+  }));
+  return next;
 }
 
 export async function normalizeImportedBackupSettings(storage: StorageService, env: Env, fallbackTimezone: string = 'UTC'): Promise<void> {
@@ -596,9 +662,9 @@ export function hasBackupSlotBetween(
   const endMs = endExclusive.getTime();
   if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) return false;
 
-  const lastAttemptAt = destination.runtime.lastAttemptAt ? new Date(destination.runtime.lastAttemptAt) : null;
-  const lastAttemptMs = lastAttemptAt && Number.isFinite(lastAttemptAt.getTime())
-    ? lastAttemptAt.getTime()
+  const lastSuccessAt = destination.runtime.lastSuccessAt ? new Date(destination.runtime.lastSuccessAt) : null;
+  const lastSuccessMs = lastSuccessAt && Number.isFinite(lastSuccessAt.getTime())
+    ? lastSuccessAt.getTime()
     : Number.NEGATIVE_INFINITY;
 
   const dayCursor = new Date(startMs);
@@ -620,7 +686,7 @@ export function hasBackupSlotBetween(
       for (const slotStart of slotStarts) {
         const slotStartMs = slotStart.getTime();
         if (slotStartMs < startMs || slotStartMs >= endMs) continue;
-        if (lastAttemptMs >= slotStartMs) continue;
+        if (lastSuccessMs >= slotStartMs) continue;
         return true;
       }
     }
@@ -637,9 +703,9 @@ export function isBackupDueNow(
 ): boolean {
   if (!destination.schedule.enabled) return false;
   const toleranceMs = Math.max(1, windowMinutes) * 60 * 1000;
-  const lastAttemptAt = destination.runtime.lastAttemptAt ? new Date(destination.runtime.lastAttemptAt) : null;
-  const lastAttemptMs = lastAttemptAt && Number.isFinite(lastAttemptAt.getTime())
-    ? lastAttemptAt.getTime()
+  const lastSuccessAt = destination.runtime.lastSuccessAt ? new Date(destination.runtime.lastSuccessAt) : null;
+  const lastSuccessMs = lastSuccessAt && Number.isFinite(lastSuccessAt.getTime())
+    ? lastSuccessAt.getTime()
     : Number.NEGATIVE_INFINITY;
   const localDateKey = getBackupLocalDateKey(now, destination.schedule.timezone);
   const slotStarts = getBackupSlotStartsForLocalDay(
@@ -652,7 +718,7 @@ export function isBackupDueNow(
   for (const slotStart of slotStarts) {
     const slotStartMs = slotStart.getTime();
     if (now.getTime() < slotStartMs || now.getTime() >= slotStartMs + toleranceMs) continue;
-    if (lastAttemptMs >= slotStartMs) return false;
+    if (lastSuccessMs >= slotStartMs) return false;
     return true;
   }
   return false;

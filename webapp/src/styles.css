@@ -14,7 +14,6 @@
 /* Unified product polish: refined, smooth, comfortable surfaces across desktop, mobile, and dark mode. */
 
 /* ── surface consistency ── */
-.app-shell,
 .auth-card,
 .dialog-card,
 .card,
@@ -34,12 +33,6 @@
   border-radius: var(--radius-lg);
   background: var(--panel);
   box-shadow: var(--shadow-sm);
-}
-
-.app-shell {
-  background: var(--panel-soft);
-  border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-lg);
 }
 
 .topbar,
@@ -104,7 +97,6 @@
 }
 
 /* ── dark mode surface resets ── */
-:root[data-theme='dark'] .app-shell,
 :root[data-theme='dark'] .auth-card,
 :root[data-theme='dark'] .dialog-card,
 :root[data-theme='dark'] .card,
@@ -257,17 +249,6 @@ h2,
 h3,
 h4 {
   letter-spacing: 0;
-}
-
-.app-page {
-  padding: 18px;
-}
-
-.app-shell {
-  border-radius: var(--radius-xl);
-  border: 1px solid var(--line);
-  background: var(--panel);
-  box-shadow: var(--shadow-lg);
 }
 
 .topbar {
@@ -916,7 +897,6 @@ textarea {
   background: var(--bg-accent);
 }
 
-:root[data-theme='dark'] .app-shell,
 :root[data-theme='dark'] .topbar,
 :root[data-theme='dark'] .app-side,
 :root[data-theme='dark'] .mobile-tabbar,

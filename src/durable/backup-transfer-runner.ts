@@ -209,6 +209,7 @@ export class BackupTransferRunner {
     }
 
     let completed = 0;
+    const failures: Array<{ destinationId: string; error: string }> = [];
     try {
       await this.touchJob(token);
       const storage = new StorageService(this.env.DB);
@@ -230,21 +231,30 @@ export class BackupTransferRunner {
         scanStartMs = now.getTime();
         for (const destination of dueDestinations) {
           await this.touchJob(token);
-          await executeConfiguredBackup(
-            this.env,
-            storage,
-            null,
-            'scheduled',
-            destination.id,
-            () => this.touchJob(token)
-          );
-          completed += 1;
+          try {
+            await executeConfiguredBackup(
+              this.env,
+              storage,
+              null,
+              'scheduled',
+              destination.id,
+              () => this.touchJob(token)
+            );
+            completed += 1;
+          } catch (error) {
+            failures.push({
+              destinationId: destination.id,
+              error: error instanceof Error ? error.message : 'Scheduled backup failed',
+            });
+          }
         }
       }
 
       return new Response(JSON.stringify({
         ok: true,
         completed,
+        failed: failures.length,
+        failures,
       }), {
         status: 200,
         headers: {
@@ -318,7 +328,8 @@ export class BackupTransferRunner {
         replaceExisting,
         !checksumOk,
         body.auditMetadata || null,
-        targetDeviceIdentifier
+        targetDeviceIdentifier,
+        () => this.touchJob(token)
       );
 
       return new Response(JSON.stringify(result.result), {

@@ -33,6 +33,13 @@ export interface RemoteBackupFile {
   bytes: Uint8Array;
 }
 
+export interface RemoteBackupFileStat {
+  provider: BackupDestinationType;
+  remotePath: string;
+  size: number | null;
+  modifiedAt: string | null;
+}
+
 export interface RemoteBackupFilePutOptions {
   contentType?: string;
 }
@@ -433,6 +440,10 @@ async function deleteFromWebDav(config: WebDavBackupDestination, relativePath: s
 }
 
 async function existsInWebDav(config: WebDavBackupDestination, relativePath: string): Promise<boolean> {
+  return (await statWebDavFile(config, relativePath)) !== null;
+}
+
+async function statWebDavFile(config: WebDavBackupDestination, relativePath: string): Promise<RemoteBackupFileStat | null> {
   const authHeader = toBasicAuthHeader(config.username, config.password);
   const remotePath = webDavFullPath(config, relativePath);
   const response = await fetch(buildWebDavUrl(config.baseUrl, remotePath), {
@@ -441,11 +452,17 @@ async function existsInWebDav(config: WebDavBackupDestination, relativePath: str
       Authorization: authHeader,
     },
   });
-  if (response.status === 404) return false;
+  if (response.status === 404) return null;
   if (!response.ok) {
     throw new Error(`WebDAV existence check failed: ${response.status}`);
   }
-  return true;
+  const size = Number(response.headers.get('Content-Length') || '');
+  return {
+    provider: 'webdav',
+    remotePath: normalizeRelativePath(relativePath),
+    size: Number.isFinite(size) ? size : null,
+    modifiedAt: parseHttpDate(response.headers.get('Last-Modified') || ''),
+  };
 }
 
 function isBucketHostedS3Endpoint(endpoint: URL, bucket: string): boolean {
@@ -540,61 +557,68 @@ async function listS3Entries(config: S3BackupDestination, relativePath: string):
   const currentPath = normalizeRelativePath(relativePath);
   const targetPrefixBase = normalizeS3ObjectKey(config, currentPath);
   const targetPrefix = trimSlashes(targetPrefixBase) ? `${trimSlashes(targetPrefixBase)}/` : '';
-  const url = s3BucketBaseUrl(config);
-  url.searchParams.set('list-type', '2');
-  url.searchParams.set('delimiter', '/');
-  if (targetPrefix) url.searchParams.set('prefix', targetPrefix);
-
-  const response = await signedS3Request(config, 'GET', url);
-  if (!response.ok) {
-    throw new Error(`S3 listing failed: ${response.status}`);
-  }
-
-  const xml = await response.text();
   const rootPrefix = trimSlashes(config.rootPath);
   const items: RemoteBackupItem[] = [];
+  let continuationToken = '';
 
-  for (const prefix of extractXmlBlocks(xml, 'CommonPrefixes')) {
-    const fullPrefix = trimSlashes(extractXmlFirst(prefix, 'Prefix') || '');
-    if (!fullPrefix) continue;
-    const relative = rootPrefix
-      ? fullPrefix === rootPrefix
-        ? ''
-        : fullPrefix.startsWith(`${rootPrefix}/`)
-          ? fullPrefix.slice(rootPrefix.length + 1)
+  do {
+    const url = s3BucketBaseUrl(config);
+    url.searchParams.set('list-type', '2');
+    url.searchParams.set('delimiter', '/');
+    if (targetPrefix) url.searchParams.set('prefix', targetPrefix);
+    if (continuationToken) url.searchParams.set('continuation-token', continuationToken);
+
+    const response = await signedS3Request(config, 'GET', url);
+    if (!response.ok) {
+      throw new Error(`S3 listing failed: ${response.status}`);
+    }
+
+    const xml = await response.text();
+
+    for (const prefix of extractXmlBlocks(xml, 'CommonPrefixes')) {
+      const fullPrefix = trimSlashes(extractXmlFirst(prefix, 'Prefix') || '');
+      if (!fullPrefix) continue;
+      const relative = rootPrefix
+        ? fullPrefix === rootPrefix
+          ? ''
+          : fullPrefix.startsWith(`${rootPrefix}/`)
+            ? fullPrefix.slice(rootPrefix.length + 1)
+            : ''
+        : fullPrefix;
+      const normalizedRelative = trimSlashes(relative);
+      if (!normalizedRelative) continue;
+      const itemPath = normalizedRelative.replace(/\/+$/, '');
+      if ((parentPath(itemPath) || '') !== currentPath) continue;
+      items.push({
+        path: itemPath,
+        name: basename(itemPath) || itemPath,
+        isDirectory: true,
+        size: null,
+        modifiedAt: null,
+      });
+    }
+
+    for (const content of extractXmlBlocks(xml, 'Contents')) {
+      const fullKey = trimSlashes(extractXmlFirst(content, 'Key') || '');
+      if (!fullKey || (targetPrefix && fullKey === trimSlashes(targetPrefix))) continue;
+      const relative = rootPrefix
+        ? fullKey.startsWith(`${rootPrefix}/`)
+          ? fullKey.slice(rootPrefix.length + 1)
           : ''
-      : fullPrefix;
-    const normalizedRelative = trimSlashes(relative);
-    if (!normalizedRelative) continue;
-    const itemPath = normalizedRelative.replace(/\/+$/, '');
-    if ((parentPath(itemPath) || '') !== currentPath) continue;
-    items.push({
-      path: itemPath,
-      name: basename(itemPath) || itemPath,
-      isDirectory: true,
-      size: null,
-      modifiedAt: null,
-    });
-  }
+        : fullKey;
+      const normalizedRelative = trimSlashes(relative);
+      if (!normalizedRelative || (parentPath(normalizedRelative) || '') !== currentPath) continue;
+      items.push({
+        path: normalizedRelative,
+        name: basename(normalizedRelative) || normalizedRelative,
+        isDirectory: false,
+        size: Number(extractXmlFirst(content, 'Size') || 0) || null,
+        modifiedAt: parseHttpDate(extractXmlFirst(content, 'LastModified') || '') || null,
+      });
+    }
 
-  for (const content of extractXmlBlocks(xml, 'Contents')) {
-    const fullKey = trimSlashes(extractXmlFirst(content, 'Key') || '');
-    if (!fullKey || (targetPrefix && fullKey === trimSlashes(targetPrefix))) continue;
-    const relative = rootPrefix
-      ? fullKey.startsWith(`${rootPrefix}/`)
-        ? fullKey.slice(rootPrefix.length + 1)
-        : ''
-      : fullKey;
-    const normalizedRelative = trimSlashes(relative);
-    if (!normalizedRelative || (parentPath(normalizedRelative) || '') !== currentPath) continue;
-    items.push({
-      path: normalizedRelative,
-      name: basename(normalizedRelative) || normalizedRelative,
-      isDirectory: false,
-      size: Number(extractXmlFirst(content, 'Size') || 0) || null,
-      modifiedAt: parseHttpDate(extractXmlFirst(content, 'LastModified') || '') || null,
-    });
-  }
+    continuationToken = extractXmlFirst(xml, 'NextContinuationToken') || '';
+  } while (continuationToken);
 
   const deduped = new Map<string, RemoteBackupItem>();
   for (const item of items) deduped.set(`${item.isDirectory ? 'd' : 'f'}:${item.path}`, item);
@@ -637,14 +661,24 @@ async function deleteFromS3(config: S3BackupDestination, relativePath: string): 
 }
 
 async function existsInS3(config: S3BackupDestination, relativePath: string): Promise<boolean> {
+  return (await statS3File(config, relativePath)) !== null;
+}
+
+async function statS3File(config: S3BackupDestination, relativePath: string): Promise<RemoteBackupFileStat | null> {
   const objectKey = normalizeS3ObjectKey(config, relativePath);
   const url = s3ObjectUrl(config, objectKey);
   const response = await signedS3Request(config, 'HEAD', url);
-  if (response.status === 404) return false;
+  if (response.status === 404) return null;
   if (!response.ok) {
     throw new Error(`S3 existence check failed: ${response.status}`);
   }
-  return true;
+  const size = Number(response.headers.get('Content-Length') || '');
+  return {
+    provider: 's3',
+    remotePath: normalizeRelativePath(relativePath),
+    size: Number.isFinite(size) ? size : null,
+    modifiedAt: parseHttpDate(response.headers.get('Last-Modified') || ''),
+  };
 }
 
 interface ConfiguredDestinationAdapter {
@@ -656,6 +690,7 @@ interface ConfiguredDestinationAdapter {
   download: (config: WebDavBackupDestination | S3BackupDestination, relativePath: string) => Promise<RemoteBackupFile>;
   deleteFile: (config: WebDavBackupDestination | S3BackupDestination, relativePath: string) => Promise<void>;
   exists: (config: WebDavBackupDestination | S3BackupDestination, relativePath: string) => Promise<boolean>;
+  stat: (config: WebDavBackupDestination | S3BackupDestination, relativePath: string) => Promise<RemoteBackupFileStat | null>;
 }
 
 export interface RemoteBackupTransferSession {
@@ -666,6 +701,7 @@ export interface RemoteBackupTransferSession {
   download(relativePath: string): Promise<RemoteBackupFile>;
   deleteFile(relativePath: string): Promise<void>;
   exists(relativePath: string): Promise<boolean>;
+  stat(relativePath: string): Promise<RemoteBackupFileStat | null>;
 }
 
 function resolveConfiguredDestinationAdapter(
@@ -683,6 +719,7 @@ function resolveConfiguredDestinationAdapter(
       download: (config, relativePath) => downloadFromWebDav(config as WebDavBackupDestination, relativePath),
       deleteFile: (config, relativePath) => deleteFromWebDav(config as WebDavBackupDestination, relativePath),
       exists: (config, relativePath) => existsInWebDav(config as WebDavBackupDestination, relativePath),
+      stat: (config, relativePath) => statWebDavFile(config as WebDavBackupDestination, relativePath),
     };
   }
   if (destination.type === 's3') {
@@ -695,6 +732,7 @@ function resolveConfiguredDestinationAdapter(
       download: (config, relativePath) => downloadFromS3(config as S3BackupDestination, relativePath),
       deleteFile: (config, relativePath) => deleteFromS3(config as S3BackupDestination, relativePath),
       exists: (config, relativePath) => existsInS3(config as S3BackupDestination, relativePath),
+      stat: (config, relativePath) => statS3File(config as S3BackupDestination, relativePath),
     };
   }
 
@@ -730,6 +768,7 @@ export function createRemoteBackupTransferSession(destination: BackupDestination
     download: async (relativePath: string) => adapter.download(adapter.config, relativePath),
     deleteFile: async (relativePath: string) => adapter.deleteFile(adapter.config, normalizeRelativePath(relativePath)),
     exists: async (relativePath: string) => adapter.exists(adapter.config, normalizeRelativePath(relativePath)),
+    stat: async (relativePath: string) => adapter.stat(adapter.config, normalizeRelativePath(relativePath)),
   };
 }
 

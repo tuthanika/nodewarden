@@ -54,21 +54,18 @@ function renderRecommendedProviderDetails(provider: RecommendedProvider) {
         <>
           <div className="backup-recommendation-steps">
             <div className="backup-recommendation-step">
-              <strong>1.</strong> {t('txt_backup_recommend_koofr_step_1')}
-            </div>
-            <div className="backup-recommendation-step">
-              <strong>2.</strong> {t('txt_backup_recommend_koofr_step_2_prefix')}{' '}
+              <strong>1.</strong> {t('txt_backup_recommend_koofr_step_2_prefix')}{' '}
               <a href={provider.passwordUrl} target="_blank" rel="noreferrer">{t('txt_backup_recommend_koofr_password_link')}</a>
               {t('txt_backup_recommend_koofr_step_2_suffix')}
             </div>
             <div className="backup-recommendation-step">
-              <strong>3.</strong> {t('txt_backup_recommend_koofr_step_3')}
+              <strong>2.</strong> {t('txt_backup_recommend_koofr_step_3')}
             </div>
             <div className="backup-recommendation-step">
-              <strong>4.</strong> {t('txt_backup_recommend_koofr_step_4')}
+              <strong>3.</strong> {t('txt_backup_recommend_koofr_step_4')}
             </div>
             <div className="backup-recommendation-step">
-              <strong>5.</strong> {t('txt_backup_recommend_koofr_step_5_prefix')}{' '}
+              <strong>4.</strong> {t('txt_backup_recommend_koofr_step_5_prefix')}{' '}
               <a href={provider.storageUrl} target="_blank" rel="noreferrer">{t('txt_backup_recommend_koofr_storage_link')}</a>
               {t('txt_backup_recommend_koofr_step_5_suffix')}
             </div>
@@ -98,13 +95,10 @@ function renderRecommendedProviderDetails(provider: RecommendedProvider) {
       return (
         <div className="backup-recommendation-steps">
           <div className="backup-recommendation-step">
-            <strong>1.</strong> {t('txt_backup_recommend_pcloud_step_1')}
+            <strong>1.</strong> {t('txt_backup_recommend_pcloud_step_2')}
           </div>
           <div className="backup-recommendation-step">
-            <strong>2.</strong> {t('txt_backup_recommend_pcloud_step_2')}
-          </div>
-          <div className="backup-recommendation-step">
-            <strong>3.</strong> {t('txt_backup_recommend_pcloud_step_3')}
+            <strong>2.</strong> {t('txt_backup_recommend_pcloud_step_3')}
           </div>
         </div>
       );
@@ -112,18 +106,87 @@ function renderRecommendedProviderDetails(provider: RecommendedProvider) {
       return (
         <div className="backup-recommendation-steps">
           <div className="backup-recommendation-step">
-            <strong>1.</strong> {t('txt_backup_recommend_infinicloud_step_1')}
-          </div>
-          <div className="backup-recommendation-step">
-            <strong>2.</strong> {t('txt_backup_recommend_infinicloud_step_2_prefix')}{' '}
+            <strong>1.</strong> {t('txt_backup_recommend_infinicloud_step_2_prefix')}{' '}
             <a href="https://infini-cloud.net/en/modules/mypage/usage/" target="_blank" rel="noreferrer">My Page</a>
             {t('txt_backup_recommend_infinicloud_step_2_suffix')}
           </div>
           <div className="backup-recommendation-step">
-            <strong>3.</strong> {t('txt_backup_recommend_infinicloud_step_3')}
+            <strong>2.</strong> {t('txt_backup_recommend_infinicloud_step_3')}
           </div>
           <div className="backup-recommendation-step">
-            <strong>4.</strong> {t('txt_backup_recommend_infinicloud_step_4')}
+            <strong>3.</strong> {t('txt_backup_recommend_infinicloud_step_4')}
+          </div>
+        </div>
+      );
+    case 'backblaze-b2':
+      return (
+        <div className="backup-recommendation-steps">
+          <div className="backup-recommendation-step">
+            <strong>1.</strong> {t('txt_backup_recommend_backblaze_step_2_prefix')}{' '}
+            <a href={provider.bucketsUrl} target="_blank" rel="noreferrer">Buckets</a>
+            {t('txt_backup_recommend_backblaze_step_2_suffix')}
+          </div>
+          <div className="backup-recommendation-step">
+            <strong>2.</strong> {t('txt_backup_recommend_backblaze_step_3')}
+          </div>
+          <div className="backup-recommendation-step">
+            <strong>3.</strong> {t('txt_backup_recommend_backblaze_step_4_prefix')}{' '}
+            <a href={provider.applicationKeysUrl} target="_blank" rel="noreferrer">Application Keys</a>
+            {t('txt_backup_recommend_backblaze_step_4_suffix')}
+          </div>
+          <div className="backup-recommendation-step">
+            <strong>4.</strong> {t('txt_backup_recommend_backblaze_step_5')}
+          </div>
+          <div className="backup-recommendation-step">
+            <strong>5.</strong> {t('txt_backup_recommend_s3_path_prefix_step')}
+          </div>
+        </div>
+      );
+    case 'cloudflare-r2':
+      return (
+        <div className="backup-recommendation-steps">
+          <div className="backup-recommendation-step">
+            <strong>1.</strong> {t('txt_backup_recommend_cloudflare_r2_step_1_prefix')}{' '}
+            <a href={provider.bucketUrl} target="_blank" rel="noreferrer">{t('txt_backup_recommend_cloudflare_r2_bucket_link')}</a>
+            {t('txt_backup_recommend_cloudflare_r2_step_1_suffix')}
+          </div>
+          <div className="backup-recommendation-step">
+            <strong>2.</strong> {t('txt_backup_recommend_cloudflare_r2_step_2_prefix')}{' '}
+            <a href={provider.apiTokenUrl} target="_blank" rel="noreferrer">{t('txt_backup_recommend_cloudflare_r2_api_link')}</a>
+            {t('txt_backup_recommend_cloudflare_r2_step_2_suffix')}
+          </div>
+          <div className="backup-recommendation-step">
+            <strong>3.</strong> {t('txt_backup_recommend_cloudflare_r2_step_3')}
+          </div>
+          <div className="backup-recommendation-step">
+            <strong>4.</strong> {t('txt_backup_recommend_cloudflare_r2_step_4')}
+          </div>
+          <div className="backup-recommendation-step">
+            <strong>5.</strong> {t('txt_backup_recommend_cloudflare_r2_step_5')}
+          </div>
+        </div>
+      );
+    case 'tigris':
+      return (
+        <div className="backup-recommendation-steps">
+          <div className="backup-recommendation-step">
+            <strong>1.</strong> {t('txt_backup_recommend_tigris_step_2_prefix')}{' '}
+            <a href={provider.bucketUrl} target="_blank" rel="noreferrer">Create Bucket</a>
+            {t('txt_backup_recommend_tigris_step_2_suffix')}
+          </div>
+          <div className="backup-recommendation-step">
+            <strong>2.</strong> {t('txt_backup_recommend_tigris_step_3_prefix')}{' '}
+            <a href={provider.accessKeyUrl} target="_blank" rel="noreferrer">{t('txt_backup_recommend_tigris_access_key_link')}</a>
+            {t('txt_backup_recommend_tigris_step_3_suffix')}
+          </div>
+          <div className="backup-recommendation-step">
+            <strong>3.</strong> {t('txt_backup_recommend_tigris_step_4')}
+          </div>
+          <div className="backup-recommendation-step">
+            <strong>4.</strong> {t('txt_backup_recommend_tigris_step_5')}
+          </div>
+          <div className="backup-recommendation-step">
+            <strong>5.</strong> {t('txt_backup_recommend_s3_path_prefix_step')}
           </div>
         </div>
       );
@@ -147,6 +210,9 @@ export function BackupDestinationDetail(props: BackupDestinationDetailProps) {
               <div className="backup-inline-note">
                 {props.selectedRecommendedProvider.id === 'infinicloud' ? t('txt_backup_recommend_infinicloud_summary')
                   : props.selectedRecommendedProvider.id === 'koofr' ? t('txt_backup_recommend_koofr_summary')
+                    : props.selectedRecommendedProvider.id === 'backblaze-b2' ? t('txt_backup_recommend_backblaze_summary')
+                      : props.selectedRecommendedProvider.id === 'cloudflare-r2' ? t('txt_backup_recommend_cloudflare_r2_summary')
+                        : props.selectedRecommendedProvider.id === 'tigris' ? t('txt_backup_recommend_tigris_summary')
                     : t('txt_backup_recommend_pcloud_summary')}
               </div>
             </div>
@@ -387,7 +453,7 @@ export function BackupDestinationDetail(props: BackupDestinationDetailProps) {
                   className="input"
                   value={(props.selectedDestination.destination as WebDavBackupDestination).remotePath}
                   disabled={props.loadingSettings || props.disableWhileBusy}
-                  placeholder="nodewarden/backups"
+                  placeholder="nodewarden"
                   onInput={(event) => props.onUpdateDestination((destination) => ({
                     ...destination,
                     destination: {
@@ -504,7 +570,7 @@ export function BackupDestinationDetail(props: BackupDestinationDetailProps) {
                   className="input"
                   value={(props.selectedDestination.destination as S3BackupDestination).rootPath}
                   disabled={props.loadingSettings || props.disableWhileBusy}
-                  placeholder="nodewarden/backups"
+                  placeholder=""
                   onInput={(event) => props.onUpdateDestination((destination) => ({
                     ...destination,
                     destination: {

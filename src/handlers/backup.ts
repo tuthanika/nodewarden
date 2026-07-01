@@ -21,6 +21,7 @@ import {
   repairBackupSettings,
   requireBackupDestination,
   saveBackupSettings,
+  updateBackupDestinationRuntime,
 } from '../services/backup-config';
 import {
   type BackupImportExecutionResult,
@@ -260,6 +261,30 @@ async function uploadRemoteAttachmentChunk(
   }
 }
 
+async function verifyUploadedBackupArchive(
+  session: RemoteBackupTransferSession,
+  archive: BackupArchiveBundle
+): Promise<'metadata' | 'download'> {
+  try {
+    const stat = await session.stat(archive.fileName);
+    if (stat?.size === archive.bytes.byteLength) {
+      return 'metadata';
+    }
+  } catch {
+    // Fall through to a full read-back verification when lightweight metadata is unavailable.
+  }
+
+  const remoteFile = await session.download(archive.fileName);
+  const checksumOk = await verifyBackupArchiveFileNameChecksum(remoteFile.bytes, archive.fileName);
+  if (!checksumOk) {
+    throw new Error('Remote backup ZIP checksum verification failed');
+  }
+  if (remoteFile.bytes.byteLength !== archive.bytes.byteLength) {
+    throw new Error('Remote backup ZIP size verification failed');
+  }
+  return 'download';
+}
+
 export async function executeConfiguredBackup(
   env: Env,
   storage: StorageService,
@@ -287,12 +312,14 @@ export async function executeConfiguredBackup(
   const destination = requireBackupDestination(currentSettings, destinationId);
 
   const now = new Date();
-  destination.runtime.lastAttemptAt = now.toISOString();
-  destination.runtime.lastAttemptLocalDate = getBackupLocalDateKey(now, destination.schedule.timezone);
-  destination.runtime.lastErrorAt = null;
-  destination.runtime.lastErrorMessage = null;
   await touchLease();
-  await saveBackupSettings(storage, env, currentSettings);
+  destination.runtime = await updateBackupDestinationRuntime(storage, destination.id, (runtime) => ({
+    ...runtime,
+    lastAttemptAt: now.toISOString(),
+    lastAttemptLocalDate: getBackupLocalDateKey(now, destination.schedule.timezone),
+    lastErrorAt: null,
+    lastErrorMessage: null,
+  }));
 
   try {
     await touchLease();
@@ -354,6 +381,7 @@ export async function executeConfiguredBackup(
       }
     }
     let upload: Awaited<ReturnType<typeof uploadBackupArchive>> | null = null;
+    let uploadVerificationMethod: 'metadata' | 'download' | null = null;
     for (let attempt = 1; attempt <= maxArchiveUploadAttempts; attempt++) {
       await touchLease();
       await progress?.({
@@ -373,14 +401,7 @@ export async function executeConfiguredBackup(
           stageTitle: 'txt_backup_remote_run_progress_verify_title',
           stageDetail: 'txt_backup_remote_run_progress_verify_detail',
         });
-        const remoteFile = await remoteSession.download(archive.fileName);
-        const checksumOk = await verifyBackupArchiveFileNameChecksum(remoteFile.bytes, archive.fileName);
-        if (!checksumOk) {
-          throw new Error('Remote backup ZIP checksum verification failed');
-        }
-        if (remoteFile.bytes.byteLength !== archive.bytes.byteLength) {
-          throw new Error('Remote backup ZIP size verification failed');
-        }
+        uploadVerificationMethod = await verifyUploadedBackupArchive(remoteSession, archive);
         break;
       } catch (error) {
         await remoteSession.deleteFile(archive.fileName).catch(() => undefined);
@@ -409,14 +430,16 @@ export async function executeConfiguredBackup(
       pruneErrorMessage = error instanceof Error ? error.message : 'Old backup cleanup failed';
     }
 
-    destination.runtime.lastSuccessAt = new Date().toISOString();
-    destination.runtime.lastErrorAt = null;
-    destination.runtime.lastErrorMessage = null;
-    destination.runtime.lastUploadedFileName = archive.fileName;
-    destination.runtime.lastUploadedSizeBytes = archive.bytes.byteLength;
-    destination.runtime.lastUploadedDestination = upload.remotePath;
     await touchLease();
-    await saveBackupSettings(storage, env, currentSettings);
+    destination.runtime = await updateBackupDestinationRuntime(storage, destination.id, (runtime) => ({
+      ...runtime,
+      lastSuccessAt: new Date().toISOString(),
+      lastErrorAt: null,
+      lastErrorMessage: null,
+      lastUploadedFileName: archive.fileName,
+      lastUploadedSizeBytes: archive.bytes.byteLength,
+      lastUploadedDestination: upload.remotePath,
+    }));
 
     await touchLease();
     await writeAuditLog(storage, actorUserId, `admin.backup.remote.${trigger}`, 'backup', null, {
@@ -426,6 +449,7 @@ export async function executeConfiguredBackup(
       fileName: archive.fileName,
       fileBytes: archive.bytes.byteLength,
       uploadVerificationAttempts: maxArchiveUploadAttempts,
+      uploadVerificationMethod,
       prunedFileCount,
       pruneError: pruneErrorMessage,
       ...(auditMetadata || {}),
@@ -448,15 +472,18 @@ export async function executeConfiguredBackup(
       provider: upload.provider,
     };
   } catch (error) {
-    destination.runtime.lastErrorAt = new Date().toISOString();
-    destination.runtime.lastErrorMessage = error instanceof Error ? error.message : 'Backup upload failed';
+    const errorMessage = error instanceof Error ? error.message : 'Backup upload failed';
     await touchLease();
-    await saveBackupSettings(storage, env, currentSettings);
+    destination.runtime = await updateBackupDestinationRuntime(storage, destination.id, (runtime) => ({
+      ...runtime,
+      lastErrorAt: new Date().toISOString(),
+      lastErrorMessage: errorMessage,
+    }));
 
     await touchLease();
     await writeAuditLog(storage, actorUserId, `admin.backup.remote.${trigger}.failed`, 'backup', null, {
       ...getBackupDestinationSummary(destination),
-      error: destination.runtime.lastErrorMessage,
+      error: errorMessage,
       ...(auditMetadata || {}),
     });
     await progress?.({
@@ -467,7 +494,7 @@ export async function executeConfiguredBackup(
       stageDetail: 'txt_backup_remote_run_progress_failed_detail',
       done: true,
       ok: false,
-      error: destination.runtime.lastErrorMessage,
+      error: errorMessage,
     });
     throw error;
   }
@@ -655,12 +682,18 @@ export async function importAndAuditRemoteBackupFile(
   replaceExisting: boolean,
   checksumMismatchAccepted: boolean,
   auditMetadata: Record<string, unknown> | null = null,
-  targetDeviceIdentifier: string | null = null
+  targetDeviceIdentifier: string | null = null,
+  keepAlive?: (() => Promise<void>) | null
 ): Promise<BackupImportExecutionResult> {
+  const touchLease = async () => {
+    await keepAlive?.();
+  };
   const restoreFileName = remoteFile.fileName || remotePath.split('/').pop() || remotePath;
+  await touchLease();
   const externalAttachmentBlobNames = collectExternalRemoteAttachmentBlobNames(remoteFile.bytes);
   const externalAttachmentCache = new Map<string, Uint8Array | null>();
   const progress: BackupRestoreProgressReporter = async (event) => {
+    await touchLease();
     await notifyUserBackupRestoreProgress(
       env,
       actorUserId,
@@ -678,6 +711,7 @@ export async function importAndAuditRemoteBackupFile(
     replaceExisting,
     {
       loadAttachment: async (blobName) => {
+        await touchLease();
         const normalized = String(blobName || '').trim();
         if (!normalized) return null;
         if (externalAttachmentCache.has(normalized)) {
@@ -700,6 +734,7 @@ export async function importAndAuditRemoteBackupFile(
         } catch {
           externalAttachmentCache.set(normalized, await downloadRemoteAttachmentViaDurableObject(env, destination, normalized).catch(() => null));
         }
+        await touchLease();
         return externalAttachmentCache.get(normalized) || null;
       },
     },

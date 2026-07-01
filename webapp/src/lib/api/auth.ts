@@ -885,6 +885,20 @@ export async function deleteAuthorizedDevice(
   if (!resp.ok) throw new Error(t('txt_remove_device_failed'));
 }
 
+export async function deleteAuthorizedDevices(
+  authedFetch: AuthedFetch,
+  devices: Array<Pick<AuthorizedDevice, 'identifier' | 'hasStoredDevice'>>
+): Promise<void> {
+  const uniqueDevices = Array.from(
+    new Map(devices.map((device) => [String(device.identifier || '').trim(), device])).values()
+  ).filter((device) => String(device.identifier || '').trim());
+  await Promise.all(uniqueDevices.map((device) => (
+    device.hasStoredDevice === false
+      ? revokeAuthorizedDeviceTrust(authedFetch, device.identifier)
+      : deleteAuthorizedDevice(authedFetch, device.identifier)
+  )));
+}
+
 export async function updateAuthorizedDeviceName(
   authedFetch: AuthedFetch,
   deviceIdentifier: string,

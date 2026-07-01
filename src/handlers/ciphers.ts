@@ -32,6 +32,7 @@ import { auditRequestMetadata, writeAuditEvent } from '../services/audit-events'
 // attachments, import/export, and current official clients.
 export interface CipherResponseOptions {
   preserveRepairableUris?: boolean;
+  validFolderIds?: ReadonlySet<string>;
 }
 
 export function shouldPreserveRepairableCipherUris(request: Request): boolean {
@@ -46,6 +47,12 @@ function normalizeOptionalId(value: unknown): string | null {
   if (value == null) return null;
   const normalized = String(value).trim();
   return normalized ? normalized : null;
+}
+
+function normalizeResponseFolderId(folderId: unknown, validFolderIds?: ReadonlySet<string>): string | null {
+  const normalized = normalizeOptionalId(folderId);
+  if (!normalized) return null;
+  return validFolderIds && !validFolderIds.has(normalized) ? null : normalized;
 }
 
 function readBooleanOrFallback(value: unknown, fallback: boolean): boolean {
@@ -727,7 +734,7 @@ export function cipherToResponse(
     // Pass through ALL stored cipher fields (known + unknown)
     ...passthrough,
     // Server-computed / enforced fields (always override)
-    folderId: normalizeOptionalId(cipher.folderId),
+    folderId: normalizeResponseFolderId(cipher.folderId, options.validFolderIds),
     type: Number(cipher.type) || 1,
     organizationId: normalizeOptionalId((passthrough as any).organizationId ?? null),
     organizationUseTotp: !!((passthrough as any).organizationUseTotp ?? false),
@@ -785,9 +792,10 @@ export async function handleGetCiphers(request: Request, env: Env, userId: strin
   const attachmentsByCipher = await storage.getAttachmentsByCipherIds(
     filteredCiphers.map((cipher) => cipher.id)
   );
+  const validFolderIds = new Set((await storage.getAllFolders(userId)).map((folder) => folder.id));
 
   // Build responses only for the current page to keep pagination cheap.
-  const responseOptions = cipherResponseOptionsForRequest(request);
+  const responseOptions = { ...cipherResponseOptionsForRequest(request), validFolderIds };
   const cipherResponses: CipherResponse[] = [];
   for (const cipher of filteredCiphers) {
     const attachments = attachmentsByCipher.get(cipher.id) || [];
