@@ -340,6 +340,28 @@ export async function createAccountPasskeyCredential(
   };
 }
 
+export async function createTwoFactorPasskeyCredential(options: unknown): Promise<Record<string, unknown>> {
+  if (!window.PublicKeyCredential || !navigator.credentials) {
+    throw new Error(t('txt_passkey_browser_not_supported'));
+  }
+  const credential = await navigator.credentials.create({ publicKey: cloneCreationOptions(options) });
+  if (!(credential instanceof PublicKeyCredential)) {
+    throw new Error(t('txt_no_passkey_created'));
+  }
+  return attestationRequest(credential);
+}
+
+export async function assertTwoFactorPasskey(options: unknown): Promise<string> {
+  if (!window.PublicKeyCredential || !navigator.credentials) {
+    throw new Error(t('txt_passkey_browser_not_supported'));
+  }
+  const credential = await navigator.credentials.get({ publicKey: cloneRequestOptions(options) });
+  if (!(credential instanceof PublicKeyCredential)) {
+    throw new Error(t('txt_invalid_passkey_assertion_response'));
+  }
+  return JSON.stringify(assertionRequest(credential));
+}
+
 function parseRsaEncryptedUserKey(value: string): Uint8Array {
   const text = String(value || '').trim();
   const [type, payload] = text.split('.');

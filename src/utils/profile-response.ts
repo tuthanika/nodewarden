@@ -1,5 +1,6 @@
 import type { Env, ProfileResponse, User } from '../types';
 import { buildAccountKeys } from './user-decryption';
+import { isYubiKeyEnabled } from './yubico-otp';
 
 export function buildProfileResponse(user: User, env?: Env): ProfileResponse {
   void env;
@@ -16,7 +17,8 @@ export function buildProfileResponse(user: User, env?: Env): ProfileResponse {
     usesKeyConnector: false,
     masterPasswordHint: user.masterPasswordHint,
     culture: 'en-US',
-    twoFactorEnabled: !!user.totpSecret,
+    twoFactorEnabled: !!user.totpSecret || isYubiKeyEnabled(user),
+    yubikeyEnabled: isYubiKeyEnabled(user),
     key: user.key,
     privateKey: user.privateKey,
     accountKeys,

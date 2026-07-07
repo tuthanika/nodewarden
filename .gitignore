@@ -60,6 +60,7 @@ NodeWarden-compat/
 
 # Compatibility analysis documents
 BITWARDEN_COMPATIBILITY_ANALYSIS.md
+security-audits/
 .mcp.json
 opencode.jsonc
 .cursor/

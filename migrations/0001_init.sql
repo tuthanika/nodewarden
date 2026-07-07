@@ -241,6 +241,7 @@ CREATE INDEX IF NOT EXISTS idx_totp_login_replays_consumed_at
 CREATE TABLE IF NOT EXISTS webauthn_credentials (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
+  purpose TEXT NOT NULL DEFAULT 'login',
   name TEXT NOT NULL,
   public_key TEXT NOT NULL,
   credential_id TEXT NOT NULL,

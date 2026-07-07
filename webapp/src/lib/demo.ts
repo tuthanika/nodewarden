@@ -790,6 +790,7 @@ export function createDemoInitialBootstrapState(): InitialAppBootstrapState {
   return {
     defaultKdfIterations: 600000,
     registrationInviteRequired: true,
+    websiteIconsEnabled: true,
     jwtWarning: null,
     session: null,
     phase: 'login',
@@ -907,6 +908,7 @@ export function createDemoMainRoutesProps(base: AppMainRoutesProps, notify: Noti
     adminLoading: false,
     adminError: '',
     totpEnabled: true,
+    passkey2faEnabled: false,
     authorizedDevices: state.authorizedDevices,
     authorizedDevicesLoading: false,
     authorizedDevicesError: '',
@@ -1060,6 +1062,16 @@ export function createDemoMainRoutesProps(base: AppMainRoutesProps, notify: Noti
     onSavePasswordHint: readonly,
     onEnableTotp: readonly,
     onOpenDisableTotp: readonlyVoid,
+    onGetTwoFactorPasskeySettings: async () => ({ enabled: false, keys: [] }),
+    onCreateTwoFactorPasskey: async () => {
+      await readonly();
+      return { enabled: false, keys: [] };
+    },
+    onDeleteTwoFactorPasskey: async () => {
+      await readonly();
+      return { enabled: false, keys: [] };
+    },
+    onDisableTwoFactorPasskeys: readonly,
     onGetRecoveryCode: readonlyString,
     onGetApiKey: readonlyString,
     onRotateApiKey: readonlyString,
@@ -1189,7 +1201,7 @@ export function createDemoMainRoutesProps(base: AppMainRoutesProps, notify: Noti
     onDownloadRemoteBackup: async (_masterPassword: string, _destinationId: string, _path: string, _onProgress?: (percent: number | null) => void) => {
       notify('success', t('txt_demo_download_prepared'));
     },
-    onInspectRemoteBackup: async (_destinationId: string, path: string) => ({
+    onInspectRemoteBackup: async (_masterPassword: string, _destinationId: string, path: string) => ({
       object: 'backup-remote-integrity',
       destinationId: _destinationId,
       path,

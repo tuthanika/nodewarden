@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useState } from 'preact/hooks';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import ToastHost from '@/components/ToastHost';
 import { t } from '@/lib/i18n';
@@ -21,11 +22,14 @@ interface AppGlobalOverlaysProps {
   confirm: AppConfirmState | null;
   onCancelConfirm: () => void;
   pendingTotpOpen: boolean;
+  pendingTotpProviderType?: number;
+  pendingTotpAvailableProviders?: number[];
   totpCode: string;
   rememberDevice: boolean;
   onTotpCodeChange: (value: string) => void;
   onRememberDeviceChange: (checked: boolean) => void;
   onConfirmTotp: () => void;
+  onSelectTotpProvider: (providerType: number) => void;
   onCancelTotp: () => void;
   onUseRecoveryCode: () => void;
   totpSubmitting: boolean;
@@ -37,7 +41,40 @@ interface AppGlobalOverlaysProps {
   disableTotpSubmitting: boolean;
 }
 
+const TWO_FACTOR_PROVIDER_AUTHENTICATOR = 0;
+const TWO_FACTOR_PROVIDER_YUBIKEY = 3;
+const TWO_FACTOR_PROVIDER_WEBAUTHN = 7;
+const TWO_FACTOR_PROVIDER_ORDER = [
+  TWO_FACTOR_PROVIDER_WEBAUTHN,
+  TWO_FACTOR_PROVIDER_YUBIKEY,
+  TWO_FACTOR_PROVIDER_AUTHENTICATOR,
+] as const;
+
+function uniqueSupportedProviders(providerTypes: number[] | undefined): number[] {
+  const available = new Set(providerTypes || []);
+  return TWO_FACTOR_PROVIDER_ORDER.filter((provider) => available.has(provider));
+}
+
+function twoFactorProviderLabel(providerType: number): string {
+  if (providerType === TWO_FACTOR_PROVIDER_WEBAUTHN) return t('txt_passkey');
+  if (providerType === TWO_FACTOR_PROVIDER_YUBIKEY) return t('txt_otp_from_yubikey');
+  return t('txt_authenticator_app');
+}
+
 export default function AppGlobalOverlays(props: AppGlobalOverlaysProps) {
+  const [methodChooserOpen, setMethodChooserOpen] = useState(false);
+  const availableProviders = useMemo(
+    () => uniqueSupportedProviders(props.pendingTotpAvailableProviders),
+    [props.pendingTotpAvailableProviders]
+  );
+  const alternateProviders = availableProviders.filter((provider) => provider !== props.pendingTotpProviderType);
+  const isYubiKeyOtp = props.pendingTotpProviderType === TWO_FACTOR_PROVIDER_YUBIKEY;
+  const isWebAuthn = props.pendingTotpProviderType === TWO_FACTOR_PROVIDER_WEBAUTHN;
+
+  useEffect(() => {
+    setMethodChooserOpen(false);
+  }, [props.pendingTotpOpen, props.pendingTotpProviderType]);
+
   return (
     <>
       <ConfirmDialog
@@ -55,10 +92,16 @@ export default function AppGlobalOverlays(props: AppGlobalOverlaysProps) {
 
       <ConfirmDialog
         open={props.pendingTotpOpen}
-        title={t('txt_two_step_verification')}
-        message={t('txt_password_is_already_verified')}
+        title={isYubiKeyOtp ? `${t('txt_two_step_verification')} YubiKey` : isWebAuthn ? (
+          <span className="dialog-title-stack">
+            <span>{t('txt_two_step_verification')}</span>
+            <span>{t('txt_passkey')}</span>
+          </span>
+        ) : t('txt_two_step_verification')}
+        message={isYubiKeyOtp ? t('txt_press_yubikey_to_authenticate') : isWebAuthn ? t('txt_use_passkey_to_complete_two_step_verification') : t('txt_password_is_already_verified')}
         confirmText={t('txt_verify')}
-        cancelText={t('txt_cancel')}
+        hideCancel
+        closeButton
         showIcon={false}
         confirmDisabled={props.totpSubmitting}
         cancelDisabled={props.totpSubmitting}
@@ -67,16 +110,52 @@ export default function AppGlobalOverlays(props: AppGlobalOverlaysProps) {
         afterActions={(
           <div className="dialog-extra">
             <div className="dialog-divider" />
+            {alternateProviders.length > 0 && (
+              <div className="two-factor-method-switcher">
+                <button
+                  type="button"
+                  className="btn btn-secondary dialog-btn"
+                  disabled={props.totpSubmitting}
+                  aria-expanded={methodChooserOpen}
+                  onClick={() => setMethodChooserOpen((open) => !open)}
+                >
+                  {t('txt_select_another_verification_method')}
+                </button>
+                {methodChooserOpen && (
+                  <div className="two-factor-method-list" role="list" aria-label={t('txt_select_two_step_login_method')}>
+                    <div className="two-factor-method-label">{t('txt_select_two_step_login_method')}</div>
+                    {alternateProviders.map((providerType) => (
+                      <button
+                        key={providerType}
+                        type="button"
+                        className="btn btn-secondary two-factor-method-option"
+                        disabled={props.totpSubmitting}
+                        onClick={() => {
+                          setMethodChooserOpen(false);
+                          props.onSelectTotpProvider(providerType);
+                        }}
+                      >
+                        {twoFactorProviderLabel(providerType)}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             <button type="button" className="btn btn-secondary dialog-btn" disabled={props.totpSubmitting} onClick={props.onUseRecoveryCode}>
               {t('txt_use_recovery_code')}
             </button>
           </div>
         )}
       >
-        <label className="field">
-          <span>{t('txt_totp_code')}</span>
-          <input className="input" value={props.totpCode} autoComplete="one-time-code" onInput={(e) => props.onTotpCodeChange((e.currentTarget as HTMLInputElement).value)} />
-        </label>
+        {isWebAuthn ? (
+          <p className="muted-inline settings-field-note">{t('txt_touch_your_passkey_when_prompted')}</p>
+        ) : (
+          <label className="field">
+            <span>{isYubiKeyOtp ? t('txt_otp_from_yubikey') : t('txt_totp_code')}</span>
+            <input className="input" type={isYubiKeyOtp ? 'password' : 'text'} value={props.totpCode} autoComplete="one-time-code" onInput={(e) => props.onTotpCodeChange((e.currentTarget as HTMLInputElement).value)} />
+          </label>
+        )}
         <label className="check-line check-line-compact">
           <input type="checkbox" checked={props.rememberDevice} onChange={(e) => props.onRememberDeviceChange((e.currentTarget as HTMLInputElement).checked)} />
           <span>{t('txt_trust_this_device_for_30_days')}</span>
@@ -88,7 +167,8 @@ export default function AppGlobalOverlays(props: AppGlobalOverlaysProps) {
         title={t('txt_disable_totp')}
         message={t('txt_enter_master_password_to_disable_two_step_verification')}
         confirmText={t('txt_disable_totp')}
-        cancelText={t('txt_cancel')}
+        hideCancel
+        closeButton
         danger
         showIcon={false}
         confirmDisabled={props.disableTotpSubmitting}

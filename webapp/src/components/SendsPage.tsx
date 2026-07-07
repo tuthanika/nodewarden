@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
-import { CheckCheck, ChevronLeft, Copy, Eye, EyeOff, File, FileText, LayoutGrid, Pencil, Plus, RefreshCw, Save, Send as SendIcon, Trash2, X } from 'lucide-preact';
+import { CheckCheck, ChevronLeft, Copy, Eye, EyeOff, File, FileText, LayoutGrid, Lock, Pencil, Plus, RefreshCw, Save, Send as SendIcon, Trash2, X } from 'lucide-preact';
 import { copyTextToClipboard } from '@/lib/clipboard';
 import LoadingState from '@/components/LoadingState';
 import type { Send, SendDraft } from '@/lib/types';
@@ -43,6 +43,7 @@ function buildDefaultDraft(): SendDraft {
     expirationDays: '0',
     maxAccessCount: '',
     password: '',
+    hasPassword: false,
     disabled: false,
   };
 }
@@ -59,6 +60,7 @@ function draftFromSend(send: Send): SendDraft {
     expirationDays: daysFromNow(send.expirationDate, 0),
     maxAccessCount: send.maxAccessCount !== null && send.maxAccessCount !== undefined ? String(send.maxAccessCount) : '',
     password: '',
+    hasPassword: !!send.password,
     disabled: !!send.disabled,
   };
 }
@@ -380,6 +382,7 @@ export default function SendsPage(props: SendsPageProps) {
                 <div className="list-text">
                   <span className="list-title" title={send.decName || t('txt_no_name')}>{send.decName || t('txt_no_name')}</span>
                   <span className="list-sub">
+                    {!!send.password && <><Lock size={12} className="inline-icon" /> </>}
                     {Number(send.type) === 1 ? t('txt_file') : t('txt_text')} - {t('txt_accessed_count_times', { count: send.accessCount || 0 })}
                   </span>
                 </div>
@@ -471,12 +474,23 @@ export default function SendsPage(props: SendsPageProps) {
               </label>
               <label className="field">
                 <span>{t('txt_password')}</span>
-                <div className="password-wrap">
-                  <input className="input" type={showPassword ? 'text' : 'password'} value={draft.password} onInput={(e) => setDraft({ ...draft, password: (e.currentTarget as HTMLInputElement).value })} />
-                  <button type="button" className="password-toggle" onClick={() => setShowPassword((v) => !v)}>
-                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                </div>
+                {draft.hasPassword ? (
+                  <div className="password-wrap">
+                    <input className="input" type="password" value="••••••••" disabled />
+                    {!isCreating && (
+                      <button type="button" className="password-toggle text-red-600 hover:text-red-700" onClick={() => setDraft({ ...draft, hasPassword: false, password: '' })} title={t('txt_remove')}>
+                        <Trash2 size={16} />
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="password-wrap">
+                    <input className="input" type={showPassword ? 'text' : 'password'} value={draft.password} onInput={(e) => setDraft({ ...draft, password: (e.currentTarget as HTMLInputElement).value })} />
+                    <button type="button" className="password-toggle" onClick={() => setShowPassword((v) => !v)}>
+                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                )}
               </label>
               <label className="field field-span-2">
                 <span>{t('txt_notes')}</span>

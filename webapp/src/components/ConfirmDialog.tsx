@@ -1,19 +1,21 @@
 import { createPortal } from 'preact/compat';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
-import { TriangleAlert } from 'lucide-preact';
+import { TriangleAlert, X } from 'lucide-preact';
 import { t } from '@/lib/i18n';
 
 interface ConfirmDialogProps {
   open: boolean;
-  title: string;
-  message: string;
+  title: ComponentChildren;
+  message?: string;
   variant?: 'default' | 'warning';
   showIcon?: boolean;
   confirmText?: string;
   cancelText?: string;
   danger?: boolean;
   hideCancel?: boolean;
+  hideConfirm?: boolean;
+  closeButton?: boolean;
   confirmDisabled?: boolean;
   cancelDisabled?: boolean;
   onConfirm: () => void;
@@ -88,6 +90,7 @@ export default function ConfirmDialog(props: ConfirmDialogProps) {
   const dialogId = useMemo(() => `confirm-dialog-${++dialogIdCounter}`, []);
   const titleId = `${dialogId}-title`;
   const messageId = `${dialogId}-message`;
+  const hasMessage = !!props.message;
   const canDismiss = !props.cancelDisabled && !closing;
 
   useEffect(() => {
@@ -191,7 +194,7 @@ export default function ConfirmDialog(props: ConfirmDialogProps) {
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        aria-describedby={messageId}
+        aria-describedby={hasMessage ? messageId : undefined}
         tabIndex={-1}
         onKeyDown={handleDialogKeyDown}
         onSubmit={(e) => {
@@ -211,17 +214,33 @@ export default function ConfirmDialog(props: ConfirmDialogProps) {
             </div>
           </>
         ) : null}
+        {props.closeButton && (
+          <button
+            type="button"
+            className="dialog-close-btn"
+            aria-label={t('txt_close')}
+            disabled={props.cancelDisabled}
+            onClick={() => {
+              if (props.cancelDisabled) return;
+              props.onCancel();
+            }}
+          >
+            <X size={18} />
+          </button>
+        )}
         <h3 id={titleId} className="dialog-title">{props.title}</h3>
-        <div id={messageId} className={`dialog-message ${props.variant === 'warning' ? 'warning' : ''}`}>{props.message}</div>
+        {hasMessage && <div id={messageId} className={`dialog-message ${props.variant === 'warning' ? 'warning' : ''}`}>{props.message}</div>}
         {props.children}
-        <button
-          type="submit"
-          className={`btn ${props.danger ? 'btn-danger' : 'btn-primary'} dialog-btn`}
-          disabled={props.confirmDisabled}
-          data-dialog-confirm="true"
-        >
-          {props.confirmText || t('txt_yes')}
-        </button>
+        {!props.hideConfirm && (
+          <button
+            type="submit"
+            className={`btn ${props.danger ? 'btn-danger' : 'btn-primary'} dialog-btn`}
+            disabled={props.confirmDisabled}
+            data-dialog-confirm="true"
+          >
+            {props.confirmText || t('txt_yes')}
+          </button>
+        )}
         {!props.hideCancel && (
           <button
             type="button"

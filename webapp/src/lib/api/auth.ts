@@ -7,6 +7,8 @@ import type {
   SessionState,
   TokenError,
   TokenSuccess,
+  TwoFactorPasskeySettings,
+  YubiKeyOtpSettings,
 } from '../types';
 import type { AccountPasskeyAssertion, AccountPasskeyPrfKeySet } from '../account-passkeys';
 import { recordNodeWardenReachable, recordNodeWardenUnreachable } from '../network-status';
@@ -87,11 +89,29 @@ function clearRememberTwoFactorToken(): void {
   localStorage.removeItem(TOTP_REMEMBER_TOKEN_KEY);
 }
 
+function hasTwoFactorChallenge(error: TokenError): boolean {
+  const providers = error.TwoFactorProviders ?? error.CustomResponse?.TwoFactorProviders;
+  const providers2 = error.TwoFactorProviders2 ?? error.CustomResponse?.TwoFactorProviders2;
+  if (Array.isArray(providers)) return providers.length > 0;
+  if (providers && typeof providers === 'object') return Object.keys(providers as Record<string, unknown>).length > 0;
+  if (Array.isArray(providers2)) return providers2.length > 0;
+  if (providers2 && typeof providers2 === 'object') return Object.keys(providers2 as Record<string, unknown>).length > 0;
+  return providers != null || providers2 != null;
+}
+
 export function loadSession(): SessionState | null {
   try {
     const raw = localStorage.getItem(SESSION_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<SessionState> & Partial<PersistedSessionState>;
+    if (parsed.email && (parsed.accessToken || parsed.refreshToken)) {
+      const authMode = parsed.authMode === 'web-cookie' ? 'web-cookie' : 'token';
+      saveSession({ email: parsed.email, authMode });
+      return {
+        email: parsed.email,
+        authMode,
+      };
+    }
     if (parsed.authMode === 'web-cookie' && parsed.email) {
       return {
         email: parsed.email,
@@ -104,13 +124,7 @@ export function loadSession(): SessionState | null {
         authMode: 'token',
       };
     }
-    if (!parsed.accessToken || !parsed.refreshToken || !parsed.email) return null;
-    return {
-      accessToken: parsed.accessToken,
-      refreshToken: parsed.refreshToken,
-      email: parsed.email,
-      authMode: 'token',
-    };
+    return null;
   } catch {
     return null;
   }
@@ -240,6 +254,7 @@ export async function loginWithPassword(
   passwordHash: string,
   options?: {
     totpCode?: string;
+    twoFactorProvider?: number;
     rememberDevice?: boolean;
     useRememberToken?: boolean;
     signal?: AbortSignal;
@@ -259,7 +274,7 @@ export async function loginWithPassword(
     body.set('twoFactorProvider', '5');
     body.set('twoFactorToken', rememberedToken);
   } else if (options?.totpCode) {
-    body.set('twoFactorProvider', '0');
+    body.set('twoFactorProvider', String(options.twoFactorProvider ?? 0));
     body.set('twoFactorToken', options.totpCode);
     if (options.rememberDevice) {
       body.set('twoFactorRemember', '1');
@@ -277,7 +292,7 @@ export async function loginWithPassword(
   const json = (await parseJson<TokenSuccess & TokenError>(resp)) || {};
   if (resp.ok) {
     saveRememberTwoFactorToken((json as TokenSuccess).TwoFactorToken);
-  } else if (rememberedToken) {
+  } else if (rememberedToken && hasTwoFactorChallenge(json)) {
     clearRememberTwoFactorToken();
   }
   if (!resp.ok) return json;
@@ -387,6 +402,7 @@ export async function revokeCurrentSession(session: SessionState | null): Promis
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
+      ...(session?.accessToken ? { Authorization: `Bearer ${session.accessToken}` } : {}),
       ...(session?.authMode === 'web-cookie' ? { [WEB_SESSION_HEADER]: '1' } : {}),
     },
     body: body.toString(),
@@ -591,11 +607,14 @@ export async function changeMasterPassword(
   const oldEnc = await hkdfExpand(current.masterKey, 'enc', 32);
   const oldMac = await hkdfExpand(current.masterKey, 'mac', 32);
   const userSym = await decryptBw(args.profileKey, oldEnc, oldMac);
+  if (userSym.length !== 64) {
+    throw new Error('Invalid profile key');
+  }
   const nextMasterKey = await pbkdf2(args.newPassword, args.email, current.kdfIterations, 32);
   const nextHash = await pbkdf2(nextMasterKey, args.newPassword, 1, 32);
   const nextEnc = await hkdfExpand(nextMasterKey, 'enc', 32);
   const nextMac = await hkdfExpand(nextMasterKey, 'mac', 32);
-  const newKey = await encryptBw(userSym.slice(0, 64), nextEnc, nextMac);
+  const newKey = await encryptBw(userSym, nextEnc, nextMac);
   const newMasterPasswordHash = bytesToBase64(nextHash);
 
   const resp = await authedFetch('/api/accounts/password', {
@@ -644,6 +663,203 @@ export async function setTotp(
   if (!resp.ok) {
     const body = await parseJson<TokenError>(resp);
     throw new Error(translateServerError(body?.error_description || body?.error, t('txt_totp_update_failed')));
+  }
+}
+
+function normalizeYubiKeySettings(raw: any): YubiKeyOtpSettings {
+  return {
+    enabled: !!(raw?.enabled ?? raw?.Enabled),
+    keys: [
+      String(raw?.key1 ?? raw?.Key1 ?? ''),
+      String(raw?.key2 ?? raw?.Key2 ?? ''),
+      String(raw?.key3 ?? raw?.Key3 ?? ''),
+      String(raw?.key4 ?? raw?.Key4 ?? ''),
+      String(raw?.key5 ?? raw?.Key5 ?? ''),
+    ],
+    nfc: !!(raw?.nfc ?? raw?.Nfc),
+    yubicoConfigured: !!(raw?.yubicoConfigured ?? raw?.YubicoConfigured),
+    yubicoClientId: String(raw?.yubicoClientId ?? raw?.YubicoClientId ?? ''),
+    yubicoSecretKey: String(raw?.yubicoSecretKey ?? raw?.YubicoSecretKey ?? ''),
+  };
+}
+
+export async function getYubiKeyOtpSettings(
+  authedFetch: AuthedFetch,
+  masterPasswordHash: string
+): Promise<YubiKeyOtpSettings> {
+  const resp = await authedFetch('/api/two-factor/get-yubikey', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ masterPasswordHash }),
+  });
+  if (!resp.ok) {
+    const body = await parseJson<TokenError>(resp);
+    throw new Error(translateServerError(body?.error_description || body?.error, t('txt_master_password_verify_failed')));
+  }
+  return normalizeYubiKeySettings(await parseJson<unknown>(resp));
+}
+
+export async function saveYubiKeyOtpSettings(
+  authedFetch: AuthedFetch,
+  payload: { keys: string[]; nfc: boolean; masterPasswordHash: string }
+): Promise<YubiKeyOtpSettings> {
+  const resp = await authedFetch('/api/two-factor/yubikey', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      key1: payload.keys[0] || '',
+      key2: payload.keys[1] || '',
+      key3: payload.keys[2] || '',
+      key4: payload.keys[3] || '',
+      key5: payload.keys[4] || '',
+      nfc: payload.nfc,
+      masterPasswordHash: payload.masterPasswordHash,
+    }),
+  });
+  if (!resp.ok) {
+    const body = await parseJson<TokenError>(resp);
+    throw new Error(translateServerError(body?.error_description || body?.error, t('txt_yubikey_update_failed')));
+  }
+  return normalizeYubiKeySettings(await parseJson<unknown>(resp));
+}
+
+export async function saveYubiKeyOtpApiCredentials(
+  authedFetch: AuthedFetch,
+  payload: { masterPasswordHash: string; yubicoClientId: string; yubicoSecretKey: string }
+): Promise<YubiKeyOtpSettings> {
+  const resp = await authedFetch('/api/two-factor/yubikey/config', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!resp.ok) {
+    const body = await parseJson<TokenError>(resp);
+    throw new Error(translateServerError(body?.error_description || body?.error, t('txt_yubikey_config_update_failed')));
+  }
+  return normalizeYubiKeySettings(await parseJson<unknown>(resp));
+}
+
+export async function bootstrapYubiKeyOtpApiCredentials(
+  authedFetch: AuthedFetch,
+  payload: { masterPasswordHash: string; otp: string }
+): Promise<YubiKeyOtpSettings> {
+  const resp = await authedFetch('/api/two-factor/yubikey/bootstrap', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!resp.ok) {
+    const body = await parseJson<TokenError>(resp);
+    throw new Error(translateServerError(body?.error_description || body?.error, t('txt_yubikey_auto_config_failed')));
+  }
+  return normalizeYubiKeySettings(await parseJson<unknown>(resp));
+}
+
+export async function disableYubiKeyOtp(
+  authedFetch: AuthedFetch,
+  masterPasswordHash: string
+): Promise<void> {
+  const resp = await authedFetch('/api/two-factor/disable', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: 3, masterPasswordHash }),
+  });
+  if (!resp.ok) {
+    const body = await parseJson<TokenError>(resp);
+    throw new Error(translateServerError(body?.error_description || body?.error, t('txt_disable_yubikey_failed')));
+  }
+}
+
+function normalizeTwoFactorPasskeySettings(raw: any): TwoFactorPasskeySettings {
+  const keys = Array.isArray(raw?.keys) ? raw.keys : Array.isArray(raw?.Keys) ? raw.Keys : [];
+  return {
+    enabled: !!(raw?.enabled ?? raw?.Enabled),
+    keys: keys
+      .map((item: any) => ({
+        id: Number(item?.id ?? item?.Id),
+        name: String(item?.name || item?.Name || ''),
+        migrated: !!(item?.migrated ?? item?.Migrated),
+      }))
+      .filter((item: { id: number }) => Number.isInteger(item.id) && item.id > 0),
+  };
+}
+
+export async function getTwoFactorPasskeySettings(
+  authedFetch: AuthedFetch,
+  masterPasswordHash: string
+): Promise<TwoFactorPasskeySettings> {
+  const resp = await authedFetch('/api/two-factor/get-webauthn', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ masterPasswordHash }),
+  });
+  if (!resp.ok) {
+    const body = await parseJson<TokenError>(resp);
+    throw new Error(translateServerError(body?.error_description || body?.error, t('txt_master_password_verify_failed')));
+  }
+  return normalizeTwoFactorPasskeySettings(await parseJson<unknown>(resp));
+}
+
+export async function getTwoFactorPasskeyChallenge(
+  authedFetch: AuthedFetch,
+  masterPasswordHash: string
+): Promise<unknown> {
+  const resp = await authedFetch('/api/two-factor/get-webauthn-challenge', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ masterPasswordHash }),
+  });
+  if (!resp.ok) {
+    const body = await parseJson<TokenError>(resp);
+    throw new Error(translateServerError(body?.error_description || body?.error, t('txt_passkey_setup_failed')));
+  }
+  return parseJson<unknown>(resp);
+}
+
+export async function saveTwoFactorPasskey(
+  authedFetch: AuthedFetch,
+  payload: { id?: number; name: string; masterPasswordHash: string; deviceResponse: unknown }
+): Promise<TwoFactorPasskeySettings> {
+  const resp = await authedFetch('/api/two-factor/webauthn', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!resp.ok) {
+    const body = await parseJson<TokenError>(resp);
+    throw new Error(translateServerError(body?.error_description || body?.error, t('txt_passkey_setup_failed')));
+  }
+  return normalizeTwoFactorPasskeySettings(await parseJson<unknown>(resp));
+}
+
+export async function deleteTwoFactorPasskey(
+  authedFetch: AuthedFetch,
+  payload: { id: number; masterPasswordHash: string }
+): Promise<TwoFactorPasskeySettings> {
+  const resp = await authedFetch('/api/two-factor/webauthn', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!resp.ok) {
+    const body = await parseJson<TokenError>(resp);
+    throw new Error(translateServerError(body?.error_description || body?.error, t('txt_delete_item_failed')));
+  }
+  return normalizeTwoFactorPasskeySettings(await parseJson<unknown>(resp));
+}
+
+export async function disableTwoFactorPasskeys(
+  authedFetch: AuthedFetch,
+  masterPasswordHash: string
+): Promise<void> {
+  const resp = await authedFetch('/api/two-factor/disable', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: 7, masterPasswordHash }),
+  });
+  if (!resp.ok) {
+    const body = await parseJson<TokenError>(resp);
+    throw new Error(translateServerError(body?.error_description || body?.error, t('txt_disable_passkey_two_step_failed')));
   }
 }
 
@@ -804,11 +1020,21 @@ export async function getVaultRevisionDate(authedFetch: AuthedFetch): Promise<nu
   return stamp;
 }
 
-export async function getTotpStatus(authedFetch: AuthedFetch): Promise<{ enabled: boolean }> {
-  const resp = await authedFetch('/api/accounts/totp');
-  if (!resp.ok) throw new Error('Failed to load TOTP status');
-  const body = (await parseJson<{ enabled?: boolean }>(resp)) || {};
-  return { enabled: !!body.enabled };
+export async function getTwoFactorProviderStatus(authedFetch: AuthedFetch): Promise<{ totpEnabled: boolean; yubikeyEnabled: boolean; passkeyEnabled: boolean }> {
+  const resp = await authedFetch('/api/two-factor');
+  if (!resp.ok) throw new Error('Failed to load two-factor status');
+  const body = (await parseJson<{ data?: unknown[]; Data?: unknown[] }>(resp)) || {};
+  const providers = Array.isArray(body.data) ? body.data : Array.isArray(body.Data) ? body.Data : [];
+  const enabledTypes = new Set(
+    providers
+      .map((provider: any) => Number(provider?.type ?? provider?.Type))
+      .filter((type) => Number.isFinite(type))
+  );
+  return {
+    totpEnabled: enabledTypes.has(0),
+    yubikeyEnabled: enabledTypes.has(3),
+    passkeyEnabled: enabledTypes.has(7),
+  };
 }
 
 export async function getTotpRecoveryCode(
