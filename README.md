@@ -32,26 +32,26 @@
 
 ## Feature comparison with the official Bitwarden server
 
-| Capability | Bitwarden (free) | NodeWarden | Notes |
+| Feature | Bitwarden Free | NodeWarden | Notes |
 |---|---|---|---|
 | Web vault | ✅ | ✅ | **Original Web Vault UI** |
 | TOTP | ❌ | ✅ | Includes `steam://` support |
-| **PWA / offline** | ❌ | ✅ | **Installable, offline use, app shortcuts** |
-| **Passkey login** | ✅ | ✅ | **WebAuthn/FIDO2 passwordless login** |
-| API keys | ✅ | ✅ | For Bitwarden CLI; create and rotate |
+| **PWA / offline** | ❌ | ✅ | **Installable, offline** |
+| **Passkey login** | ✅ | ✅ | **passwordless auth** |
+| API keys | ✅ | ✅ | CLI keys; create and rotate |
 | Login 2FA | ✅ | ✅ | TOTP, YubiKey, Passkey |
-| 2FA recovery codes | ✅ | ✅ | One-time codes to disable 2FA |
-| Real-time push sync | ✅ | ✅ | Web, browser extension, desktop, and mobile stay in sync |
+| 2FA recovery codes | ✅ | ✅ | One-time 2FA disable codes |
+| Real-time push sync | ✅ | ✅ | All device sync |
 | Attachments / Send | ✅ | ✅ | Cloudflare R2 or KV |
-| Import / export | ✅ | ✅ | Bitwarden JSON / CSV / **ZIP import (including attachments)** |
-| **Cloud backup center** | ❌ | ✅ | **Scheduled incremental backup via WebDAV / S3** |
-| Device management | ✅ | ✅ | **Remove devices, revoke trust, permanent trust** |
-| Login requests | ✅ | ✅ | **Passwordless login approval across devices; cross-device unlock requests** |
+| Import / export | ✅ | ✅ | Bitwarden JSON / CSV / **ZIP** |
+| **Cloud backup center** | ❌ | ✅ | **Scheduled WebDAV / S3 incrementals** |
+| Device management | ✅ | ✅ | **Remove devices; trust controls** |
+| Login requests | ✅ | ✅ | **Cross-device login approval/unlock** |
 | **Multi-user** | ✅ | ✅ | Invite-code registration |
-| Domain rules | ✅ | ✅ | Custom equivalent domains, global domain exclusions |
-| Fill-assist | ✅ | ✅ | `POST /fill-assist` for client autofill assist; does not bypass vault unlock |
-| Organizations / collections / member roles | ✅ | ❌ | Not implemented |
-| SSO / SCIM / enterprise directory | ✅ | ❌ | Not implemented |
+| Domain rules | ✅ | ✅ | Equivalent domains, global exclusions |
+| Fill-assist | ✅ | ✅ | `POST /fill-assist`|
+| Organizations / collections / roles | ✅ | ❌ | Not implemented |
+| SSO / SCIM / directory | ✅ | ❌ | Not implemented |
 
 ---
 

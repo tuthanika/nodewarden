@@ -155,7 +155,15 @@ export function formatSize(bytes: number): string {
 
 export function parseDate(raw: unknown): Date | null {
   if (typeof raw !== 'string' || !raw.trim()) return null;
-  const date = new Date(raw);
+  let value = raw.trim();
+  if (!/[zZ]$/.test(value) && !/[+\-]\d{2}:?\d{2}$/.test(value)) {
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(value)) {
+      value += 'Z';
+    } else if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(value)) {
+      value = value.replace(' ', 'T') + 'Z';
+    }
+  }
+  const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
   return date;
 }

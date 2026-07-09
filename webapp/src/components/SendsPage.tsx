@@ -32,6 +32,13 @@ function daysFromNow(iso: string | null | undefined, fallback: number): string {
   return String(Math.max(days, 0));
 }
 
+function formatSendDate(value: string | null | undefined): string {
+  if (!value) return t('txt_dash');
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return t('txt_dash');
+  return parsed.toLocaleString();
+}
+
 function buildDefaultDraft(): SendDraft {
   return {
     type: 'text',
@@ -537,8 +544,8 @@ export default function SendsPage(props: SendsPageProps) {
             <div className="card stagger-item stagger-delay-2">
               <h4>{t('txt_send_details')}</h4>
               <div className="kv-line"><span>{t('txt_access_count')}</span><strong>{selectedSend.accessCount || 0}</strong></div>
-              <div className="kv-line"><span>{t('txt_deletion_date')}</span><strong>{selectedSend.deletionDate || t('txt_dash')}</strong></div>
-              <div className="kv-line"><span>{t('txt_expiration_date')}</span><strong>{selectedSend.expirationDate || t('txt_dash')}</strong></div>
+              <div className="kv-line"><span>{t('txt_deletion_date')}</span><strong>{formatSendDate(selectedSend.deletionDate)}</strong></div>
+              <div className="kv-line"><span>{t('txt_expiration_date')}</span><strong>{formatSendDate(selectedSend.expirationDate)}</strong></div>
             </div>
 
             <div className="card">
