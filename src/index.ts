@@ -24,8 +24,11 @@ function isWorkerHandledPath(path: string): boolean {
     path.startsWith('/api/') ||
     path.startsWith('/identity/') ||
     path.startsWith('/icons/') ||
+    path.startsWith('/fill-assist/') ||
     path.startsWith('/notifications/') ||
     path.startsWith('/.well-known/') ||
+    path === '/v1/assetlinks:check' ||
+    path === '/web-bootstrap' ||
     path === '/config' ||
     path === '/api/config' ||
     path === '/api/version'

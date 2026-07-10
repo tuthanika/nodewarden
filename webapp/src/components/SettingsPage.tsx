@@ -130,7 +130,7 @@ export default function SettingsPage(props: SettingsPageProps) {
   const [accountPasskeys, setAccountPasskeys] = useState<AccountPasskeyCredential[]>([]);
   const [accountPasskeysLoading, setAccountPasskeysLoading] = useState(false);
   const [accountPasskeyName, setAccountPasskeyName] = useState(t('txt_account_passkey'));
-  const [accountPasskeyDirectUnlock, setAccountPasskeyDirectUnlock] = useState(false);
+  const [accountPasskeyDirectUnlock, setAccountPasskeyDirectUnlock] = useState(true);
   const [accountPasskeyPromptId, setAccountPasskeyPromptId] = useState<string | null>(null);
   const [createPasskeyDialogOpen, setCreatePasskeyDialogOpen] = useState(false);
   const [createPasskeyMasterPassword, setCreatePasskeyMasterPassword] = useState('');
@@ -509,7 +509,7 @@ export default function SettingsPage(props: SettingsPageProps) {
     setCreatePasskeyDialogOpen(false);
     setCreatePasskeyMasterPassword('');
     setAccountPasskeyName(t('txt_account_passkey'));
-    setAccountPasskeyDirectUnlock(false);
+    setAccountPasskeyDirectUnlock(true);
   }
 
   async function submitCreatePasskeyDialog(): Promise<void> {

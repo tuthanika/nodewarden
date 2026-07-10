@@ -419,7 +419,36 @@ export default function VaultPage(props: VaultPageProps) {
       return !!meta?.searchText.includes(searchQuery);
     });
 
+    // Pre-compute group min name for duplicates group ordering
+    const groupMinName = new Map<string, string>();
+    if (sidebarFilter.kind === 'duplicates' && duplicateSignatureInfo) {
+      for (const cipher of next) {
+        const gk = (duplicateSignatureInfo.byId.get(cipher.id) || [])
+          .filter(s => (duplicateSignatureInfo.counts.get(s) || 0) >= 2)
+          .sort()[0] || '';
+        if (!gk) continue;
+        const name = cipherMetaById.get(cipher.id)?.name || '';
+        const cur = groupMinName.get(gk);
+        if (!cur || nameCollator.compare(name, cur) < 0) groupMinName.set(gk, name);
+      }
+    }
+
     next.sort((a, b) => {
+      // Duplicates view: group by color, sort A-Z within each group
+      if (sidebarFilter.kind === 'duplicates' && duplicateSignatureInfo) {
+        const gk = (id: string) => (duplicateSignatureInfo.byId.get(id) || [])
+          .filter(s => (duplicateSignatureInfo.counts.get(s) || 0) >= 2)
+          .sort()[0] || '';
+        const gA = gk(a.id), gB = gk(b.id);
+        if (gA !== gB) return !gA ? 1 : !gB ? -1 : nameCollator.compare(
+          groupMinName.get(gA) || '', groupMinName.get(gB) || ''
+        ) || (gA < gB ? -1 : 1);
+        return nameCollator.compare(
+          cipherMetaById.get(a.id)?.name || '',
+          cipherMetaById.get(b.id)?.name || ''
+        ) || String(a.id || '').localeCompare(String(b.id || ''));
+      }
+
       const metaA = cipherMetaById.get(a.id);
       const metaB = cipherMetaById.get(b.id);
       if (sortMode === 'edited') {
@@ -1049,6 +1078,20 @@ const folderName = useCallback((id: string | null | undefined): string => {
     }
     setSelectedMap(map);
   }, [filteredCiphers, duplicateSignatureInfo, duplicateMode]);
+  const handleSelectUniqueFromDuplicates = useCallback(() => {
+    const map: Record<string, boolean> = {};
+    const seen = new Set<number>();
+    for (const cipher of filteredCiphers) {
+      const groupIndex = duplicateGroupIndexById.get(cipher.id);
+      if (groupIndex === undefined) continue;
+      if (seen.has(groupIndex)) {
+        map[cipher.id] = true;
+      } else {
+        seen.add(groupIndex);
+      }
+    }
+    setSelectedMap(map);
+  }, [filteredCiphers, duplicateGroupIndexById]);
   const handleSelectAll = useCallback(() => {
     const map: Record<string, boolean> = {};
     for (const cipher of filteredCiphers) map[cipher.id] = true;
@@ -1163,6 +1206,7 @@ const folderName = useCallback((id: string | null | undefined): string => {
           onSyncVault={handleSyncVault}
           onOpenBulkDelete={handleOpenBulkDelete}
           onSelectDuplicates={handleSelectDuplicates}
+          onSelectUniqueFromDuplicates={handleSelectUniqueFromDuplicates}
           onSelectAll={handleSelectAll}
           onToggleCreateMenu={handleToggleCreateMenu}
           onStartCreate={startCreate}

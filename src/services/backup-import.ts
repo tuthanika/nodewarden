@@ -301,7 +301,7 @@ async function importPreparedBackupRows(db: D1Database, payload: BackupPayload['
     config: await prepareImportedConfigRows(env, payload.config || [], payload.users || []),
     users: cloneRows(payload.users || []).map((row) => ({
       ...row,
-      verify_devices: row.verify_devices ?? 1,
+      verify_devices: row.verify_devices ?? 0,
       yubikey_nfc: row.yubikey_nfc ?? 0,
     })),
     domain_settings: cloneRows(payload.domain_settings || []),
