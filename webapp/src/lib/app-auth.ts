@@ -199,26 +199,43 @@ function decodeJwtExp(accessToken: string | undefined): number | null {
   }
 }
 
-async function maybeRefreshSession(session: SessionState): Promise<SessionState | null> {
-  if (!session.refreshToken && session.authMode !== 'web-cookie') return session.accessToken ? session : null;
+type SessionRefreshOutcome =
+  | { kind: 'success'; session: SessionState }
+  | { kind: 'transient'; session: SessionState; message: string; retryAfterMs?: number }
+  | { kind: 'expired' };
+
+async function maybeRefreshSession(session: SessionState): Promise<SessionRefreshOutcome> {
+  if (!session.refreshToken && session.authMode !== 'web-cookie') {
+    return session.accessToken ? { kind: 'success', session } : { kind: 'expired' };
+  }
   const exp = decodeJwtExp(session.accessToken);
   const nowSeconds = Math.floor(Date.now() / 1000);
 
   if (session.accessToken && exp !== null && exp - nowSeconds > 60) {
-    return session;
+    return { kind: 'success', session };
   }
 
   const refreshed = await refreshAccessToken(session);
   if (!refreshed.ok) {
-    if (refreshed.transient) return session;
-    return session.accessToken && exp !== null && exp > nowSeconds ? session : null;
+    if (refreshed.transient) {
+      return {
+        kind: 'transient',
+        session,
+        message: refreshed.error || t('txt_session_refresh_temporarily_unavailable'),
+        retryAfterMs: refreshed.retryAfterMs,
+      };
+    }
+    return { kind: 'expired' };
   }
 
   return {
-    ...session,
-    accessToken: refreshed.token.access_token,
-    refreshToken: refreshed.token.refresh_token || session.refreshToken,
-    authMode: refreshed.token.web_session ? 'web-cookie' : (session.authMode || 'token'),
+    kind: 'success',
+    session: {
+      ...session,
+      accessToken: refreshed.token.access_token,
+      refreshToken: refreshed.token.refresh_token || session.refreshToken,
+      authMode: refreshed.token.web_session ? 'web-cookie' : (session.authMode || 'token'),
+    },
   };
 }
 
@@ -388,25 +405,41 @@ export async function bootstrapAppSession(initial: InitialAppBootstrapState = re
 export async function hydrateLockedSession(
   session: SessionState,
   fallbackProfile: Profile | null = null
-): Promise<{ session: SessionState | null; profile: Profile | null }> {
+): Promise<
+  | { kind: 'ready'; session: SessionState; profile: Profile | null }
+  | { kind: 'transient'; session: SessionState; profile: Profile | null; message: string; retryAfterMs?: number }
+  | { kind: 'expired'; session: null; profile: null }
+> {
   const hasOfflineUnlock = hasOfflineUnlockRecord(session.email);
   if (hasOfflineUnlock && browserReportsOffline()) {
     return {
+      kind: 'ready',
       session,
       profile: fallbackProfile || loadOfflineProfileSnapshot(session.email),
     };
   }
 
-  const refreshedSession = await maybeRefreshSession(session);
-  if (!refreshedSession?.accessToken) {
+  const refreshOutcome = await maybeRefreshSession(session);
+  if (refreshOutcome.kind === 'expired') {
+    return { kind: 'expired', session: null, profile: null };
+  }
+  if (refreshOutcome.kind === 'transient') {
     if (hasOfflineUnlock && (browserReportsOffline() || !(await probeNodeWardenService()))) {
       return {
+        kind: 'ready',
         session,
         profile: fallbackProfile || loadOfflineProfileSnapshot(session.email),
       };
     }
-    return { session: null, profile: null };
+    return {
+      kind: 'transient',
+      session,
+      profile: fallbackProfile,
+      message: refreshOutcome.message,
+      retryAfterMs: refreshOutcome.retryAfterMs,
+    };
   }
+  const refreshedSession = refreshOutcome.session;
   try {
     const profile = await getProfile(
       createAuthedFetch(
@@ -415,11 +448,13 @@ export async function hydrateLockedSession(
       )
     );
     return {
+      kind: 'ready',
       session: refreshedSession,
       profile,
     };
   } catch {
     return {
+      kind: 'ready',
       session: refreshedSession,
       profile: fallbackProfile,
     };

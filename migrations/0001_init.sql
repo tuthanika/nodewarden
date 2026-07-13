@@ -132,6 +132,11 @@ CREATE TABLE IF NOT EXISTS refresh_tokens (
   expires_at INTEGER NOT NULL,
   device_identifier TEXT,
   device_session_stamp TEXT,
+  security_stamp TEXT,
+  created_at INTEGER,
+  last_used_at INTEGER,
+  absolute_expires_at INTEGER,
+  client_type TEXT,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user ON refresh_tokens(user_id);

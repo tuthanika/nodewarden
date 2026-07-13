@@ -402,6 +402,11 @@ export interface RefreshTokenRecord {
   expiresAt: number;
   deviceIdentifier: string | null;
   deviceSessionStamp: string | null;
+  securityStamp: string | null;
+  createdAt: number | null;
+  lastUsedAt: number | null;
+  absoluteExpiresAt: number | null;
+  clientType: string | null;
 }
 
 export interface TrustedDeviceTokenSummary {

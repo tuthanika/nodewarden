@@ -14,6 +14,10 @@ const localeFiles = [
   ['ru', 'ru.ts', 'ru', 'Russian'],
   ['es', 'es.ts', 'es', 'Spanish'],
   ['fi', 'fi.ts', 'fi', 'Finnish'],
+  ['de', 'de.ts', 'de', 'German'],
+  ['fr', 'fr.ts', 'fr', 'French'],
+  ['it', 'it.ts', 'it', 'Italian'],
+  ['sv', 'sv.ts', 'sv', 'Swedish'],
 ];
 
 function readLocale(fileName, variableName) {

@@ -87,10 +87,12 @@ import {
   saveSend as saveStoredSend,
 } from './storage-send-repo';
 import {
-  constrainRefreshTokenExpiry as constrainStoredRefreshTokenExpiry,
+  bindRefreshTokenDeviceStamp as bindStoredRefreshTokenDeviceStamp,
+  bindRefreshTokenSecurityStamp as bindStoredRefreshTokenSecurityStamp,
   deleteRefreshToken as deleteStoredRefreshToken,
   deleteRefreshTokensByDevice as deleteStoredRefreshTokensByDevice,
   deleteRefreshTokensByUserId as deleteStoredRefreshTokensByUserId,
+  extendRefreshTokenExpiry as extendStoredRefreshTokenExpiry,
   getRefreshTokenRecord as findStoredRefreshTokenRecord,
   saveRefreshToken as saveStoredRefreshToken,
 } from './storage-refresh-token-repo';
@@ -162,7 +164,7 @@ const STORAGE_SCHEMA_VERSION_KEY = 'schema.version';
 // Bump this whenever src/services/storage-schema.ts or migrations/0001_init.sql
 // changes. Existing D1 installs only rerun ensureStorageSchema() when this value
 // differs from config.schema.version.
-const STORAGE_SCHEMA_VERSION = '2026-07-05-passkey-2fa';
+const STORAGE_SCHEMA_VERSION = '2026-07-13-refresh-session-reuse';
 const REQUIRED_SCHEMA_TABLES = ['webauthn_credentials', 'webauthn_challenges', 'auth_requests', 'totp_login_replays'] as const;
 
 // D1-backed storage.
@@ -632,9 +634,13 @@ export class StorageService {
     userId: string,
     expiresAtMs?: number,
     deviceIdentifier?: string | null,
-    deviceSessionStamp?: string | null
+    deviceSessionStamp?: string | null,
+    securityStamp?: string | null,
+    clientType?: string | null,
+    absoluteExpiresAtMs?: number | null
   ): Promise<void> {
-    const expiresAt = expiresAtMs ?? (Date.now() + LIMITS.auth.refreshTokenTtlMs);
+    const now = Date.now();
+    const expiresAt = expiresAtMs ?? (now + LIMITS.auth.refreshTokenDefaultSlidingTtlMs);
     await saveStoredRefreshToken(
       this.db,
       this.refreshTokenKey.bind(this),
@@ -643,7 +649,10 @@ export class StorageService {
       userId,
       expiresAt,
       deviceIdentifier,
-      deviceSessionStamp
+      deviceSessionStamp,
+      securityStamp,
+      clientType,
+      absoluteExpiresAtMs ?? (now + LIMITS.auth.refreshTokenAbsoluteTtlMs)
     );
   }
 
@@ -717,11 +726,16 @@ export class StorageService {
     return deleteStoredRefreshTokensByDevice(this.db, userId, deviceIdentifier);
   }
 
-  // Keep a short overlap window for rotated refresh token to reduce
-  // multi-context refresh races (e.g. browser extension popup/background).
-  // Expiry is only tightened, never extended.
-  async constrainRefreshTokenExpiry(token: string, maxExpiresAtMs: number): Promise<void> {
-    await constrainStoredRefreshTokenExpiry(this.db, this.refreshTokenKey.bind(this), token, maxExpiresAtMs);
+  async extendRefreshTokenExpiry(token: string, requestedExpiresAtMs: number, nowMs: number = Date.now()): Promise<boolean> {
+    return extendStoredRefreshTokenExpiry(this.db, this.refreshTokenKey.bind(this), token, requestedExpiresAtMs, nowMs);
+  }
+
+  async bindRefreshTokenSecurityStamp(token: string, securityStamp: string): Promise<void> {
+    await bindStoredRefreshTokenSecurityStamp(this.db, this.refreshTokenKey.bind(this), token, securityStamp);
+  }
+
+  async bindRefreshTokenDeviceStamp(token: string, deviceSessionStamp: string): Promise<void> {
+    await bindStoredRefreshTokenDeviceStamp(this.db, this.refreshTokenKey.bind(this), token, deviceSessionStamp);
   }
 
   private async trustedTwoFactorTokenKey(token: string): Promise<string> {

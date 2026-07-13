@@ -1,8 +1,9 @@
 import { createPortal } from 'preact/compat';
-import { useEffect, useMemo, useState } from 'preact/hooks';
-import { Archive, Clipboard, Download, Eye, EyeOff, ExternalLink, Folder, Paperclip, Pencil, RotateCcw, Trash2, X } from 'lucide-preact';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { AlertTriangle, Archive, Clipboard, Download, Eye, EyeOff, ExternalLink, Folder, Paperclip, Pencil, RefreshCw, RotateCcw, ShieldCheck, ShieldAlert, Trash2, X } from 'lucide-preact';
 import { useDialogLifecycle } from '@/components/ConfirmDialog';
 import type { TotpCodeResult } from '@/lib/crypto';
+import { checkPasswordLeaked, type PasswordBreachResult } from '@/lib/password-security';
 import type { Cipher } from '@/lib/types';
 import { t } from '@/lib/i18n';
 import {
@@ -20,6 +21,10 @@ import {
   parseFieldType,
   toBooleanFieldValue,
 } from '@/components/vault/vault-page-helpers';
+
+function isAbortError(error: unknown): boolean {
+  return !!error && typeof error === 'object' && 'name' in error && (error as { name?: string }).name === 'AbortError';
+}
 
 interface VaultDetailViewProps {
   selectedCipher: Cipher;
@@ -90,6 +95,9 @@ export default function VaultDetailView(props: VaultDetailViewProps) {
   const selectedAttachments = Array.isArray(props.selectedCipher.attachments) ? props.selectedCipher.attachments : [];
   const [showSshPrivateKey, setShowSshPrivateKey] = useState(false);
   const [passwordHistoryOpen, setPasswordHistoryOpen] = useState(false);
+  const [breachResult, setBreachResult] = useState<PasswordBreachResult | null>(null);
+  const [checkingBreach, setCheckingBreach] = useState(false);
+  const breachControllerRef = useRef<AbortController | null>(null);
   const isArchived = !!(props.selectedCipher.archivedDate || (props.selectedCipher as { archivedAt?: string | null }).archivedAt);
   const isDeleted = isCipherDeleted(props.selectedCipher);
   const passwordHistoryEntries = useMemo(
@@ -103,9 +111,39 @@ export default function VaultDetailView(props: VaultDetailViewProps) {
     [props.selectedCipher.passwordHistory]
   );
   useEffect(() => {
+    breachControllerRef.current?.abort();
+    breachControllerRef.current = null;
     setShowSshPrivateKey(false);
     setPasswordHistoryOpen(false);
-  }, [props.selectedCipher.id]);
+    setBreachResult(null);
+    setCheckingBreach(false);
+    return () => {
+      breachControllerRef.current?.abort();
+      breachControllerRef.current = null;
+    };
+  }, [props.selectedCipher.id, props.selectedCipher.login?.decPassword]);
+  const checkBreach = async () => {
+    const password = String(props.selectedCipher.login?.decPassword || '');
+    if (!password) return;
+    breachControllerRef.current?.abort();
+    const controller = new AbortController();
+    breachControllerRef.current = controller;
+    setCheckingBreach(true);
+    setBreachResult(null);
+    try {
+      const result = await checkPasswordLeaked(password, fetch, controller.signal);
+      if (controller.signal.aborted) return;
+      setBreachResult(result);
+    } catch (error) {
+      if (controller.signal.aborted || isAbortError(error)) return;
+      setBreachResult({ count: null, available: false });
+    } finally {
+      if (breachControllerRef.current === controller) {
+        breachControllerRef.current = null;
+        setCheckingBreach(false);
+      }
+    }
+  };
   const formatDownloadLabel = (attachmentId: string) => {
     const downloadKey = `${props.selectedCipher.id}:${attachmentId}`;
     if (props.downloadingAttachmentKey !== downloadKey) return t('txt_download');
@@ -172,8 +210,18 @@ export default function VaultDetailView(props: VaultDetailViewProps) {
                   <button type="button" className="btn btn-secondary small" onClick={() => copyToClipboard(props.selectedCipher.login?.decPassword || '')}>
                     <Clipboard size={14} className="btn-icon" /> {t('txt_copy')}
                   </button>
+                  <button type="button" className="btn btn-secondary small" disabled={checkingBreach || !props.selectedCipher.login?.decPassword} onClick={() => void checkBreach()}>
+                    {checkingBreach ? <RefreshCw size={14} className="btn-icon spin" /> : <ShieldCheck size={14} className="btn-icon" />}
+                    {checkingBreach ? t('txt_checking_password_security') : t('txt_check_password_breach')}
+                  </button>
                 </div>
               </div>
+              {breachResult && (
+                <div className={`password-breach-inline ${breachResult.available ? (breachResult.count ? 'danger' : 'safe') : 'warning'}`} role="status">
+                  {breachResult.available ? (breachResult.count ? <ShieldAlert size={15} /> : <ShieldCheck size={15} />) : <AlertTriangle size={15} />}
+                  <span>{breachResult.available ? (breachResult.count ? t('txt_password_exposed_count', { count: breachResult.count }) : t('txt_password_not_found_in_breaches')) : t('txt_password_security_check_failed')}</span>
+                </div>
+              )}
               {!!props.selectedCipher.login.decTotp && (
                 <div className="kv-row">
                   <span className="kv-label">{t('txt_totp')}</span>

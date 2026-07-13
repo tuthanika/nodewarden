@@ -144,7 +144,12 @@ export function unsupportedResponse(message: string = 'This feature is not suppo
 }
 
 // Identity endpoint error response (for /identity/connect/token)
-export function identityErrorResponse(message: string, error: string = 'invalid_grant', status: number = 400): Response {
+export function identityErrorResponse(
+  message: string,
+  error: string = 'invalid_grant',
+  status: number = 400,
+  headers: Record<string, string> = {}
+): Response {
   return jsonResponse(
     {
       error: error,
@@ -154,7 +159,8 @@ export function identityErrorResponse(message: string, error: string = 'invalid_
         Object: 'error',
       },
     },
-    status
+    status,
+    { 'Cache-Control': 'no-store', Pragma: 'no-cache', ...headers }
   );
 }
 

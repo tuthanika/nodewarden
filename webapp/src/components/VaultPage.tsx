@@ -87,6 +87,7 @@ export default function VaultPage(props: VaultPageProps) {
   const [sidebarFilter, setSidebarFilter] = useState<SidebarFilter>({ kind: 'all' });
   const [selectedCipherId, setSelectedCipherId] = useState('');
   const [selectedMap, setSelectedMap] = useState<Record<string, boolean>>({});
+  const pendingFocusCipherIdRef = useRef<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -498,7 +499,58 @@ export default function VaultPage(props: VaultPageProps) {
   }, [sidebarFilter.kind, duplicateMode]);
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const focusId = String(new URLSearchParams(window.location.search || '').get('cipher') || '').trim();
+    if (!focusId) return;
+    pendingFocusCipherIdRef.current = focusId;
+  }, []);
+
+  useEffect(() => {
+    const focusId = pendingFocusCipherIdRef.current;
+    if (!focusId) return;
+    const cipher = cipherById.get(focusId);
+    if (!cipher) {
+      if (!props.loading && props.ciphers.length > 0) pendingFocusCipherIdRef.current = null;
+      return;
+    }
+
+    const nextFilter: SidebarFilter = isCipherVisibleInTrash(cipher)
+      ? { kind: 'trash' }
+      : isCipherVisibleInArchive(cipher)
+        ? { kind: 'archive' }
+        : { kind: 'all' };
+    setSidebarFilter((prev) => (prev.kind === nextFilter.kind ? prev : nextFilter));
+    setSearchInput('');
+    setSearchQuery('');
+    setIsEditing(false);
+    setIsCreating(false);
+    setDraft(null);
+  }, [cipherById, props.ciphers.length, props.loading]);
+
+  useEffect(() => {
     if (isCreating) return;
+
+    const focusId = pendingFocusCipherIdRef.current;
+    if (focusId) {
+      if (!filteredCipherIds.has(focusId)) return;
+      setSelectedCipherId(focusId);
+      setRepromptApprovedCipherId(null);
+      setShowPassword(false);
+      setHiddenFieldVisibleMap({});
+      if (isMobileLayout) setMobilePanel('detail');
+      setMobileSidebarOpen(false);
+      pendingFocusCipherIdRef.current = null;
+      if (typeof window !== 'undefined' && typeof window.history?.replaceState === 'function') {
+        const url = new URL(window.location.href);
+        if (url.searchParams.has('cipher')) {
+          url.searchParams.delete('cipher');
+          const next = `${url.pathname}${url.search}${url.hash}`;
+          window.history.replaceState(null, '', next || '/vault');
+        }
+      }
+      return;
+    }
+
     if (!filteredCiphers.length) {
       if (selectedCipherId) setSelectedCipherId('');
       return;
@@ -506,7 +558,7 @@ export default function VaultPage(props: VaultPageProps) {
     if (!selectedCipherId || !filteredCipherIds.has(selectedCipherId)) {
       setSelectedCipherId(filteredCiphers[0].id);
     }
-  }, [filteredCiphers, filteredCipherIds, selectedCipherId, isCreating]);
+  }, [filteredCiphers, filteredCipherIds, selectedCipherId, isCreating, isMobileLayout]);
 
   const selectedCipher = useMemo(() => cipherById.get(selectedCipherId) || null, [cipherById, selectedCipherId]);
   const virtualRange = useMemo(() => {

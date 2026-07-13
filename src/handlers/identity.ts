@@ -3,7 +3,7 @@ import { StorageService } from '../services/storage';
 import { AuthService } from '../services/auth';
 import { RateLimitService, getClientIdentifier } from '../services/ratelimit';
 import { jsonResponse, errorResponse, identityErrorResponse } from '../utils/response';
-import { LIMITS } from '../config/limits';
+import { getRefreshTokenSlidingTtlMs, LIMITS } from '../config/limits';
 import { findMatchingTotpCounter, isTotpEnabled } from '../utils/totp';
 import { createRefreshToken } from '../utils/jwt';
 import { readAuthRequestDeviceInfo } from '../utils/device';
@@ -42,6 +42,10 @@ const YUBICO_KEY_CONFIG_KEY = 'globalSettings__yubico__key';
 const TWO_FACTOR_PROVIDER_RECOVERY_CODE_RESPONSE = '-1';
 const TWO_FACTOR_PROVIDER_RECOVERY_CODE_ANDROID_REQUEST = 100;
 
+function identityJsonResponse(data: unknown, status: number = 200): Response {
+  return jsonResponse(data, status, { 'Cache-Control': 'no-store', Pragma: 'no-cache' });
+}
+
 function resolveTotpSecret(userSecret: string | null): string | null {
   if (userSecret && isTotpEnabled(userSecret)) {
     return userSecret;
@@ -58,6 +62,33 @@ async function resolveDeviceSession(
   const existingDevice = await storage.getDevice(userId, deviceInfo.deviceIdentifier);
   const sessionStamp = String(existingDevice?.sessionStamp || '').trim() || generateUUID();
   return { identifier: deviceInfo.deviceIdentifier, sessionStamp };
+}
+
+function resolveRefreshClientType(request: Request, body: Record<string, string>): string {
+  if (shouldUseWebSession(request)) return 'web';
+  const clientId = String(body.client_id || '').trim().toLowerCase();
+  if (clientId === 'mobile') return 'mobile';
+  if (clientId === 'browser' || clientId === 'desktop' || clientId === 'cli') return clientId;
+  return clientId || 'other';
+}
+
+async function persistAndResolveDeviceSession(
+  storage: StorageService,
+  userId: string,
+  deviceInfo: ReturnType<typeof readAuthRequestDeviceInfo>
+): Promise<{ identifier: string; sessionStamp: string } | null> {
+  const candidate = await resolveDeviceSession(storage, userId, deviceInfo);
+  if (!candidate) return null;
+  await storage.upsertDevice(
+    userId,
+    candidate.identifier,
+    deviceInfo.deviceName,
+    deviceInfo.deviceType,
+    candidate.sessionStamp
+  );
+  const persisted = await storage.getDevice(userId, candidate.identifier);
+  if (!persisted?.sessionStamp) throw new Error('Failed to persist device session');
+  return { identifier: persisted.deviceIdentifier, sessionStamp: persisted.sessionStamp };
 }
 
 function readDevicePushToken(body: Record<string, string>): string {
@@ -163,7 +194,7 @@ function withWebRefreshCookie(request: Request, response: Response, refreshToken
   headers.append(
     'Set-Cookie',
     refreshToken
-      ? buildRefreshCookie(request, refreshToken, Math.floor(LIMITS.auth.refreshTokenTtlMs / 1000))
+      ? buildRefreshCookie(request, refreshToken, Math.floor(getRefreshTokenSlidingTtlMs('web') / 1000))
       : buildClearedRefreshCookie(request)
   );
   return new Response(response.body, {
@@ -171,30 +202,6 @@ function withWebRefreshCookie(request: Request, response: Response, refreshToken
     statusText: response.statusText,
     headers,
   });
-}
-
-async function revokePresentedAccessTokenSession(request: Request, env: Env, storage: StorageService): Promise<void> {
-  const authHeader = request.headers.get('Authorization');
-  if (!authHeader) return;
-
-  const auth = new AuthService(env);
-  const verified = await auth.verifyAccessTokenWithUser(authHeader);
-  if (!verified) return;
-
-  const deviceIdentifier = String(verified.payload.did || '').trim();
-  if (deviceIdentifier) {
-    const nextSessionStamp = generateUUID();
-    await storage.rotateDeviceSessionStamp(verified.user.id, deviceIdentifier, nextSessionStamp);
-    await storage.deleteRefreshTokensByDevice(verified.user.id, deviceIdentifier);
-    AuthService.invalidateDeviceCache(verified.user.id, deviceIdentifier);
-    return;
-  }
-
-  verified.user.securityStamp = generateUUID();
-  verified.user.updatedAt = new Date().toISOString();
-  await storage.saveUser(verified.user);
-  await storage.deleteRefreshTokensByUserId(verified.user.id);
-  AuthService.invalidateUserCache(verified.user.id);
 }
 
 function buildPreloginResponse(
@@ -267,7 +274,7 @@ async function twoFactorRequiredResponse(
   };
 
   // Bitwarden clients rely on these fields to trigger the 2FA UI flow.
-  return jsonResponse(
+  return identityJsonResponse(
     {
       error: 'invalid_grant',
       error_description: message,
@@ -341,8 +348,20 @@ export async function handleToken(request: Request, env: Env): Promise<Response>
 
   const grantType = body.grant_type;
   const clientIdentifier = getClientIdentifier(request);
-  if (!clientIdentifier) {
-    return identityErrorResponse('Client IP is required', 'invalid_request', 403);
+  if (!clientIdentifier && grantType !== 'refresh_token') {
+    await safeWriteAuditEvent(env, {
+      action: 'auth.client_ip.missing',
+      category: 'auth',
+      level: 'error',
+      targetType: 'tokenEndpoint',
+      metadata: { grantType, reason: 'client_ip_missing', ...auditRequestMetadata(request) },
+    });
+    return identityErrorResponse(
+      'Authentication is temporarily unavailable',
+      'temporarily_unavailable',
+      503,
+      { 'Retry-After': '5' }
+    );
   }
 
   if (grantType === 'password') {
@@ -359,7 +378,7 @@ export async function handleToken(request: Request, env: Env): Promise<Response>
       // Bitwarden clients expect OAuth-style error fields.
       return identityErrorResponse('Email and password are required', 'invalid_request', 400);
     }
-    const loginIdentifier = await loginRateLimitKey(clientIdentifier, grantType, email);
+    const loginIdentifier = await loginRateLimitKey(clientIdentifier!, grantType, email);
 
     // Check login lockout before user lookup to reduce user-enumeration signal
     const loginCheck = await rateLimit.checkLoginAttempt(loginIdentifier);
@@ -550,15 +569,8 @@ export async function handleToken(request: Request, env: Env): Promise<Response>
     }
 
     // Persist device only after successful password + (optional) 2FA verification.
-    const deviceSession = await resolveDeviceSession(storage, user.id, deviceInfo);
+    const deviceSession = await persistAndResolveDeviceSession(storage, user.id, deviceInfo);
     if (deviceSession) {
-      await storage.upsertDevice(
-        user.id,
-        deviceSession.identifier,
-        deviceInfo.deviceName,
-        deviceInfo.deviceType,
-        deviceSession.sessionStamp
-      );
       await persistIdentityDevicePushToken(env, storage, user.id, deviceSession, deviceInfo.deviceType, body);
     }
 
@@ -569,7 +581,7 @@ export async function handleToken(request: Request, env: Env): Promise<Response>
     }
 
     const accessToken = await auth.generateAccessToken(user, deviceSession);
-    const refreshToken = await auth.generateRefreshToken(user.id, deviceSession);
+    const refreshToken = await auth.generateRefreshToken(user, deviceSession, resolveRefreshClientType(request, body));
     const accountKeys = buildAccountKeys(user);
     const userDecryptionOptions = buildUserDecryptionOptions(user);
     await safeWriteAuditEvent(env, {
@@ -612,14 +624,14 @@ export async function handleToken(request: Request, env: Env): Promise<Response>
       userDecryptionOptions: userDecryptionOptions,
     };
 
-    const baseResponse = jsonResponse(response);
+    const baseResponse = identityJsonResponse(response);
     return shouldUseWebSession(request)
       ? withWebRefreshCookie(request, baseResponse, refreshToken)
       : baseResponse;
 
   } else if (grantType === 'webauthn') {
     const token = String(body.token || '').trim();
-    const loginIdentifier = await loginRateLimitKey(clientIdentifier, grantType, token || 'missing-token');
+    const loginIdentifier = await loginRateLimitKey(clientIdentifier!, grantType, token || 'missing-token');
     const loginCheck = await rateLimit.checkLoginAttempt(loginIdentifier);
     if (!loginCheck.allowed) {
       return identityErrorResponse(
@@ -673,22 +685,15 @@ export async function handleToken(request: Request, env: Env): Promise<Response>
     }
 
     const deviceInfo = readAuthRequestDeviceInfo(body, request);
-    const deviceSession = await resolveDeviceSession(storage, user.id, deviceInfo);
+    const deviceSession = await persistAndResolveDeviceSession(storage, user.id, deviceInfo);
     if (deviceSession) {
-      await storage.upsertDevice(
-        user.id,
-        deviceSession.identifier,
-        deviceInfo.deviceName,
-        deviceInfo.deviceType,
-        deviceSession.sessionStamp
-      );
       await persistIdentityDevicePushToken(env, storage, user.id, deviceSession, deviceInfo.deviceType, body);
     }
 
     await rateLimit.clearLoginAttempts(loginIdentifier);
 
     const accessToken = await auth.generateAccessToken(user, deviceSession);
-    const refreshToken = await auth.generateRefreshToken(user.id, deviceSession);
+    const refreshToken = await auth.generateRefreshToken(user, deviceSession, resolveRefreshClientType(request, body));
     const userVerificationToken = await createPasskeyUserVerificationToken(env, user.id, 'backup.settings.repair');
     const accountKeys = buildAccountKeys(user);
     const webAuthnPrfOption = buildAccountPasskeyTokenUserDecryptionOption(credential);
@@ -734,7 +739,7 @@ export async function handleToken(request: Request, env: Env): Promise<Response>
       userDecryptionOptions: userDecryptionOptions,
     };
 
-    const baseResponse = jsonResponse(response);
+    const baseResponse = identityJsonResponse(response);
     return shouldUseWebSession(request)
       ? withWebRefreshCookie(request, baseResponse, refreshToken)
       : baseResponse;
@@ -751,7 +756,7 @@ export async function handleToken(request: Request, env: Env): Promise<Response>
       return identityErrorResponse('Parameter error', 'invalid_request', 400);
     }
     const uid = clientId.slice(5);
-    const loginIdentifier = await loginRateLimitKey(clientIdentifier, grantType, uid);
+    const loginIdentifier = await loginRateLimitKey(clientIdentifier!, grantType, uid);
 
     // Check login lockout before user lookup to reduce user-enumeration signal
     const loginCheck = await rateLimit.checkLoginAttempt(loginIdentifier);
@@ -805,15 +810,8 @@ export async function handleToken(request: Request, env: Env): Promise<Response>
     }
 
     // Persist device only after successful client credential verification.
-    const deviceSession = await resolveDeviceSession(storage, user.id, deviceInfo);
+    const deviceSession = await persistAndResolveDeviceSession(storage, user.id, deviceInfo);
     if (deviceSession) {
-      await storage.upsertDevice(
-        user.id,
-        deviceSession.identifier,
-        deviceInfo.deviceName,
-        deviceInfo.deviceType,
-        deviceSession.sessionStamp
-      );
       await persistIdentityDevicePushToken(env, storage, user.id, deviceSession, deviceInfo.deviceType, body);
     }
 
@@ -821,7 +819,7 @@ export async function handleToken(request: Request, env: Env): Promise<Response>
     await rateLimit.clearLoginAttempts(loginIdentifier);
 
     const accessToken = await auth.generateAccessToken(user, deviceSession);
-    const refreshToken = await auth.generateRefreshToken(user.id, deviceSession);
+    const refreshToken = await auth.generateRefreshToken(user, deviceSession, resolveRefreshClientType(request, body));
     const accountKeys = buildAccountKeys(user);
     const userDecryptionOptions = buildUserDecryptionOptions(user);
     await safeWriteAuditEvent(env, {
@@ -863,7 +861,7 @@ export async function handleToken(request: Request, env: Env): Promise<Response>
       userDecryptionOptions: userDecryptionOptions,
     };
 
-    const baseResponse = jsonResponse(response);
+    const baseResponse = identityJsonResponse(response);
     return shouldUseWebSession(request)
       ? withWebRefreshCookie(request, baseResponse, refreshToken)
       : baseResponse;
@@ -880,7 +878,7 @@ export async function handleToken(request: Request, env: Env): Promise<Response>
 
     const sendId = String(body.send_id || body.sendId || '').trim();
     if (!sendId) {
-      return jsonResponse(
+      return identityJsonResponse(
         {
           error: 'invalid_request',
           error_description: 'send_id is required',
@@ -905,13 +903,13 @@ export async function handleToken(request: Request, env: Env): Promise<Response>
       passwordHashB64,
       password,
       rateLimit,
-      clientIdentifier
+      clientIdentifier || undefined
     );
     if ('error' in result) {
       return result.error;
     }
 
-    return jsonResponse({
+    return identityJsonResponse({
       access_token: result.token,
       expires_in: LIMITS.auth.sendAccessTokenTtlSeconds,
       token_type: 'Bearer',
@@ -919,19 +917,6 @@ export async function handleToken(request: Request, env: Env): Promise<Response>
       unofficialServer: true,
     });
   } else if (grantType === 'refresh_token') {
-    const refreshLimit = await rateLimit.consumeBudget(
-      `${clientIdentifier}:identity-refresh`,
-      LIMITS.rateLimit.refreshTokenRequestsPerMinute
-    );
-    if (!refreshLimit.allowed) {
-      return identityErrorResponse(
-        `Rate limit exceeded. Try again in ${refreshLimit.retryAfterSeconds} seconds.`,
-        'TooManyRequests',
-        429
-      );
-    }
-
-    // Refresh token
     const refreshToken = String(body.refresh_token || '').trim() || (
       shouldUseWebSession(request)
         ? parseCookieValue(request, WEB_REFRESH_COOKIE)
@@ -941,7 +926,72 @@ export async function handleToken(request: Request, env: Env): Promise<Response>
       return identityErrorResponse('Refresh token is required', 'invalid_request', 400);
     }
 
-    const result = await auth.refreshAccessTokenDetailed(refreshToken);
+    const refreshTokenHash = await sha256Hex(refreshToken);
+    try {
+      const sessionLimit = await rateLimit.consumeBudget(
+        `refresh-session:${refreshTokenHash}`,
+        LIMITS.rateLimit.refreshTokenRequestsPerMinute
+      );
+      const ipLimit = clientIdentifier
+        ? await rateLimit.consumeBudget(
+            `refresh-ip:${clientIdentifier}`,
+            LIMITS.rateLimit.refreshTokenRequestsPerIpMinute
+          )
+        : null;
+      const rejected = !sessionLimit.allowed ? sessionLimit : (ipLimit && !ipLimit.allowed ? ipLimit : null);
+      if (rejected) {
+        const retryAfter = Math.max(1, rejected.retryAfterSeconds || 1);
+        return identityErrorResponse(
+          `Rate limit exceeded. Try again in ${retryAfter} seconds.`,
+          'temporarily_unavailable',
+          429,
+          { 'Retry-After': String(retryAfter) }
+        );
+      }
+    } catch (error) {
+      await safeWriteAuditEvent(env, {
+        action: 'auth.refresh.failed.rate_limit_unavailable',
+        category: 'auth',
+        level: 'error',
+        targetType: 'refreshToken',
+        metadata: { grantType, reason: 'rate_limit_unavailable', error: error instanceof Error ? error.message : String(error), ...auditRequestMetadata(request) },
+      });
+      return identityErrorResponse(
+        'Session refresh is temporarily unavailable',
+        'temporarily_unavailable',
+        503,
+        { 'Retry-After': '5' }
+      );
+    }
+
+    if (!clientIdentifier) {
+      await safeWriteAuditEvent(env, {
+        action: 'auth.client_ip.missing',
+        category: 'auth',
+        level: 'warn',
+        targetType: 'refreshToken',
+        metadata: { grantType, reason: 'client_ip_missing', webSession: shouldUseWebSession(request), ...auditRequestMetadata(request) },
+      });
+    }
+
+    let result: Awaited<ReturnType<AuthService['refreshAccessTokenDetailed']>>;
+    try {
+      result = await auth.refreshAccessTokenDetailed(refreshToken);
+    } catch (error) {
+      await safeWriteAuditEvent(env, {
+        action: 'auth.refresh.failed.temporarily_unavailable',
+        category: 'auth',
+        level: 'error',
+        targetType: 'refreshToken',
+        metadata: { grantType, reason: 'storage_or_worker_error', error: error instanceof Error ? error.message : String(error), webSession: shouldUseWebSession(request), ...auditRequestMetadata(request) },
+      });
+      return identityErrorResponse(
+        'Session refresh is temporarily unavailable',
+        'temporarily_unavailable',
+        503,
+        { 'Retry-After': '5' }
+      );
+    }
     if (!result.ok) {
       await safeWriteAuditEvent(env, {
         actorUserId: result.userId ?? null,
@@ -963,18 +1013,10 @@ export async function handleToken(request: Request, env: Env): Promise<Response>
         : invalidResponse;
     }
 
-    // Keep a short overlap window for old refresh token to absorb
-    // concurrent refresh requests from multiple client contexts.
-    await storage.constrainRefreshTokenExpiry(
-      refreshToken,
-      Date.now() + LIMITS.auth.refreshTokenOverlapGraceMs
-    );
-
     const { accessToken, user, device } = result;
     if (device?.identifier) {
       await storage.touchDeviceLastSeen(user.id, device.identifier);
     }
-    const newRefreshToken = await auth.generateRefreshToken(user.id, device);
     const accountKeys = buildAccountKeys(user);
     const userDecryptionOptions = buildUserDecryptionOptions(user);
 
@@ -982,7 +1024,7 @@ export async function handleToken(request: Request, env: Env): Promise<Response>
       access_token: accessToken,
       expires_in: LIMITS.auth.accessTokenTtlSeconds,
       token_type: 'Bearer',
-      ...(shouldUseWebSession(request) ? { web_session: true } : { refresh_token: newRefreshToken }),
+      ...(shouldUseWebSession(request) ? { web_session: true } : { refresh_token: refreshToken }),
       Key: user.key,
       PrivateKey: user.privateKey,
       AccountKeys: accountKeys,
@@ -1001,9 +1043,9 @@ export async function handleToken(request: Request, env: Env): Promise<Response>
       userDecryptionOptions: userDecryptionOptions,
     };
 
-    const baseResponse = jsonResponse(response);
+    const baseResponse = identityJsonResponse(response);
     return shouldUseWebSession(request)
-      ? withWebRefreshCookie(request, baseResponse, newRefreshToken)
+      ? withWebRefreshCookie(request, baseResponse, refreshToken)
       : baseResponse;
   }
 
@@ -1036,7 +1078,7 @@ export async function handlePrelogin(request: Request, env: Env): Promise<Respon
   const kdfMemory = user?.kdfMemory ?? null;
   const kdfParallelism = user?.kdfParallelism ?? null;
 
-  return jsonResponse(buildPreloginResponse(email, kdfType, kdfIterations, kdfMemory, kdfParallelism));
+  return identityJsonResponse(buildPreloginResponse(email, kdfType, kdfIterations, kdfMemory, kdfParallelism));
 }
 
 // POST /identity/connect/revocation
@@ -1044,12 +1086,6 @@ export async function handlePrelogin(request: Request, env: Env): Promise<Respon
 // RFC 7009 allows returning 200 even if token is unknown.
 export async function handleRevocation(request: Request, env: Env): Promise<Response> {
   const storage = new StorageService(env.DB);
-  try {
-    await revokePresentedAccessTokenSession(request, env, storage);
-  } catch {
-    // RFC 7009 revocation is best-effort and should not reveal token state.
-  }
-
   let body: Record<string, string>;
   const contentType = request.headers.get('content-type') || '';
   try {
@@ -1060,7 +1096,7 @@ export async function handleRevocation(request: Request, env: Env): Promise<Resp
       body = await request.json();
     }
   } catch {
-    return new Response(null, { status: 200 });
+    return new Response(null, { status: 200, headers: { 'Cache-Control': 'no-store', Pragma: 'no-cache' } });
   }
 
   const token = String(body.token || '').trim() || (
@@ -1072,7 +1108,10 @@ export async function handleRevocation(request: Request, env: Env): Promise<Resp
     await storage.deleteRefreshToken(token);
   }
 
-  const baseResponse = new Response(null, { status: 200 });
+  const baseResponse = new Response(null, {
+    status: 200,
+    headers: { 'Cache-Control': 'no-store', Pragma: 'no-cache' },
+  });
   return shouldUseWebSession(request)
     ? withWebRefreshCookie(request, baseResponse, null)
     : baseResponse;

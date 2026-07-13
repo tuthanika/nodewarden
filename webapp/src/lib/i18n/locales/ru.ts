@@ -8,10 +8,13 @@ const ru: Record<string, string> = {
   "nav_my_vault": "Мое хранилище",
   "nav_vault_items": "Хранилище",
   "nav_sends": "Отправляет",
+  "nav_generator": "Генератор", "txt_password_generator": "Генератор паролей", "txt_password_generator_description": "Создайте надежный уникальный пароль локально на этом устройстве.", "txt_generator_type": "Тип генератора", "txt_passphrase": "Парольная фраза", "txt_generated_password": "Созданный пароль", "txt_password_strength": "Надежность", "txt_password_strength_weak": "Слабый", "txt_password_strength_fair": "Средний", "txt_password_strength_good": "Хороший", "txt_password_strength_strong": "Надежный", "txt_generator_security_note": "Генерация выполняется локально. Пароль никогда не отправляется на сервер.", "txt_generator_length": "Длина", "txt_generator_character_types": "Типы символов", "txt_generator_uppercase": "Заглавные буквы (A-Z)", "txt_generator_lowercase": "Строчные буквы (a-z)", "txt_generator_numbers": "Цифры (0-9)", "txt_generator_special": "Специальные символы (!@#$%^&*)", "txt_generator_minimum": "Минимум", "txt_generator_avoid_ambiguous": "Исключить похожие символы", "txt_generator_words": "Количество слов", "txt_generator_separator": "Разделитель слов", "txt_generator_capitalize": "С заглавной буквы", "txt_generator_include_number": "Добавить число",
   "nav_backup_strategy": "Облачное резервное копирование",
   "nav_import_export": "Импорт и экспорт",
   "nav_group_data_backup": "Данные и резервные копии",
   "nav_group_management": "Управление",
+  "nav_group_tools": "Инструменты",
+  "nav_group_system_management": "Управление системой",
   "txt_settings_appearance": "Внешний вид",
   "txt_theme": "Тема",
   "txt_use_system_theme": "Использовать системную тему",
@@ -978,6 +981,7 @@ const ru: Record<string, string> = {
   "txt_save_profile_failed": "Сохранить профиль не удалось",
   "txt_search_sends": "Поиск отправляет...",
   "txt_session_refresh_failed": "Не удалось обновить сеанс. Войдите снова.",
+  "txt_session_refresh_temporarily_unavailable": "Сеанс временно не удаётся проверить. Вход сохранён, проверка будет повторена.",
   "txt_search_your_secure_vault": "Найдите свое безопасное хранилище...",
   "txt_search_items_count": "Поиск по {count} элементам...",
   "txt_clear_search": "Очистить поиск",
@@ -1012,6 +1016,9 @@ const ru: Record<string, string> = {
   "txt_online": "Онлайн",
   "txt_offline": "Офлайн",
   "txt_offline_vault_readonly": "Автономный режим доступен только для чтения. Подключитесь к NodeWarden, чтобы изменить хранилище.",
+  "txt_offline_mode_notice_title": "Вы в автономном режиме. Если это ошибка, выполните принудительное обновление.",
+  "txt_offline_mode_notice_windows": "Windows:",
+  "txt_offline_mode_notice_macos": "macOS:",
   "txt_submit": "Отправить",
   "txt_sync": "Синхронизировать",
   "txt_sync_vault": "Синхронизировать хранилище",
@@ -1443,5 +1450,13 @@ const ru: Record<string, string> = {
   "txt_auth_request_denied": "Вход с устройства отклонен",
   "txt_auth_request_missing_public_key": "В запросе входа с устройства отсутствует открытый ключ"
 };
+
+Object.assign(ru, {
+  "nav_password_security": "Безопасность паролей", "txt_password_security": "Проверка безопасности паролей", "txt_password_security_privacy": "Пароли проверяются локально. После запуска в базу утечек передаётся только анонимный префикс хеша.", "txt_check_password_security": "Начать проверку", "txt_checking_password_security": "Проверка", "txt_recheck_password_security": "Проверить снова", "txt_password_security_ready": "Ваше хранилище готово к проверке безопасности.", "txt_password_security_no_login": "Нет паролей для входа, доступных для проверки.", "txt_password_security_manual": "Проверка запускается только по вашему выбору. Результаты остаются только на этой странице.", "txt_password_security_no_login_help": "Добавьте запись входа с паролем и вернитесь сюда для проверки.", "txt_exposed_passwords": "Скомпрометированы", "txt_reused_passwords": "Повторно используются", "txt_weak_passwords": "Слабые", "txt_passwords_checked": "Проверено", "txt_password_security_unavailable": "{count} проверок не смогли обратиться к базе утечек. Они не помечены безопасными.", "txt_password_security_not_checked": "Не проверено", "txt_password_exposed_count": "Найдено в {count} утечках", "txt_password_reused_count": "Используется {count} раз", "txt_weak_password": "Слабый пароль", "txt_no_password_risks": "Рисков паролей не найдено", "txt_open_vault": "Открыть хранилище", "txt_check_password_breach": "Проверить утечку", "txt_password_not_found_in_breaches": "Не найден в базе утечек", "txt_password_security_check_failed": "Не удалось завершить проверку утечки."
+});
+
+Object.assign(ru, { "txt_password_security_last_checked": "Последняя проверка: {value}" });
+Object.assign(ru, { "txt_no_password_risks_in_filter": "В этой категории нет рисков для паролей" });
+Object.assign(ru, { "txt_password_security_show_all": "Show all", "txt_password_security_hide_all": "Hide all", "txt_password_security_jump": "Go to item", "txt_password_security_exposed_short": "Exposed {count} times", "txt_password_security_weak_short": "Weak password", "txt_password_security_reused_short": "Reused" });
 
 export default ru;

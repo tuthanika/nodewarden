@@ -99,23 +99,72 @@ function isBlockedIpv4Address(octets: number[]): boolean {
   );
 }
 
+/**
+ * Expand a hostname-form IPv6 literal to eight 4-digit hextets.
+ * Needed so compressed forms like "::1" are not misclassified by a naive
+ * "first non-empty hextet" check (which would read "1" and miss loopback).
+ */
+function expandIpv6Address(hostname: string): string[] | null {
+  const normalized = hostname.trim().toLowerCase().replace(/^\[|\]$/g, '');
+  if (!normalized.includes(':')) return null;
+  if (normalized.includes('.')) {
+    // IPv4-embedded forms are handled separately by the caller.
+    return null;
+  }
+  if ((normalized.match(/::/g) || []).length > 1) return null;
+
+  const sides = normalized.split('::');
+  const left = sides[0] ? sides[0].split(':').filter((part) => part.length > 0) : [];
+  const right = sides.length > 1 && sides[1] ? sides[1].split(':').filter((part) => part.length > 0) : [];
+  if (left.length + right.length > 8) return null;
+  if (sides.length === 1 && left.length !== 8) return null;
+
+  const missing = 8 - left.length - right.length;
+  if (sides.length > 1 && missing < 0) return null;
+  const middle = sides.length > 1 ? Array.from({ length: missing }, () => '0') : [];
+  const parts = [...left, ...middle, ...right];
+  if (parts.length !== 8) return null;
+
+  const hextets: string[] = [];
+  for (const part of parts) {
+    if (!/^[0-9a-f]{1,4}$/i.test(part)) return null;
+    hextets.push(part.padStart(4, '0'));
+  }
+  return hextets;
+}
+
 function isBlockedIpv6Address(hostname: string): boolean {
   if (!hostname.includes(':')) return false;
-  const normalized = hostname.toLowerCase();
-  const mappedIpv4 = normalized.match(/::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/);
+  const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, '');
+
+  // IPv4-mapped dotted form: ::ffff:127.0.0.1
+  const mappedIpv4 = normalized.match(/::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i);
   if (mappedIpv4) {
     const octets = parseIpv4Address(mappedIpv4[1]);
     return !octets || isBlockedIpv4Address(octets);
   }
-  const firstHextetText = normalized.split(':').find((part) => part.length > 0) || '0';
-  const firstHextet = Number.parseInt(firstHextetText, 16);
+
+  // IPv4-mapped hex form produced by some URL parsers: ::ffff:7f00:1
+  const mappedHex = normalized.match(/::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i);
+  if (mappedHex) {
+    const hi = Number.parseInt(mappedHex[1], 16);
+    const lo = Number.parseInt(mappedHex[2], 16);
+    if (!Number.isFinite(hi) || !Number.isFinite(lo)) return true;
+    const octets = [(hi >> 8) & 0xff, hi & 0xff, (lo >> 8) & 0xff, lo & 0xff];
+    return isBlockedIpv4Address(octets);
+  }
+
+  const hextets = expandIpv6Address(normalized);
+  if (!hextets) return true;
+  const firstHextet = Number.parseInt(hextets[0], 16);
   if (!Number.isFinite(firstHextet)) return true;
+  // After expansion, loopback (::1) and unspecified (::) have first hextet 0.
   return (
     firstHextet === 0 ||
     (firstHextet & 0xfe00) === 0xfc00 ||
     (firstHextet & 0xffc0) === 0xfe80 ||
     (firstHextet & 0xff00) === 0xff00 ||
-    normalized.startsWith('2001:db8:')
+    hextets.join(':').startsWith('2001:0db8:')
   );
 }
 

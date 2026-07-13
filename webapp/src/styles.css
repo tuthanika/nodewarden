@@ -2,6 +2,8 @@
 @import './styles/base.css';
 @import './styles/auth.css';
 @import './styles/forms.css';
+@import './styles/generator.css';
+@import './styles/password-security.css';
 @import './styles/shell.css';
 @import './styles/vault.css';
 @import './styles/management.css';
@@ -428,7 +430,7 @@ h4 {
   min-height: min(640px, calc(100dvh - 180px));
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 10px;
 }
 
 .settings-home-section {
@@ -675,7 +677,7 @@ h4 {
 }
 
 .card {
-  margin-bottom: 8px;
+  margin-bottom: 10;
   padding: 14px;
 }
 

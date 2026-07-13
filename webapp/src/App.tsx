@@ -68,6 +68,7 @@ import { t } from '@/lib/i18n';
 import { APP_NOTIFY_EVENT, type AppNotifyDetail } from '@/lib/app-notify';
 import { dispatchBackupProgress, type BackupProgressDetail } from '@/lib/backup-restore-progress';
 import { clearOfflineUnlockRecord } from '@/lib/offline-auth';
+import { clearPasswordSecurityCache } from '@/lib/password-security-cache';
 import { decryptSends, decryptVaultCore } from '@/lib/vault-decrypt';
 import { decryptSendsInWorker, decryptVaultCoreInWorker } from '@/lib/vault-worker';
 import {
@@ -111,6 +112,8 @@ const APP_ROUTE_PATHS = [
   '/',
   '/vault',
   '/vault/totp',
+  '/security/password-health',
+  '/generator',
   '/sends',
   '/admin',
   '/logs',
@@ -250,6 +253,8 @@ export default function App() {
   const [lockTimeoutMinutes, setLockTimeoutMinutesState] = useState<LockTimeoutMinutes>(() => readLockTimeoutMinutes());
   const [sessionTimeoutAction, setSessionTimeoutActionState] = useState<SessionTimeoutAction>(() => readSessionTimeoutAction());
   const [unlockPreparing, setUnlockPreparing] = useState(() => initialBootstrap.phase === 'locked' && !initialBootstrap.session?.email);
+  const [lockedSessionRefreshError, setLockedSessionRefreshError] = useState('');
+  const [lockedSessionRetryKey, setLockedSessionRetryKey] = useState(0);
 
   const [confirm, setConfirm] = useState<AppConfirmState | null>(null);
   const [mobileLayout, setMobileLayout] = useState(false);
@@ -266,6 +271,7 @@ export default function App() {
   const [vaultDecryptError, setVaultDecryptError] = useState('');
   const [sendsDecryptDone, setSendsDecryptDone] = useState(false);
   const sessionRef = useRef<SessionState | null>(initialBootstrap.session);
+  const lockedSessionRetryAttemptRef = useRef(0);
   const silentRefreshVaultRef = useRef<() => Promise<void>>(async () => {});
   const refreshAuthorizedDevicesRef = useRef<() => Promise<void>>(async () => {});
   const refreshPendingAuthRequestsRef = useRef<() => Promise<void>>(async () => {});
@@ -386,6 +392,10 @@ export default function App() {
   }, [phase, profile, session]);
 
   useEffect(() => {
+    if (phase !== 'app') clearPasswordSecurityCache();
+  }, [phase]);
+
+  useEffect(() => {
     if (typeof window === 'undefined') return;
     window.localStorage.setItem(LOCK_TIMEOUT_STORAGE_KEY, String(lockTimeoutMinutes));
   }, [lockTimeoutMinutes]);
@@ -496,13 +506,15 @@ export default function App() {
     if (phase !== 'locked' || !session) return;
     if (IS_DEMO_MODE) return;
     let cancelled = false;
+    let retryTimerId: number | null = null;
     void (async () => {
       const result = await hydrateLockedSession(session, profile);
       if (cancelled) return;
-      if (!result.session) {
+      if (result.kind === 'expired') {
         setSession(null);
         setProfile(null);
         setUnlockPreparing(false);
+        setLockedSessionRefreshError('');
         setPhase('login');
         if (location !== '/login') navigate('/login');
         return;
@@ -511,11 +523,43 @@ export default function App() {
       if (result.profile) {
         setProfile(stripProfileSecrets(result.profile));
       }
+      if (result.kind === 'transient') {
+        setUnlockPreparing(false);
+        setLockedSessionRefreshError(result.message || t('txt_session_refresh_temporarily_unavailable'));
+        const retrySchedule = [2_000, 5_000, 15_000, 30_000, 60_000];
+        const scheduledDelay = retrySchedule[Math.min(lockedSessionRetryAttemptRef.current, retrySchedule.length - 1)];
+        lockedSessionRetryAttemptRef.current += 1;
+        const retryAfterMs = Math.min(60_000, Math.max(scheduledDelay, result.retryAfterMs || 0));
+        retryTimerId = window.setTimeout(() => {
+          setLockedSessionRetryKey((value) => value + 1);
+        }, retryAfterMs);
+        return;
+      }
+      lockedSessionRetryAttemptRef.current = 0;
+      setLockedSessionRefreshError('');
     })();
     return () => {
       cancelled = true;
+      if (retryTimerId !== null) window.clearTimeout(retryTimerId);
     };
-  }, [phase, session?.email, location, navigate]);
+  }, [phase, session?.email, location, navigate, lockedSessionRetryKey]);
+
+  useEffect(() => {
+    if (!lockedSessionRefreshError || phase !== 'locked') return;
+    const retryNow = () => {
+      lockedSessionRetryAttemptRef.current = 0;
+      setLockedSessionRetryKey((value) => value + 1);
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') retryNow();
+    };
+    window.addEventListener('online', retryNow);
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      window.removeEventListener('online', retryNow);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [lockedSessionRefreshError, phase]);
 
   async function finalizeLogin(login: CompletedLogin) {
     loginScopedBackupRepairAuthRef.current =
@@ -529,6 +573,7 @@ export default function App() {
     setSession(login.session);
     setProfile(login.profile);
     setUnlockPreparing(false);
+    setLockedSessionRefreshError('');
     setPendingTotp(null);
     setPendingTotpMode(null);
     setPendingPasskeyPassword(null);
@@ -871,11 +916,13 @@ export default function App() {
     setDecryptedFolders([]);
     setDecryptedCiphers([]);
     setDecryptedSends([]);
+    clearPasswordSecurityCache();
     setUnlockPassword('');
     setPendingTotp(null);
     setPendingTotpMode(null);
     setTotpCode('');
     setUnlockPreparing(false);
+    setLockedSessionRefreshError('');
     setPhase('locked');
     navigate('/lock');
   }
@@ -892,6 +939,7 @@ export default function App() {
     setSession(null);
     clearProfileSnapshot();
     clearOfflineUnlockRecord();
+    clearPasswordSecurityCache();
     setProfile(null);
     setUnlockPreparing(false);
     setPendingTotp(null);
@@ -1847,6 +1895,8 @@ export default function App() {
   });
   const adminActions = useAdminActions({
     authedFetch,
+    email: String(profile?.email || session?.email || ''),
+    defaultKdfIterations,
     onNotify: pushToast,
     onSetConfirm: setConfirm,
     refetchUsers: usersQuery.refetch,
@@ -1901,13 +1951,17 @@ export default function App() {
   const mobilePrimaryRoute =
     location === '/sends'
       ? '/sends'
+      : location === '/generator'
+        ? '/generator'
       : location === '/vault/totp'
         ? '/vault/totp'
         : location === '/vault'
           ? '/vault'
           : '/settings';
   const currentPageTitle = (() => {
+    if (location === '/security/password-health') return t('txt_password_security');
     if (location === '/vault/totp') return t('txt_verification_code');
+    if (location === '/generator') return t('txt_password_generator');
     if (location === '/sends') return t('nav_sends');
     if (location === '/admin') return t('nav_admin_panel');
     if (location === '/logs') return t('nav_log_center');
@@ -2206,6 +2260,7 @@ export default function App() {
           unlockPlaceholder={IS_DEMO_MODE ? t('txt_demo_unlock_placeholder') : undefined}
           unlockReady={!!session?.email}
           unlockPreparing={unlockPreparing}
+          sessionRefreshError={lockedSessionRefreshError}
           loginValues={loginValues}
           pendingPasskeyPasswordEmail={pendingPasskeyPassword?.email || null}
           passkeyPassword={passkeyPassword}
@@ -2246,6 +2301,11 @@ export default function App() {
           onLogout={logoutNow}
           onTogglePasswordHint={() => void handleTogglePasswordHint()}
           onShowLockedPasswordHint={handleShowLockedPasswordHint}
+          onRetrySessionRefresh={() => {
+            lockedSessionRetryAttemptRef.current = 0;
+            setLockedSessionRefreshError('');
+            setLockedSessionRetryKey((value) => value + 1);
+          }}
         />
         <AppGlobalOverlays
           toasts={toasts}

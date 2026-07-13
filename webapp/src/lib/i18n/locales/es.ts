@@ -7,10 +7,13 @@ const es: Record<string, string> = {
   "nav_my_vault": "Mi bóveda",
   "nav_vault_items": "Bóveda",
   "nav_sends": "Envíos",
+  "nav_generator": "Generador", "txt_password_generator": "Generador de contraseñas", "txt_password_generator_description": "Crea una contraseña única y segura localmente en este dispositivo.", "txt_generator_type": "Tipo de generador", "txt_passphrase": "Frase de contraseña", "txt_generated_password": "Contraseña generada", "txt_password_strength": "Seguridad", "txt_password_strength_weak": "Débil", "txt_password_strength_fair": "Regular", "txt_password_strength_good": "Buena", "txt_password_strength_strong": "Fuerte", "txt_generator_security_note": "La generación se realiza localmente. Tu contraseña nunca se envía al servidor.", "txt_generator_length": "Longitud", "txt_generator_character_types": "Tipos de caracteres", "txt_generator_uppercase": "Mayúsculas (A-Z)", "txt_generator_lowercase": "Minúsculas (a-z)", "txt_generator_numbers": "Números (0-9)", "txt_generator_special": "Caracteres especiales (!@#$%^&*)", "txt_generator_minimum": "Mínimo", "txt_generator_avoid_ambiguous": "Evitar caracteres ambiguos", "txt_generator_words": "Número de palabras", "txt_generator_separator": "Separador de palabras", "txt_generator_capitalize": "Usar mayúsculas", "txt_generator_include_number": "Incluir un número",
   "nav_backup_strategy": "Copia de seguridad en la nube",
   "nav_import_export": "Importar y exportar",
   "nav_group_data_backup": "Datos y copias",
   "nav_group_management": "Gestión",
+  "nav_group_tools": "Herramientas",
+  "nav_group_system_management": "Administración del sistema",
   "txt_settings_appearance": "Apariencia",
   "txt_theme": "Tema",
   "txt_use_system_theme": "Usar tema del sistema",
@@ -978,6 +981,7 @@ const es: Record<string, string> = {
   "txt_save_profile_failed": "Error al guardar perfil",
   "txt_search_sends": "Buscar envíos...",
   "txt_session_refresh_failed": "Error al actualizar la sesión. Inicia sesión de nuevo.",
+  "txt_session_refresh_temporarily_unavailable": "La sesión no se puede verificar temporalmente. Tu inicio de sesión se conserva y se volverá a intentar.",
   "txt_search_your_secure_vault": "Buscar en su bóveda segura...",
   "txt_search_items_count": "Buscar entre {count} elementos...",
   "txt_clear_search": "Limpiar búsqueda",
@@ -1012,6 +1016,9 @@ const es: Record<string, string> = {
   "txt_online": "En línea",
   "txt_offline": "Sin conexión",
   "txt_offline_vault_readonly": "El modo sin conexión es de solo lectura. Conecta con NodeWarden antes de cambiar la bóveda.",
+  "txt_offline_mode_notice_title": "Estás en modo sin conexión. Si parece un error, fuerza la recarga.",
+  "txt_offline_mode_notice_windows": "Windows:",
+  "txt_offline_mode_notice_macos": "macOS:",
   "txt_submit": "Enviar",
   "txt_sync": "Sincronizar",
   "txt_sync_vault": "Sincronizar bóveda",
@@ -1443,5 +1450,13 @@ const es: Record<string, string> = {
   "txt_auth_request_denied": "Inicio de sesión con dispositivo denegado",
   "txt_auth_request_missing_public_key": "La solicitud de inicio de sesión con dispositivo no incluye una clave pública"
 };
+
+Object.assign(es, {
+  "nav_password_security": "Seguridad de contraseñas", "txt_password_security": "Comprobación de seguridad", "txt_password_security_privacy": "Las contraseñas se comprueban localmente. Solo se envía un prefijo de hash anónimo a la base de filtraciones al iniciar la comprobación.", "txt_check_password_security": "Iniciar comprobación", "txt_checking_password_security": "Comprobando", "txt_recheck_password_security": "Comprobar de nuevo", "txt_password_security_ready": "Tu bóveda está lista para una comprobación de seguridad.", "txt_password_security_no_login": "No hay contraseñas de inicio de sesión para comprobar.", "txt_password_security_manual": "La comprobación solo empieza cuando la eliges. Los resultados se conservan solo en esta página.", "txt_password_security_no_login_help": "Añade un inicio de sesión con contraseña y vuelve aquí para comprobarlo.", "txt_exposed_passwords": "Filtradas", "txt_reused_passwords": "Reutilizadas", "txt_weak_passwords": "Débiles", "txt_passwords_checked": "Comprobadas", "txt_password_security_unavailable": "{count} comprobaciones no pudieron acceder a la base de filtraciones. No se marcan como seguras.", "txt_password_security_not_checked": "Sin comprobar", "txt_password_exposed_count": "Encontrada en {count} filtraciones", "txt_password_reused_count": "Usada {count} veces", "txt_weak_password": "Contraseña débil", "txt_no_password_risks": "No se encontraron riesgos de contraseña", "txt_open_vault": "Abrir bóveda", "txt_check_password_breach": "Comprobar filtración", "txt_password_not_found_in_breaches": "No encontrada en la base de filtraciones", "txt_password_security_check_failed": "No se pudo completar la comprobación de filtraciones."
+});
+
+Object.assign(es, { "txt_password_security_last_checked": "Última comprobación: {value}" });
+Object.assign(es, { "txt_no_password_risks_in_filter": "No hay riesgos de contraseña en esta categoría" });
+Object.assign(es, { "txt_password_security_show_all": "Show all", "txt_password_security_hide_all": "Hide all", "txt_password_security_jump": "Go to item", "txt_password_security_exposed_short": "Exposed {count} times", "txt_password_security_weak_short": "Weak password", "txt_password_security_reused_short": "Reused" });
 
 export default es;

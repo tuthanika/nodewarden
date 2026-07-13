@@ -464,10 +464,25 @@ export async function handleUpdateDeviceName(
 
 // DELETE /api/devices
 export async function handleDeleteAllDevices(request: Request, env: Env, userId: string): Promise<Response> {
-  void request;
   const storage = new StorageService(env.DB);
   const user = await storage.getUserById(userId);
   if (!user) return errorResponse('User not found', 404);
+
+  let masterPasswordHash = '';
+  try {
+    const body = await request.json() as { masterPasswordHash?: string };
+    masterPasswordHash = String(body?.masterPasswordHash || '').trim();
+  } catch {
+    masterPasswordHash = '';
+  }
+  if (!masterPasswordHash) {
+    return errorResponse('masterPasswordHash is required', 400);
+  }
+  const auth = new AuthService(env);
+  const passwordValid = await auth.verifyPassword(masterPasswordHash, user.masterPasswordHash, user.email);
+  if (!passwordValid) {
+    return errorResponse('Invalid password', 400);
+  }
 
   const [removedTrusted, removedSessions, removedDevices] = await Promise.all([
     storage.deleteTrustedTwoFactorTokensByUserId(userId),
