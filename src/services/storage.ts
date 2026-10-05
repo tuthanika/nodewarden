@@ -17,6 +17,7 @@ import {
   getUserById as findStoredUserById,
   getUserCount as countStoredUsers,
   saveUser as saveStoredUser,
+  upgradePasswordVerifier as upgradeStoredPasswordVerifier,
 } from './storage-user-repo';
 import {
   type AuditLogListOptions,
@@ -311,6 +312,10 @@ export class StorageService {
 
   async createUser(user: User): Promise<void> {
     await createStoredUser(this.db, this.safeBind.bind(this), user);
+  }
+
+  async upgradePasswordVerifier(userId: string, expectedVerifier: string, securityStamp: string, newVerifier: string): Promise<boolean> {
+    return upgradeStoredPasswordVerifier(this.db, userId, expectedVerifier, securityStamp, newVerifier);
   }
 
   async createFirstUser(user: User): Promise<boolean> {
