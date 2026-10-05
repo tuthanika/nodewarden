@@ -1090,6 +1090,7 @@ const zhTW: Record<string, string> = {
   "txt_remove_device_failed": "移除設備失敗",
   "txt_remove_all_devices_failed": "移除所有設備失敗",
   "txt_update_item_failed": "更新項目失敗",
+  "txt_item_changed_elsewhere": "項目已在其他用戶端修改。你的編輯內容仍保留在表單中，請複製需要的修改，重新開啟項目後再儲存。",
   "txt_update_send_failed": "更新 Send 失敗",
   "txt_update_user_status_failed": "更新用戶狀態失敗",
   "txt_use_recovery_code": "使用恢復代碼",
